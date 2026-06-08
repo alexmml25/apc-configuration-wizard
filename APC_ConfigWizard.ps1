@@ -271,6 +271,35 @@ $manifest = Get-Manifest
             </StackPanel>
           </Border>
 
+          <!-- DOC Instance Machine Assignment (appears after fetch) -->
+          <Border x:Name="PanelDOCAssign" Style="{StaticResource Card}" Margin="0,0,0,14" Visibility="Collapsed">
+            <StackPanel>
+              <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,6">DOC Instance - Machine Assignment</TextBlock>
+              <TextBlock FontSize="12" Foreground="#64748B" Margin="0,0,0,10" TextWrapping="Wrap">Select the CNC machine configured for each DOC instance.</TextBlock>
+              <Grid x:Name="GridDOCRow1">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="120"/><ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="DOC Instance 1" Style="{StaticResource Label}" Margin="0,0,0,8"/>
+                <ComboBox x:Name="CmbDOCMachine1" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
+              </Grid>
+              <Grid x:Name="GridDOCRow2" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="120"/><ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="DOC Instance 2" Style="{StaticResource Label}" Margin="0,0,0,8"/>
+                <ComboBox x:Name="CmbDOCMachine2" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
+              </Grid>
+              <Grid x:Name="GridDOCRow3" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="120"/><ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="DOC Instance 3" Style="{StaticResource Label}" Margin="0,0,0,8"/>
+                <ComboBox x:Name="CmbDOCMachine3" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
+              </Grid>
+            </StackPanel>
+          </Border>
+
           <!-- Configure button -->
           <Button x:Name="BtnConfigure" HorizontalAlignment="Left"
                   Padding="28,12" FontSize="14" FontWeight="SemiBold"
@@ -635,6 +664,13 @@ function Update-SiteDBFields {
 }
 
 $controls['CmbSiteCode'].Add_SelectionChanged({ Update-SiteDBFields })
+
+$controls['CmbDOCCount'].Add_SelectionChanged({
+    if ($controls['PanelDOCAssign'].Visibility -ne 'Visible') { return }
+    $cnt = if ($controls['CmbDOCCount'].SelectedItem) { [int]$controls['CmbDOCCount'].SelectedItem.Content } else { 3 }
+    $controls['GridDOCRow2'].Visibility = if ($cnt -ge 2) { 'Visible' } else { 'Collapsed' }
+    $controls['GridDOCRow3'].Visibility = if ($cnt -ge 3) { 'Visible' } else { 'Collapsed' }
+})
 $controls['CmbSiteCode'].SelectedIndex = 0
 Update-SiteDBFields
 
@@ -988,6 +1024,22 @@ $controls['BtnFetchMachines'].Add_Click({
         $capControls['TxtFetchStatus'].Foreground       = '#166534'
         $capControls['BtnConfigure'].IsEnabled          = $true
 
+        # Populate DOC machine dropdowns and reveal assignment panel
+        foreach ($n in 1,2,3) {
+            $cmb = $capControls["CmbDOCMachine$n"]
+            $cmb.Items.Clear()
+            foreach ($m in $machineList) {
+                $item = New-Object System.Windows.Controls.ComboBoxItem
+                $item.Content = $m.MachineName
+                $cmb.Items.Add($item) | Out-Null
+            }
+            if ($cmb.Items.Count -gt 0) { $cmb.SelectedIndex = 0 }
+        }
+        $capControls['PanelDOCAssign'].Visibility = 'Visible'
+        $docCnt = if ($capControls['CmbDOCCount'].SelectedItem) { [int]$capControls['CmbDOCCount'].SelectedItem.Content } else { 3 }
+        $capControls['GridDOCRow2'].Visibility = if ($docCnt -ge 2) { 'Visible' } else { 'Collapsed' }
+        $capControls['GridDOCRow3'].Visibility = if ($docCnt -ge 3) { 'Visible' } else { 'Collapsed' }
+
         # Store fetched machines for use during configuration
         $Script:FetchedMachines = $machineList
     }.GetNewClosure())
@@ -1016,10 +1068,17 @@ $controls['BtnConfigure'].Add_Click({
     if (-not $controls['PwdAPCUser'].Password -or -not $controls['PwdMedtronicSU'].Password) {
         [System.Windows.MessageBox]::Show("Fill in apcuser (local) and MedtronicSU passwords.", "Passwords Required", "OK", "Warning") | Out-Null; return
     }
-    $docItem = if ($controls['CmbDOCCount'].SelectedItem) { $controls['CmbDOCCount'].SelectedItem.Content } else { '3' }
+    $docItem  = if ($controls['CmbDOCCount'].SelectedItem) { $controls['CmbDOCCount'].SelectedItem.Content } else { '3' }
+    $docCount = [int]$docItem
+    $docMachineAssignments = @()
+    for ($i = 1; $i -le $docCount; $i++) {
+        $cmb = $controls["CmbDOCMachine$i"]
+        $docMachineAssignments += if ($cmb -and $cmb.SelectedItem) { $cmb.SelectedItem.Content } else { '' }
+    }
 
     $Script:AutoState = Get-CurrentState
-    $Script:AutoState['CNCMachines'] = $Script:FetchedMachines
+    $Script:AutoState['CNCMachines']           = $Script:FetchedMachines
+    $Script:AutoState['DOCMachineAssignments'] = $docMachineAssignments
 
     $apcPwd = New-Object System.Security.SecureString
     foreach ($c in $controls['PwdAPCUser'].Password.ToCharArray()) { $apcPwd.AppendChar($c) }

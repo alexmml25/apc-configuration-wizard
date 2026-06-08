@@ -71,9 +71,13 @@ function Invoke-DOCConfig {
     }
 
     for ($d = 1; $d -le $docCount; $d++) {
-        # Machine pairing: DOC instance N maps to CNC machine N (0-indexed)
-        $machineIdx = $d - 1
-        $machine    = if ($machineIdx -lt $machines.Count) { $machines[$machineIdx] } else { $machines[0] }
+        # Machine pairing: prefer user assignment, fall back to positional index
+        $assignments  = $State['DOCMachineAssignments']
+        $assignedName = if ($assignments -and $assignments.Count -ge $d) { $assignments[$d - 1] } else { '' }
+        $machine = if ($assignedName) {
+            $machines | Where-Object { $_.MachineName -eq $assignedName } | Select-Object -First 1
+        } else { $null }
+        if (-not $machine) { $machine = if (($d - 1) -lt $machines.Count) { $machines[$d - 1] } else { $machines[0] } }
         $cncNode    = "CNC$d"
         $basePath   = $docCfg.BasePath -replace '\{N\}', $d
 
