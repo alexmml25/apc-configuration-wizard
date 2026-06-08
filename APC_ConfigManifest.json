@@ -253,6 +253,12 @@
     "EngineeringWorkplace": "C:\\Program Files (x86)\\ABB 800xA\\Base\\bin\\WorkplaceNG.exe"
   },
 
+  "Services": {
+    "PostgreSQL": "postgresql-x64-17",
+    "DeviceWise": "dwcore",
+    "CNCnetPDM":  "CNCnetPDM"
+  },
+
   "VerificationChecks": [
     { "Type": "Service", "Target": "postgresql-x64-17", "Description": "PostgreSQL 17 running" },
     { "Type": "Service", "Target": "dwcore",            "Description": "deviceWISE Core running" },

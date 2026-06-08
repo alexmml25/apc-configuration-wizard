@@ -94,9 +94,9 @@ function Invoke-DOCConfig {
         if ($docDbXml) {
             Set-XmlConnectionString -Xml $docDbXml -NewConnStr $connString
             Save-Xml -Xml $docDbXml -Path $docDbPath
-            Add-Result -Phase DOC -Check "DOC $d: DocDB.xml" -Status PASS -Detail "Connection string updated"
+            Add-Result -Phase DOC -Check "DOC ${d}: DocDB.xml" -Status PASS -Detail "Connection string updated"
         } else {
-            Add-Result -Phase DOC -Check "DOC $d: DocDB.xml" -Status WARN -Detail "File not found: $docDbPath"
+            Add-Result -Phase DOC -Check "DOC ${d}: DocDB.xml" -Status WARN -Detail "File not found: $docDbPath"
         }
         #endregion
 
@@ -114,14 +114,14 @@ function Invoke-DOCConfig {
             if ($csvNode) {
                 if ($csvNode.InnerText -ne $null) { $csvNode.InnerText = $sincMachinePath }
                 elseif ($csvNode.Attributes['value']) { $csvNode.Attributes['value'].Value = $sincMachinePath }
-                Add-Result -Phase DOC -Check "DOC $d: DOC_II.xml CSVPath" -Status PASS -Detail $sincMachinePath
+                Add-Result -Phase DOC -Check "DOC ${d}: DOC_II.xml CSVPath" -Status PASS -Detail $sincMachinePath
             } else {
-                Add-Result -Phase DOC -Check "DOC $d: DOC_II.xml CSVPath" -Status WARN -Detail "CSVFileOutputPath node not found  -  set manually"
+                Add-Result -Phase DOC -Check "DOC ${d}: DOC_II.xml CSVPath" -Status WARN -Detail "CSVFileOutputPath node not found  -  set manually"
             }
 
             Save-Xml -Xml $docIIXml -Path $docIIPath
         } else {
-            Add-Result -Phase DOC -Check "DOC $d: DOC_II.xml" -Status WARN -Detail "File not found: $docIIPath"
+            Add-Result -Phase DOC -Check "DOC ${d}: DOC_II.xml" -Status WARN -Detail "File not found: $docIIPath"
         }
         #endregion
 
@@ -136,9 +136,9 @@ function Invoke-DOCConfig {
             if ($lmrNode) { $lmrNode.InnerText = 'MAX' }
 
             Save-Xml -Xml $plXml -Path $plPath
-            Add-Result -Phase DOC -Check "DOC $d: PartLookup.xml" -Status PASS
+            Add-Result -Phase DOC -Check "DOC ${d}: PartLookup.xml" -Status PASS
         } else {
-            Add-Result -Phase DOC -Check "DOC $d: PartLookup.xml" -Status WARN -Detail "File not found: $plPath"
+            Add-Result -Phase DOC -Check "DOC ${d}: PartLookup.xml" -Status WARN -Detail "File not found: $plPath"
         }
         #endregion
 
@@ -148,9 +148,9 @@ function Invoke-DOCConfig {
         if ($spcXml) {
             Set-XmlConnectionString -Xml $spcXml -NewConnStr $connString
             Save-Xml -Xml $spcXml -Path $spcPath
-            Add-Result -Phase DOC -Check "DOC $d: SpcDB.xml" -Status PASS
+            Add-Result -Phase DOC -Check "DOC ${d}: SpcDB.xml" -Status PASS
         } else {
-            Add-Result -Phase DOC -Check "DOC $d: SpcDB.xml" -Status WARN -Detail "File not found: $spcPath"
+            Add-Result -Phase DOC -Check "DOC ${d}: SpcDB.xml" -Status WARN -Detail "File not found: $spcPath"
         }
         #endregion
 
@@ -171,10 +171,10 @@ function Invoke-DOCConfig {
             if ($famNode) { $famNode.InnerText = $machine.CNCType }
 
             Save-Xml -Xml $iqsXml -Path $iqsPath
-            Add-Result -Phase DOC -Check "DOC $d: IqsDocSpcDataCollector.xml" -Status PASS `
+            Add-Result -Phase DOC -Check "DOC ${d}: IqsDocSpcDataCollector.xml" -Status PASS `
                 -Detail "DBId=$($machine.MachineName) Family=$($machine.CNCType)"
         } else {
-            Add-Result -Phase DOC -Check "DOC $d: IqsDocSpcDataCollector.xml" -Status WARN -Detail "File not found: $iqsPath"
+            Add-Result -Phase DOC -Check "DOC ${d}: IqsDocSpcDataCollector.xml" -Status WARN -Detail "File not found: $iqsPath"
         }
         #endregion
     }
