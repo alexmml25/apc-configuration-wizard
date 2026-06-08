@@ -201,7 +201,7 @@ $manifest = Get-Manifest
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="110"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                   <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                   </Grid.RowDefinitions>
                   <TextBlock Grid.Row="0" Grid.Column="0" Text="apcuser (local)" Style="{StaticResource Label}"
                              ToolTip="Password to set when creating the apcuser role on this VM's local TimescaleDB (Step 2). Different from the Site DB credential above."/>
@@ -211,10 +211,6 @@ $manifest = Get-Manifest
                              ToolTip="Password for the MedtronicSU OPC UA user created in deviceWise Gateway (Step 4)"/>
                   <PasswordBox x:Name="PwdMedtronicSU" Grid.Row="1" Grid.Column="2" Style="{StaticResource Pwd}"
                                ToolTip="Password for the MedtronicSU OPC UA user (Step 4)"/>
-                  <TextBlock Grid.Row="2" Grid.Column="0" Text="deviceWise admin" Style="{StaticResource Label}" Margin="0,0,0,0"
-                             ToolTip="Admin password for the deviceWise Gateway web interface (used in Steps 4-7 to call the REST API)"/>
-                  <PasswordBox x:Name="PwdDeviceWise" Grid.Row="2" Grid.Column="2" Style="{StaticResource Pwd}" Margin="0,0,0,0"
-                               ToolTip="deviceWise Gateway admin password (Steps 4-7)"/>
                 </Grid>
               </StackPanel>
             </Border>
@@ -1016,26 +1012,23 @@ $controls['BtnConfigure'].Add_Click({
     if (-not (Test-InstallerCredential -DomainUser $installerUser -Password $installerPwd)) {
         [System.Windows.MessageBox]::Show("Authentication failed for '$installerUser'.", "Authentication Failed", "OK", "Error") | Out-Null; return
     }
-    if (-not $controls['PwdAPCUser'].Password -or -not $controls['PwdMedtronicSU'].Password -or -not $controls['PwdDeviceWise'].Password) {
-        [System.Windows.MessageBox]::Show("Fill in all component passwords.", "Passwords Required", "OK", "Warning") | Out-Null; return
+    if (-not $controls['PwdAPCUser'].Password -or -not $controls['PwdMedtronicSU'].Password) {
+        [System.Windows.MessageBox]::Show("Fill in apcuser (local) and MedtronicSU passwords.", "Passwords Required", "OK", "Warning") | Out-Null; return
     }
     $docItem = if ($controls['CmbDOCCount'].SelectedItem) { $controls['CmbDOCCount'].SelectedItem.Content } else { '3' }
 
     $Script:AutoState = Get-CurrentState
     $Script:AutoState['CNCMachines'] = $Script:FetchedMachines
 
-    $apcPwd  = New-Object System.Security.SecureString
+    $apcPwd = New-Object System.Security.SecureString
     foreach ($c in $controls['PwdAPCUser'].Password.ToCharArray()) { $apcPwd.AppendChar($c) }
-    $suPwd   = New-Object System.Security.SecureString
+    $suPwd  = New-Object System.Security.SecureString
     foreach ($c in $controls['PwdMedtronicSU'].Password.ToCharArray()) { $suPwd.AppendChar($c) }
-    $dwPwd   = New-Object System.Security.SecureString
-    foreach ($c in $controls['PwdDeviceWise'].Password.ToCharArray()) { $dwPwd.AppendChar($c) }
-    $sdbPwd  = New-Object System.Security.SecureString
+    $sdbPwd = New-Object System.Security.SecureString
     foreach ($c in $controls['PwdSiteDB'].Password.ToCharArray()) { $sdbPwd.AppendChar($c) }
 
     $Script:AutoState['APCUserPassword']     = $apcPwd
     $Script:AutoState['MedtronicSUPassword'] = $suPwd
-    $Script:AutoState['DeviceWisePassword']  = $dwPwd
     $Script:AutoState['SiteDBPassword']      = $sdbPwd
     Save-State -State $Script:AutoState
 

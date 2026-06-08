@@ -35,18 +35,6 @@ function Invoke-DeviceWiseBase {
         throw "CNCMachines not populated. Run Steps 1-3 first."
     }
 
-    #region -- Resolve deviceWise admin password ------------------------------
-
-    $dwPwd = ''
-    if ($State.ContainsKey('DeviceWisePassword') -and $State['DeviceWisePassword']) {
-        $bstr   = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($State['DeviceWisePassword'])
-        try { $dwPwd = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr) }
-        finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
-    }
-    if (-not $dwPwd) { throw "DeviceWisePassword not available in session state." }
-
-    #endregion
-
     #region -- Port discovery -------------------------------------------------
 
     $dwPort  = 0
@@ -72,35 +60,15 @@ function Invoke-DeviceWiseBase {
 
     #endregion
 
-    #region -- Authenticate ---------------------------------------------------
-
-    $token = ''
-    try {
-        $loginBody = @{ userName = 'admin'; password = $dwPwd } | ConvertTo-Json
-        $loginResp = Invoke-RestMethod -Uri "$baseUrl/auth" -Method POST `
-            -Body $loginBody -ContentType 'application/json' -SessionVariable 'dwSession' -TimeoutSec 15
-        # Token may be in response body or in a cookie depending on dW version
-        $token = if ($loginResp.token)    { $loginResp.token }
-                 elseif ($loginResp.Token) { $loginResp.Token }
-                 else { '' }
-        Write-Log INFO "deviceWise authentication: OK (token: $(if ($token) {'present'} else {'cookie-based'}))"
-        Add-Result -Phase DeviceWise -Check "Authentication" -Status PASS
-    } catch {
-        Add-Result -Phase DeviceWise -Check "Authentication" -Status FAIL -Detail $_
-        throw "deviceWise authentication failed: $_"
-    } finally { $dwPwd = '' }
-
-    # Build standard header set for subsequent calls
+    # No authentication required - deviceWise REST API is open
+    $State['DeviceWiseToken'] = ''
     $headers = @{ 'Content-Type' = 'application/json' }
-    if ($token) { $headers['Authorization'] = "Bearer $token" }
-    $State['DeviceWiseToken'] = $token
+    Add-Result -Phase DeviceWise -Check "Authentication" -Status PASS -Detail "No auth required"
 
     function Invoke-DW {
         param([string]$Method, [string]$Path, [object]$Body = $null, [string]$Desc = '')
-        $uri    = "$baseUrl$Path"
-        $params = @{ Uri = $uri; Method = $Method; Headers = $headers; TimeoutSec = 60 }
+        $params = @{ Uri = "$baseUrl$Path"; Method = $Method; Headers = $headers; TimeoutSec = 60 }
         if ($Body) { $params['Body'] = ($Body | ConvertTo-Json -Depth 10) }
-        if ($dwSession) { $params['WebSession'] = $dwSession }
         try {
             $r = Invoke-RestMethod @params -ErrorAction Stop
             if ($Desc) { Write-Log INFO "$Desc : OK" }
@@ -111,8 +79,6 @@ function Invoke-DeviceWiseBase {
             return $null
         }
     }
-
-    #endregion
 
     #region -- Install packages -----------------------------------------------
 
