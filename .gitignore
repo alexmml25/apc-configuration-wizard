@@ -1,0 +1,13 @@
+# Office temp/lock files
+~$*
+
+# Runtime state files (written by the wizard on the VM, not source)
+*.config_state.json
+C:\APC_Config\
+
+# Windows artifacts
+Thumbs.db
+desktop.ini
+
+# macOS
+.DS_Store

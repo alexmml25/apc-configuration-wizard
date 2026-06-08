@@ -1,0 +1,265 @@
+{
+  "APC": {
+    "Version": "1.5",
+    "ReleaseLabel": "APC System Release 1.5",
+    "RepositoryRoot": "\\\\MSPM7AAPPS0342.cfrf.medtronic.com\\Shared\\APC\\Deployment Resources",
+    "BackupShare": "\\\\MSPM7AAPPS0342.cfrf.medtronic.com\\Shared\\APC\\Backups"
+  },
+
+  "Sites": [ "MCR", "MFW", "MPR", "MWR" ],
+
+  "SiteOpcProcessCodes": {
+    "MCR": "_MCR$",
+    "MFW": "_MFW$",
+    "MPR": "_MPR$",
+    "MWR": "_MWR$"
+  },
+
+  "ServiceAccounts": {
+    "Domain": "ENT",
+    "ServiceAccountPrefix": "SVC-APC-"
+  },
+
+  "SiteDB": {
+    "Port": 5432,
+    "Database": "TimescaleDB",
+    "AssetTable": "machine_info",
+    "Columns": {
+      "MachineName":       "f_cnc_asset",
+      "IPAddress":         "f_ip_address",
+      "Port":              "f_port",
+      "CNCType":           "f_cnc_type",
+      "DLLName":           "f_dllname",
+      "CNCnetPDMRequired": "f_cncnetpdm_required"
+    }
+  },
+
+  "SiteServers": {
+    "MPR": {
+      "Host":        "sjum1cappd0017.mfg.core.medtronic.com",
+      "Port":        5432,
+      "Database":    "TimescaleDB",
+      "User":        "apcuser",
+      "PasswordB64": "TWVkdHJvbmljMQ=="
+    },
+    "MCR": {
+      "Host":        "sjum1cappd0017.mfg.core.medtronic.com",
+      "Port":        5432,
+      "Database":    "TimescaleDB",
+      "User":        "apcuser",
+      "PasswordB64": "TWVkdHJvbmljMQ=="
+    },
+    "MFW": {
+      "Host":        "",
+      "Port":        5432,
+      "Database":    "TimescaleDB",
+      "User":        "apcuser",
+      "PasswordB64": ""
+    },
+    "MWR": {
+      "Host":        "",
+      "Port":        5432,
+      "Database":    "TimescaleDB",
+      "User":        "apcuser",
+      "PasswordB64": ""
+    }
+  },
+
+  "PostgreSQL": {
+    "Service":     "postgresql-x64-17",
+    "DataDir":     "C:\\Program Files\\PostgreSQL\\17\\data",
+    "BinDir":      "C:\\Program Files\\PostgreSQL\\17\\bin",
+    "PgHbaFile":   "C:\\Program Files\\PostgreSQL\\17\\data\\pg_hba.conf",
+    "HbaEntry":    "host all all 0.0.0.0/0 md5",
+    "DefaultPort": 5432,
+    "LocalDB":     "TimescaleDB",
+    "LocalUser":   "apcuser",
+    "OdbcDsn":     "PostgreSQL30",
+    "OdbcDriver":  "PostgreSQL ANSI(x86)"
+  },
+
+  "SchemaScripts": [
+    "SPC.sql",
+    "CCW.sql",
+    "PCW.sql",
+    "CHMI.sql",
+    "DOCW.sql"
+  ],
+  "SchemaScriptsRepoSubPath": "Timescale Database (TSDB)\\Tables",
+
+  "DeviceWise": {
+    "GatewayProbePorts": [ 8090, 8080, 8100, 8001 ],
+    "ApiBasePath":       "/api/v2",
+    "LicenseManagerHost": "MSPM7AAPPS0342.cfrf.medtronic.com",
+    "OpcUaEndpointPort": 48020,
+    "SINCStaging":       "C:\\Program Files\\deviceWISE\\Gateway\\staging\\SINC",
+    "GatewayInstallDir": "C:\\Program Files\\deviceWISE\\Gateway",
+    "OpcUaUser":         "MedtronicSU",
+    "PackagesToInstall": [
+      "OPC UA Server",
+      "OPC UA Client Driver",
+      "FileWatcher",
+      "CNCnetPDM"
+    ],
+    "OpcUaTagsRepoSubPath":   "deviceWise\\4-Projects and OPC UA Tags",
+    "CHMIProjectRepoSubPath": "deviceWise\\4-Projects and OPC UA Tags",
+    "SINCProjectRepoSubPath": "deviceWise\\4-Projects and OPC UA Tags",
+    "CNCNodes": [ "CNC1", "CNC2", "CNC3" ]
+  },
+
+  "CHMIComponents": {
+    "Loaded": [
+      "CNC1_Control_PartMachined_Monitor",
+      "CNC1_Control_PartRequired_Monitor",
+      "CNC1_PATH_PartMachined_Monitor",
+      "CNC2_Control_PartMachined_Monitor",
+      "CNC2_Control_PartRequired_Monitor",
+      "CNC2_PATH_PartMachined_Monitor",
+      "CNC3_Control_PartMachined_Monitor",
+      "CNC3_Control_PartRequired_Monitor",
+      "CNC3_PATH_PartMachined_Monitor"
+    ],
+    "Started": [
+      "6_CNC_DemandReadTagInteger",
+      "7_CNC_DemandWriteTagInteger",
+      "7_CNC_DemandWriteTagValue",
+      "9_OPC_DemandReadTagBool",
+      "9_OPC_DemandReadTagFloat",
+      "9_OPC_DemandReadTagInteger",
+      "9_OPC_DemandReadTagString",
+      "9_OPC_DemandWriteTagBool",
+      "9_OPC_DemandWriteTagInteger",
+      "CNCx_MaintenanceTriggerAndStoreDB",
+      "CNCx_ToolingTriggerAndStoreDB"
+    ]
+  },
+
+  "SINCComponents": [
+    "0_DefaultConfiguration",
+    "0_MasterReset",
+    "0_ReadConfiguration",
+    "1_DetectNewFileAtWatcher",
+    "2_MonitorNewFileAtWatcher_CNC1",
+    "2_MonitorNewFileAtWatcher_CNC2",
+    "2_MonitorNewFileAtWatcher_CNC3",
+    "3_StartProcessCSVFile_Current",
+    "3_StartProcessCSVFile_Newer",
+    "5_StartWriteTagToCNC",
+    "6_CNC_DemandReadTagValue",
+    "7_CNC_DemandWriteTagValue",
+    "8_OPCUA_FileFormat",
+    "8_OPCUA_ResetAllValues",
+    "8_OPCUA_RollbackValue",
+    "8_OPCUA_UpdateValue",
+    "9_OPC_DemandReadTagBool",
+    "9_OPC_DemandReadTagString",
+    "9_OPC_DemandWriteTagBool",
+    "9_OPC_DemandWriteTagString",
+    "9_OPC_WriteTagString",
+    "9_OPC_WriteTagValue",
+    "10_SendEmail",
+    "11_CheckFolderExists",
+    "11_GetLastUpdatedTime"
+  ],
+
+  "SINCMasterResetComponents": [
+    "TRIGGER_MASTER_RESET_CNC1",
+    "TRIGGER_MASTER_RESET_CNC2",
+    "TRIGGER_MASTER_RESET_CNC3"
+  ],
+
+  "SINCDefaultSettings": {
+    "ALARM_TAG":   "1,599",
+    "ALARM_VALUE": 1.0,
+    "ALARM_PATH":  "PATH",
+    "WAIT_TIME":   15000,
+    "RETRY_COUNT": 3,
+    "NOTES":       "N/A"
+  },
+
+  "CNCnetPDM": {
+    "InstallDir":       "C:\\Medtronic\\CNCNetPDM",
+    "FallbackDir":      "C:\\CNCnetPDM_8.0.0.0",
+    "IniFile":          "CNCnetPDM.ini",
+    "MelcfgFile":       "melcfg.ini",
+    "RS232Section":     "RS232",
+    "HostsSection":     "HOSTS",
+    "ExcelLicenseFile": "CNCnetPDM_License.xlsx",
+    "LicenseCellRef":   "A1",
+    "Defaults": {
+      "Baud":        19200,
+      "Databits":    8,
+      "Parity":      "N",
+      "StopBits":    1,
+      "Port":        683,
+      "Method":      0,
+      "DNSName":     "localhost",
+      "PLCAddr":     "none",
+      "Share":       "none",
+      "LogfileName": "none",
+      "LogfileVer":  0
+    }
+  },
+
+  "AssetFamilyToCNCType": {
+    "CITIZEN_L12_IV":  "Citizen L12",
+    "CITIZEN_L20E_IV": "Citizen L20E",
+    "CITIZEN_L20X_IV": "Citizen L20X",
+    "CITIZEN_L20E_V":  "Citizen L20E",
+    "CITIZEN_M32_IV":  "Citizen M32",
+    "CITIZEN_M32_V":   "Citizen M32"
+  },
+
+  "DLLNameToDLLType": {
+    "CitizenM.dll":    "Citizen",
+    "MitsubishiM.dll": "Mitsubishi"
+  },
+
+  "DOC": {
+    "BasePath":        "C:\\Medtronic\\DOC-{N}\\DOC_II",
+    "PluginsIQSPath":  "C:\\Medtronic\\DOC-{N}\\DOC_II\\Plugins\\IQS",
+    "MaxInstances":    3,
+    "DocDBXml":        "DocDB.xml",
+    "DocIIXml":        "DOC_II.xml",
+    "PartLookupXml":   "PartLookup.xml",
+    "SpcDBXml":        "SpcDB.xml",
+    "IqsCollectorXml": "IqsDocSpcDataCollector.xml",
+    "CSVOutputPathTemplate": "C:\\Program Files\\deviceWISE\\Gateway\\staging\\SINC\\{MachineName}",
+    "LoadMatrixRevision":    "MAX"
+  },
+
+  "DataApps": {
+    "FileManagerConfig":   "C:\\Medtronic\\Data Collector File Manager\\FileManager.exe.config",
+    "DataCollectorConfig": "C:\\Medtronic\\Data Collector\\DataCollector.exe.config",
+    "DataAnalyzerConfig":  "C:\\Medtronic\\Data Analyzer\\DataAnalyzer.exe.config",
+    "FileManager": {
+      "InstallDir":  "C:\\Medtronic\\Data Collector File Manager",
+      "DataRoot":    "C:\\Medtronic\\DataCollector_Data"
+    },
+    "DataCollector": {
+      "InstallDir":  "C:\\Medtronic\\Data Collector",
+      "ArchiveRoot": "C:\\Medtronic\\DataCollector_Archive"
+    },
+    "DataAnalyzer": {
+      "InstallDir":  "C:\\Medtronic\\Data Analyzer"
+    },
+    "InstrumentTypes": [ "CMM", "CTSCAN", "BENCH", "CONTRACER" ]
+  },
+
+  "CHMI": {
+    "OpcUaConnectRegPath":  "HKLM:\\SOFTWARE\\WOW6432Node\\ABB\\AFW\\OpcUaConnect",
+    "DataPath":             "C:\\OperateITData111",
+    "CertManagerExe":       "C:\\Program Files (x86)\\ABB 800xA\\Base\\bin\\AfwUaCertificateManager.exe",
+    "EngineeringWorkplace": "C:\\Program Files (x86)\\ABB 800xA\\Base\\bin\\WorkplaceNG.exe"
+  },
+
+  "VerificationChecks": [
+    { "Type": "Service", "Target": "postgresql-x64-17", "Description": "PostgreSQL 17 running" },
+    { "Type": "Service", "Target": "dwcore",            "Description": "deviceWISE Core running" },
+    { "Type": "Service", "Target": "dwts",              "Description": "deviceWISE Transaction Engine running" },
+    { "Type": "Service", "Target": "CNCnetPDM",         "Description": "CNCnetPDM running" },
+    { "Type": "Port",    "Target": "5432",              "Description": "PostgreSQL port 5432 listening" },
+    { "Type": "OdbcDsn", "Target": "PostgreSQL30",      "Description": "ODBC DSN PostgreSQL30 configured" },
+    { "Type": "Path",    "Target": "C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe", "Description": "PostgreSQL binaries present" }
+  ]
+}
