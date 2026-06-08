@@ -252,7 +252,6 @@ $manifest = Get-Manifest
                   <RowDefinition Height="Auto"/>
                   <RowDefinition Height="Auto"/>
                   <RowDefinition Height="Auto"/>
-                  <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="DOC Instances" Style="{StaticResource Label}"/>
@@ -262,11 +261,7 @@ $manifest = Get-Manifest
                   <ComboBoxItem Content="3" IsSelected="True"/>
                 </ComboBox>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="SINC Email" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,4,0,8"/>
-                <TextBox   x:Name="TxtSINCEmail" Grid.Row="1" Grid.Column="1" Style="{StaticResource Input}"
-                           ToolTip="Semicolon-separated email addresses for SINC alerts"/>
-
-                <Grid x:Name="GridDOCRow1" Grid.Row="2" Grid.ColumnSpan="2">
+                <Grid x:Name="GridDOCRow1" Grid.Row="1" Grid.ColumnSpan="2">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120"/><ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
@@ -274,7 +269,7 @@ $manifest = Get-Manifest
                   <ComboBox x:Name="CmbDOCMachine1" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
                 </Grid>
 
-                <Grid x:Name="GridDOCRow2" Grid.Row="3" Grid.ColumnSpan="2" Visibility="Collapsed">
+                <Grid x:Name="GridDOCRow2" Grid.Row="2" Grid.ColumnSpan="2" Visibility="Collapsed">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120"/><ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
@@ -282,13 +277,29 @@ $manifest = Get-Manifest
                   <ComboBox x:Name="CmbDOCMachine2" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
                 </Grid>
 
-                <Grid x:Name="GridDOCRow3" Grid.Row="4" Grid.ColumnSpan="2" Visibility="Collapsed">
+                <Grid x:Name="GridDOCRow3" Grid.Row="3" Grid.ColumnSpan="2" Visibility="Collapsed">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="120"/><ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
                   <TextBlock Grid.Column="0" Text="DOC Instance 3" Style="{StaticResource Label}" Margin="0,0,0,8"/>
                   <ComboBox x:Name="CmbDOCMachine3" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
                 </Grid>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <!-- SINC Configuration -->
+          <Border Style="{StaticResource Card}" Margin="0,0,0,14">
+            <StackPanel>
+              <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,12">SINC Configuration</TextBlock>
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="120"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Alert Email" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,4,0,8"/>
+                <TextBox x:Name="TxtSINCEmail" Grid.Column="1" Style="{StaticResource Input}"
+                         ToolTip="Semicolon-separated email addresses for SINC alerts"/>
               </Grid>
             </StackPanel>
           </Border>
