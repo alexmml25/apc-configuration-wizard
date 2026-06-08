@@ -1110,8 +1110,9 @@ $controls['BtnConfigure'].Add_Click({
     if (-not $siteCode) {
         [System.Windows.MessageBox]::Show("Select a Site.", "Missing", "OK", "Warning") | Out-Null; return
     }
-    if (-not $Global:FetchedMachines -or $Global:FetchedMachines.Count -eq 0) {
-        [System.Windows.MessageBox]::Show("Fetch machines from Site DB first.", "Missing", "OK", "Warning") | Out-Null; return
+    $fetchedMachines = @($controls['DgMachines'].ItemsSource)
+    if ($fetchedMachines.Count -eq 0) {
+        [System.Windows.MessageBox]::Show("Click 'Proceed to Configuration Options' first to load machines from Site DB.", "Missing", "OK", "Warning") | Out-Null; return
     }
 
     $installerUser = $controls['TxtUsername'].Text.Trim()
@@ -1134,7 +1135,7 @@ $controls['BtnConfigure'].Add_Click({
     }
 
     $Script:AutoState = Get-CurrentState
-    $Script:AutoState['CNCMachines']           = $Global:FetchedMachines
+    $Script:AutoState['CNCMachines']           = $fetchedMachines
     $Script:AutoState['DOCMachineAssignments'] = $docMachineAssignments
 
     $apcPwd = New-Object System.Security.SecureString
