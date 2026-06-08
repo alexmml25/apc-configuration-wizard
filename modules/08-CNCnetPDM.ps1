@@ -299,8 +299,8 @@ function Invoke-CNCnetPDM {
             $m        = $machines[$i]
             $n        = $i + 1
             $dllBase  = [System.IO.Path]::GetFileNameWithoutExtension($m.DLLName) # e.g. citizenm or mitsubishim
-            $srcName  = "${dllBase}_CNC${n}.dll"
-            $dstName  = "${dllBase}_$($m.DeviceNr).dll"
+            $dstName  = "${dllBase}_CNC${n}.dll"          # target: citizenm_CNC1.dll (matches RS232 device nr)
+            $srcName  = "${dllBase}_$($m.DeviceNr).dll"   # source: numeric variant if not yet renamed
             $srcPath  = Join-Path $dllDir $srcName
             $dstPath  = Join-Path $dllDir $dstName
 
