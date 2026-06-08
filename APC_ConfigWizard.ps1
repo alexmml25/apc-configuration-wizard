@@ -669,14 +669,6 @@ function Update-SiteDBFields {
 
 $controls['CmbSiteCode'].Add_SelectionChanged({ Update-SiteDBFields })
 
-$controls['CmbDOCCount'].Add_SelectionChanged({
-    if ($controls['PanelConfigOptions'].Visibility -ne 'Visible') { return }
-    $cnt = if ($controls['CmbDOCCount'].SelectedItem) { [int]$controls['CmbDOCCount'].SelectedItem.Content } else { 3 }
-    $controls['GridDOCRow2'].Visibility = if ($cnt -ge 2) { 'Visible' } else { 'Collapsed' }
-    $controls['GridDOCRow3'].Visibility = if ($cnt -ge 3) { 'Visible' } else { 'Collapsed' }
-    Update-DOCMachineChoices
-})
-
 function Update-DOCMachineChoices {
     # Collect which machine name each active box has selected
     $selected = @{}
@@ -694,6 +686,14 @@ function Update-DOCMachineChoices {
         }
     }
 }
+
+$controls['CmbDOCCount'].Add_SelectionChanged({
+    if ($controls['PanelConfigOptions'].Visibility -ne 'Visible') { return }
+    $cnt = if ($controls['CmbDOCCount'].SelectedItem) { [int]$controls['CmbDOCCount'].SelectedItem.Content } else { 3 }
+    $controls['GridDOCRow2'].Visibility = if ($cnt -ge 2) { 'Visible' } else { 'Collapsed' }
+    $controls['GridDOCRow3'].Visibility = if ($cnt -ge 3) { 'Visible' } else { 'Collapsed' }
+    Update-DOCMachineChoices
+})
 
 foreach ($n in 1,2,3) {
     $controls["CmbDOCMachine$n"].Add_SelectionChanged({ Update-DOCMachineChoices })
