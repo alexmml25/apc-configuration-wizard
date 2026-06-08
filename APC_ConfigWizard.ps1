@@ -226,91 +226,72 @@ $manifest = Get-Manifest
           <TextBlock Text="Configuration Options" FontSize="15" FontWeight="SemiBold"
                      Foreground="#1C2136" Margin="0,0,0,12"/>
 
-          <!-- Fetched machine table -->
+          <!-- Hidden DataGrid (keeps binding working, not shown) -->
+          <DataGrid x:Name="DgMachines" Visibility="Collapsed" AutoGenerateColumns="False" IsReadOnly="True">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Machine Name" Binding="{Binding MachineName}"/>
+              <DataGridTextColumn Header="IP Address"   Binding="{Binding IPAddress}"/>
+              <DataGridTextColumn Header="Port"         Binding="{Binding Port}"/>
+              <DataGridTextColumn Header="CNC Type"     Binding="{Binding AssetFamily}"/>
+              <DataGridTextColumn Header="DLL"          Binding="{Binding DLLName}"/>
+            </DataGrid.Columns>
+          </DataGrid>
+          <TextBlock x:Name="TxtMachineCount" Visibility="Collapsed"/>
+
+          <!-- DOC options (all in one card) -->
           <Border Style="{StaticResource Card}" Margin="0,0,0,14">
             <StackPanel>
-              <TextBlock x:Name="TxtMachineCount" FontWeight="SemiBold" Foreground="#166534" Margin="0,0,0,10"/>
-              <DataGrid x:Name="DgMachines" AutoGenerateColumns="False" IsReadOnly="True"
-                        MaxHeight="160" BorderBrush="#E2E8F0" BorderThickness="1"
-                        GridLinesVisibility="Horizontal" HeadersVisibility="Column"
-                        Background="White" RowBackground="White" AlternatingRowBackground="#F8FAFC"
-                        FontSize="12" FontFamily="Consolas">
-                <DataGrid.Columns>
-                  <DataGridTextColumn Header="Machine Name" Binding="{Binding MachineName}" Width="*"/>
-                  <DataGridTextColumn Header="IP Address"   Binding="{Binding IPAddress}"   Width="130"/>
-                  <DataGridTextColumn Header="Port"         Binding="{Binding Port}"         Width="60"/>
-                  <DataGridTextColumn Header="CNC Type"     Binding="{Binding AssetFamily}"  Width="160"/>
-                  <DataGridTextColumn Header="DLL"          Binding="{Binding DLLName}"      Width="130"/>
-                </DataGrid.Columns>
-              </DataGrid>
-            </StackPanel>
-          </Border>
+              <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,12">DOC Configuration</TextBlock>
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="120"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-          <!-- Options + DOC machine assignments side by side -->
-          <Grid Margin="0,0,0,14">
-            <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="16"/>
-              <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="DOC Instances" Style="{StaticResource Label}"/>
+                <ComboBox  x:Name="CmbDOCCount" Grid.Row="0" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8" HorizontalAlignment="Left" Width="120">
+                  <ComboBoxItem Content="1"/>
+                  <ComboBoxItem Content="2"/>
+                  <ComboBoxItem Content="3" IsSelected="True"/>
+                </ComboBox>
 
-            <!-- DOC count + SINC email -->
-            <Border Grid.Column="0" Style="{StaticResource Card}">
-              <StackPanel>
-                <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,12">Options</TextBlock>
-                <Grid>
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="SINC Email" Style="{StaticResource Label}" VerticalAlignment="Top" Margin="0,4,0,8"/>
+                <TextBox   x:Name="TxtSINCEmail" Grid.Row="1" Grid.Column="1" Style="{StaticResource Input}"
+                           ToolTip="Semicolon-separated email addresses for SINC alerts"/>
+
+                <Grid x:Name="GridDOCRow1" Grid.Row="2" Grid.ColumnSpan="2">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" MinWidth="90"/>
-                    <ColumnDefinition Width="10"/>
-                    <ColumnDefinition Width="*"/>
-                  </Grid.ColumnDefinitions>
-                  <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                  </Grid.RowDefinitions>
-                  <TextBlock Grid.Row="0" Grid.Column="0" Text="DOC Instances" Style="{StaticResource Label}"/>
-                  <ComboBox  x:Name="CmbDOCCount" Grid.Row="0" Grid.Column="2" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8">
-                    <ComboBoxItem Content="1"/>
-                    <ComboBoxItem Content="2"/>
-                    <ComboBoxItem Content="3" IsSelected="True"/>
-                  </ComboBox>
-                  <TextBlock Grid.Row="1" Grid.Column="0" Text="SINC Email" Style="{StaticResource Label}" Margin="0,6,0,0" VerticalAlignment="Top"/>
-                  <TextBox   x:Name="TxtSINCEmail" Grid.Row="1" Grid.Column="2" Style="{StaticResource Input}"
-                             Margin="0,0,0,0" ToolTip="Semicolon-separated email addresses for SINC alerts"/>
-                </Grid>
-              </StackPanel>
-            </Border>
-
-            <!-- DOC machine assignments -->
-            <Border Grid.Column="2" Style="{StaticResource Card}">
-              <StackPanel>
-                <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,6">DOC Machine Assignment</TextBlock>
-                <TextBlock FontSize="12" Foreground="#64748B" Margin="0,0,0,10" TextWrapping="Wrap">
-                  Select the CNC machine for each DOC instance.
-                </TextBlock>
-                <Grid x:Name="GridDOCRow1">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="110"/><ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="120"/><ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
                   <TextBlock Grid.Column="0" Text="DOC Instance 1" Style="{StaticResource Label}" Margin="0,0,0,8"/>
                   <ComboBox x:Name="CmbDOCMachine1" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
                 </Grid>
-                <Grid x:Name="GridDOCRow2" Visibility="Collapsed">
+
+                <Grid x:Name="GridDOCRow2" Grid.Row="3" Grid.ColumnSpan="2" Visibility="Collapsed">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="110"/><ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="120"/><ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
                   <TextBlock Grid.Column="0" Text="DOC Instance 2" Style="{StaticResource Label}" Margin="0,0,0,8"/>
                   <ComboBox x:Name="CmbDOCMachine2" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
                 </Grid>
-                <Grid x:Name="GridDOCRow3" Visibility="Collapsed">
+
+                <Grid x:Name="GridDOCRow3" Grid.Row="4" Grid.ColumnSpan="2" Visibility="Collapsed">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="110"/><ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="120"/><ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
                   <TextBlock Grid.Column="0" Text="DOC Instance 3" Style="{StaticResource Label}" Margin="0,0,0,8"/>
                   <ComboBox x:Name="CmbDOCMachine3" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
                 </Grid>
-              </StackPanel>
-            </Border>
-          </Grid>
+              </Grid>
+            </StackPanel>
+          </Border>
 
           <!-- Configure button -->
           <Button x:Name="BtnConfigure" HorizontalAlignment="Left"
