@@ -199,16 +199,22 @@ $manifest = Get-Manifest
                   In memory only  -  never written to disk or logs.
                 </TextBlock>
                 <Grid>
-                  <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="90"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="110"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                   </Grid.RowDefinitions>
-                  <TextBlock Grid.Row="0" Grid.Column="0" Text="apcuser" Style="{StaticResource Label}"/>
-                  <PasswordBox x:Name="PwdAPCUser" Grid.Row="0" Grid.Column="2" Style="{StaticResource Pwd}"/>
-                  <TextBlock Grid.Row="1" Grid.Column="0" Text="MedtronicSU" Style="{StaticResource Label}"/>
-                  <PasswordBox x:Name="PwdMedtronicSU" Grid.Row="1" Grid.Column="2" Style="{StaticResource Pwd}"/>
-                  <TextBlock Grid.Row="2" Grid.Column="0" Text="deviceWise" Style="{StaticResource Label}" Margin="0,0,0,0"/>
-                  <PasswordBox x:Name="PwdDeviceWise" Grid.Row="2" Grid.Column="2" Style="{StaticResource Pwd}" Margin="0,0,0,0"/>
+                  <TextBlock Grid.Row="0" Grid.Column="0" Text="apcuser (local)" Style="{StaticResource Label}"
+                             ToolTip="Password to set when creating the apcuser role on this VM's local TimescaleDB (Step 2). Different from the Site DB credential above."/>
+                  <PasswordBox x:Name="PwdAPCUser" Grid.Row="0" Grid.Column="2" Style="{StaticResource Pwd}"
+                               ToolTip="Password for the local TimescaleDB apcuser role (Step 2)"/>
+                  <TextBlock Grid.Row="1" Grid.Column="0" Text="MedtronicSU" Style="{StaticResource Label}"
+                             ToolTip="Password for the MedtronicSU OPC UA user created in deviceWise Gateway (Step 4)"/>
+                  <PasswordBox x:Name="PwdMedtronicSU" Grid.Row="1" Grid.Column="2" Style="{StaticResource Pwd}"
+                               ToolTip="Password for the MedtronicSU OPC UA user (Step 4)"/>
+                  <TextBlock Grid.Row="2" Grid.Column="0" Text="deviceWise admin" Style="{StaticResource Label}" Margin="0,0,0,0"
+                             ToolTip="Admin password for the deviceWise Gateway web interface (used in Steps 4-7 to call the REST API)"/>
+                  <PasswordBox x:Name="PwdDeviceWise" Grid.Row="2" Grid.Column="2" Style="{StaticResource Pwd}" Margin="0,0,0,0"
+                               ToolTip="deviceWise Gateway admin password (Steps 4-7)"/>
                 </Grid>
               </StackPanel>
             </Border>
@@ -237,6 +243,10 @@ $manifest = Get-Manifest
           </Grid>
 
           <!-- Fetch Machines button -->
+          <TextBlock FontSize="12" Foreground="#64748B" Margin="0,0,0,6" TextWrapping="Wrap">
+            Machine Name, IP, and Port are loaded automatically from the Site DB.
+            Click <Bold>Fetch Machines</Bold> to preview the list, then click Configure.
+          </TextBlock>
           <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
             <Button x:Name="BtnFetchMachines" Style="{StaticResource SecondaryBtn}"
                     Padding="20,10" FontSize="13" Content="Fetch Machines from Site DB"/>
@@ -268,13 +278,23 @@ $manifest = Get-Manifest
           <!-- Configure button -->
           <Button x:Name="BtnConfigure" HorizontalAlignment="Left"
                   Padding="28,12" FontSize="14" FontWeight="SemiBold"
-                  Cursor="Hand" BorderThickness="0" Background="#4361EE" Foreground="White" IsEnabled="False">
+                  Cursor="Hand" BorderThickness="0" Background="#4361EE" Foreground="White" IsEnabled="False"
+                  ToolTip="Fetch machines from Site DB first to enable this button">
             <Button.Template>
               <ControlTemplate TargetType="Button">
-                <Border Background="{TemplateBinding Background}" CornerRadius="7"
-                        Padding="{TemplateBinding Padding}" Opacity="{TemplateBinding Opacity}">
+                <Border x:Name="BtnBd" Background="{TemplateBinding Background}" CornerRadius="7"
+                        Padding="{TemplateBinding Padding}">
                   <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsEnabled" Value="False">
+                    <Setter TargetName="BtnBd" Property="Background" Value="#94A3B8"/>
+                    <Setter TargetName="BtnBd" Property="Opacity"    Value="0.7"/>
+                  </Trigger>
+                  <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="BtnBd" Property="Background" Value="#3451D1"/>
+                  </Trigger>
+                </ControlTemplate.Triggers>
               </ControlTemplate>
             </Button.Template>
             &gt;&gt;  Configure APC System
