@@ -954,6 +954,7 @@ $controls['BtnFetchMachines'].Add_Click({
     })
     $handle   = $ps.BeginInvoke()
     $capSync  = $fetchSync; $capPS = $ps; $capRS = $rs; $capHandle = $handle
+    $capControls = $controls
 
     $fetchTimer = New-Object System.Windows.Threading.DispatcherTimer
     $fetchTimer.Interval = [TimeSpan]::FromMilliseconds(300)
@@ -963,29 +964,29 @@ $controls['BtnFetchMachines'].Add_Click({
         try { $capPS.EndInvoke($capHandle) } catch {}
         $capRS.Close()
 
-        $controls['BtnFetchMachines'].IsEnabled = $true
+        $capControls['BtnFetchMachines'].IsEnabled = $true
         if ($capSync.Error) {
-            $controls['TxtFetchStatus'].Text       = "Error: $($capSync.Error)"
-            $controls['TxtFetchStatus'].Foreground = '#EF4444'
+            $capControls['TxtFetchStatus'].Text       = "Error: $($capSync.Error)"
+            $capControls['TxtFetchStatus'].Foreground = '#EF4444'
             [System.Windows.MessageBox]::Show("Site DB query failed:`n$($capSync.Error)", "Fetch Error", "OK", "Error") | Out-Null
             return
         }
 
         $machineList = $capSync.Machines
         if (-not $machineList -or $machineList.Count -eq 0) {
-            $controls['TxtFetchStatus'].Text       = "No machines found for site $($controls['CmbSiteCode'].SelectedItem.Content)"
-            $controls['TxtFetchStatus'].Foreground = '#D97706'
+            $capControls['TxtFetchStatus'].Text       = "No machines found for site $($capControls['CmbSiteCode'].SelectedItem.Content)"
+            $capControls['TxtFetchStatus'].Foreground = '#D97706'
             return
         }
 
         # Populate DataGrid
         $col = New-Object System.Collections.ObjectModel.ObservableCollection[object]
         foreach ($m in $machineList) { $col.Add($m) }
-        $controls['DgMachines'].ItemsSource         = $col
-        $controls['PanelMachines'].Visibility        = 'Visible'
-        $controls['TxtFetchStatus'].Text             = "$($machineList.Count) machine(s) found  -  review above, then click Configure."
-        $controls['TxtFetchStatus'].Foreground       = '#166534'
-        $controls['BtnConfigure'].IsEnabled          = $true
+        $capControls['DgMachines'].ItemsSource         = $col
+        $capControls['PanelMachines'].Visibility        = 'Visible'
+        $capControls['TxtFetchStatus'].Text             = "$($machineList.Count) machine(s) found  -  review above, then click Configure."
+        $capControls['TxtFetchStatus'].Foreground       = '#166534'
+        $capControls['BtnConfigure'].IsEnabled          = $true
 
         # Store fetched machines for use during configuration
         $Script:FetchedMachines = $machineList
