@@ -885,9 +885,10 @@ function Start-ModuleInWindow {
 
 # ---- Auto-run chain ---------------------------------------------------------
 
-$Script:AutoIndex  = 0
-$Script:AutoState  = $null
-$Script:StepStartTime = $null
+$Script:AutoIndex      = 0
+$Script:AutoState      = $null
+$Script:StepStartTime  = $null
+$Script:FetchedMachines = @()
 
 function Run-NextAutoModule {
     if ($Script:AutoIndex -ge $Script:StepDefs.Count) {
