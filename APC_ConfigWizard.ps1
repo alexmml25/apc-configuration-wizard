@@ -674,7 +674,30 @@ $controls['CmbDOCCount'].Add_SelectionChanged({
     $cnt = if ($controls['CmbDOCCount'].SelectedItem) { [int]$controls['CmbDOCCount'].SelectedItem.Content } else { 3 }
     $controls['GridDOCRow2'].Visibility = if ($cnt -ge 2) { 'Visible' } else { 'Collapsed' }
     $controls['GridDOCRow3'].Visibility = if ($cnt -ge 3) { 'Visible' } else { 'Collapsed' }
+    Update-DOCMachineChoices
 })
+
+function Update-DOCMachineChoices {
+    # Collect which machine name each active box has selected
+    $selected = @{}
+    foreach ($n in 1,2,3) {
+        $cmb = $controls["CmbDOCMachine$n"]
+        if ($cmb -and $cmb.SelectedItem) { $selected[$n] = $cmb.SelectedItem.Content }
+    }
+    # For each box: enable all items, then disable those chosen by the OTHER boxes
+    foreach ($n in 1,2,3) {
+        $cmb = $controls["CmbDOCMachine$n"]
+        if (-not $cmb) { continue }
+        $othersChosen = $selected.Keys | Where-Object { $_ -ne $n } | ForEach-Object { $selected[$_] }
+        foreach ($item in $cmb.Items) {
+            $item.IsEnabled = $item.Content -notin $othersChosen
+        }
+    }
+}
+
+foreach ($n in 1,2,3) {
+    $controls["CmbDOCMachine$n"].Add_SelectionChanged({ Update-DOCMachineChoices })
+}
 $controls['CmbSiteCode'].SelectedIndex = 0
 Update-SiteDBFields
 
@@ -1027,7 +1050,7 @@ $controls['BtnProceed'].Add_Click({
         $capControls['TxtProceedStatus'].Text    = "$($machineList.Count) machine(s) - scroll down to configure"
         $capControls['TxtProceedStatus'].Foreground = '#166534'
 
-        # Populate DOC machine dropdowns
+        # Populate DOC machine dropdowns; default each to a different machine
         foreach ($n in 1,2,3) {
             $cmb = $capControls["CmbDOCMachine$n"]
             $cmb.Items.Clear()
@@ -1036,8 +1059,10 @@ $controls['BtnProceed'].Add_Click({
                 $item.Content = $m.MachineName
                 $cmb.Items.Add($item) | Out-Null
             }
-            if ($cmb.Items.Count -gt 0) { $cmb.SelectedIndex = 0 }
+            $defaultIdx = [math]::Min($n - 1, $cmb.Items.Count - 1)
+            if ($cmb.Items.Count -gt 0) { $cmb.SelectedIndex = $defaultIdx }
         }
+        Update-DOCMachineChoices
 
         # Show Configuration Options panel and sync DOC row visibility
         $capControls['PanelConfigOptions'].Visibility = 'Visible'
