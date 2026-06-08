@@ -1017,7 +1017,8 @@ $controls['BtnProceed'].Add_Click({
     })
     $handle   = $ps.BeginInvoke()
     $capSync  = $fetchSync; $capPS = $ps; $capRS = $rs; $capHandle = $handle
-    $capControls = $controls
+    $capControls  = $controls
+    $capUpdateDOC = ${function:Update-DOCMachineChoices}
 
     $fetchTimer = New-Object System.Windows.Threading.DispatcherTimer
     $fetchTimer.Interval = [TimeSpan]::FromMilliseconds(300)
@@ -1062,7 +1063,7 @@ $controls['BtnProceed'].Add_Click({
             $defaultIdx = [math]::Min($n - 1, $cmb.Items.Count - 1)
             if ($cmb.Items.Count -gt 0) { $cmb.SelectedIndex = $defaultIdx }
         }
-        Update-DOCMachineChoices
+        & $capUpdateDOC
 
         # Show Configuration Options panel and sync DOC row visibility
         $capControls['PanelConfigOptions'].Visibility = 'Visible'
