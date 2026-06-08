@@ -21,7 +21,19 @@ function Invoke-CNCnetPDM {
 
     Write-Log STEP "CNCnetPDM Configuration"
 
-    $machines  = $State['CNCMachines']
+    $allMachines    = $State['CNCMachines']
+    $docAssignments = $State['DOCMachineAssignments']
+    $docCount       = [int]$State['DOCCount']
+
+    # Build the ordered list of machines for CNC1..CNCn (DOC-assigned only, not all Site DB machines)
+    $machines = @()
+    for ($i = 0; $i -lt $docCount; $i++) {
+        $name = if ($docAssignments -and $i -lt $docAssignments.Count) { $docAssignments[$i] } else { '' }
+        $m = $allMachines | Where-Object { $_.MachineName -eq $name } | Select-Object -First 1
+        if (-not $m -and $allMachines.Count -gt $i) { $m = $allMachines[$i] }
+        if ($m) { $machines += $m }
+    }
+
     $cncPdm    = $Manifest.CNCnetPDM
     $defaults  = $cncPdm.Defaults
 
