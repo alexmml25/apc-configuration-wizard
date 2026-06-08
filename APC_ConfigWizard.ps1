@@ -888,7 +888,7 @@ function Start-ModuleInWindow {
 $Script:AutoIndex      = 0
 $Script:AutoState      = $null
 $Script:StepStartTime  = $null
-$Script:FetchedMachines = @()
+$Global:FetchedMachines = @()
 
 function Run-NextAutoModule {
     if ($Script:AutoIndex -ge $Script:StepDefs.Count) {
@@ -1098,7 +1098,7 @@ $controls['BtnProceed'].Add_Click({
         $capControls['MainScroller'].ScrollToEnd()
 
         # Store fetched machines for use during configuration
-        $Script:FetchedMachines = $machineList
+        $Global:FetchedMachines = $machineList
     }.GetNewClosure())
     $fetchTimer.Start()
 })
@@ -1110,7 +1110,7 @@ $controls['BtnConfigure'].Add_Click({
     if (-not $siteCode) {
         [System.Windows.MessageBox]::Show("Select a Site.", "Missing", "OK", "Warning") | Out-Null; return
     }
-    if (-not $Script:FetchedMachines -or $Script:FetchedMachines.Count -eq 0) {
+    if (-not $Global:FetchedMachines -or $Global:FetchedMachines.Count -eq 0) {
         [System.Windows.MessageBox]::Show("Fetch machines from Site DB first.", "Missing", "OK", "Warning") | Out-Null; return
     }
 
@@ -1134,7 +1134,7 @@ $controls['BtnConfigure'].Add_Click({
     }
 
     $Script:AutoState = Get-CurrentState
-    $Script:AutoState['CNCMachines']           = $Script:FetchedMachines
+    $Script:AutoState['CNCMachines']           = $Global:FetchedMachines
     $Script:AutoState['DOCMachineAssignments'] = $docMachineAssignments
 
     $apcPwd = New-Object System.Security.SecureString
