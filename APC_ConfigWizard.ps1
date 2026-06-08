@@ -183,7 +183,70 @@ $manifest = Get-Manifest
             </Border>
           </Grid>
 
-          <!-- Row 2: Passwords + Config Options -->
+          <!-- Row 2: Component Passwords (full width) -->
+          <Border Margin="0,0,0,14" Background="#FFFBEB" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="8" Padding="16">
+            <StackPanel>
+              <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,4">Component Passwords</TextBlock>
+              <TextBlock FontSize="11" Foreground="#92400E" TextWrapping="Wrap" Margin="0,0,0,12">
+                In memory only  -  never written to disk or logs.
+              </TextBlock>
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" MinWidth="110"/>
+                  <ColumnDefinition Width="10"/>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="32"/>
+                  <ColumnDefinition Width="Auto" MinWidth="110"/>
+                  <ColumnDefinition Width="10"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="apcuser (local)" Style="{StaticResource Label}"
+                           ToolTip="Password for the local TimescaleDB apcuser role created in Step 2."/>
+                <PasswordBox x:Name="PwdAPCUser" Grid.Column="2" Style="{StaticResource Pwd}"
+                             ToolTip="Password for the local TimescaleDB apcuser role (Step 2)"/>
+                <TextBlock Grid.Column="4" Text="MedtronicSU" Style="{StaticResource Label}"
+                           ToolTip="Password for the MedtronicSU OPC UA user created in deviceWise Gateway (Step 4)"/>
+                <PasswordBox x:Name="PwdMedtronicSU" Grid.Column="6" Style="{StaticResource Pwd}"
+                             ToolTip="Password for the MedtronicSU OPC UA user (Step 4)"/>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <!-- Proceed button -->
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,24">
+            <Button x:Name="BtnProceed" Style="{StaticResource PrimaryBtn}"
+                    Padding="20,10" FontSize="13" Content="Proceed to Configuration Options  >>"/>
+            <TextBlock x:Name="TxtProceedStatus" VerticalAlignment="Center" Margin="12,0,0,0"
+                       FontSize="12" Foreground="#64748B"/>
+          </StackPanel>
+        </StackPanel>
+
+        <!-- ===== CONFIGURATION OPTIONS (collapsed until proceed succeeds) ===== -->
+        <StackPanel x:Name="PanelConfigOptions" Visibility="Collapsed" Margin="0,0,0,0">
+          <TextBlock Text="Configuration Options" FontSize="15" FontWeight="SemiBold"
+                     Foreground="#1C2136" Margin="0,0,0,12"/>
+
+          <!-- Fetched machine table -->
+          <Border Style="{StaticResource Card}" Margin="0,0,0,14">
+            <StackPanel>
+              <TextBlock x:Name="TxtMachineCount" FontWeight="SemiBold" Foreground="#166534" Margin="0,0,0,10"/>
+              <DataGrid x:Name="DgMachines" AutoGenerateColumns="False" IsReadOnly="True"
+                        MaxHeight="160" BorderBrush="#E2E8F0" BorderThickness="1"
+                        GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                        Background="White" RowBackground="White" AlternatingRowBackground="#F8FAFC"
+                        FontSize="12" FontFamily="Consolas">
+                <DataGrid.Columns>
+                  <DataGridTextColumn Header="Machine Name" Binding="{Binding MachineName}" Width="*"/>
+                  <DataGridTextColumn Header="IP Address"   Binding="{Binding IPAddress}"   Width="130"/>
+                  <DataGridTextColumn Header="Port"         Binding="{Binding Port}"         Width="60"/>
+                  <DataGridTextColumn Header="CNC Type"     Binding="{Binding AssetFamily}"  Width="160"/>
+                  <DataGridTextColumn Header="DLL"          Binding="{Binding DLLName}"      Width="130"/>
+                </DataGrid.Columns>
+              </DataGrid>
+            </StackPanel>
+          </Border>
+
+          <!-- Options + DOC machine assignments side by side -->
           <Grid Margin="0,0,0,14">
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="*"/>
@@ -191,36 +254,16 @@ $manifest = Get-Manifest
               <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Installation Passwords -->
-            <Border Grid.Column="0" Background="#FFFBEB" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="8" Padding="16">
+            <!-- DOC count + SINC email -->
+            <Border Grid.Column="0" Style="{StaticResource Card}">
               <StackPanel>
-                <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,4">Component Passwords</TextBlock>
-                <TextBlock FontSize="11" Foreground="#92400E" TextWrapping="Wrap" Margin="0,0,0,12">
-                  In memory only  -  never written to disk or logs.
-                </TextBlock>
+                <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,12">Options</TextBlock>
                 <Grid>
-                  <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="110"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                  <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
-                  </Grid.RowDefinitions>
-                  <TextBlock Grid.Row="0" Grid.Column="0" Text="apcuser (local)" Style="{StaticResource Label}"
-                             ToolTip="Password to set when creating the apcuser role on this VM's local TimescaleDB (Step 2). Different from the Site DB credential above."/>
-                  <PasswordBox x:Name="PwdAPCUser" Grid.Row="0" Grid.Column="2" Style="{StaticResource Pwd}"
-                               ToolTip="Password for the local TimescaleDB apcuser role (Step 2)"/>
-                  <TextBlock Grid.Row="1" Grid.Column="0" Text="MedtronicSU" Style="{StaticResource Label}"
-                             ToolTip="Password for the MedtronicSU OPC UA user created in deviceWise Gateway (Step 4)"/>
-                  <PasswordBox x:Name="PwdMedtronicSU" Grid.Row="1" Grid.Column="2" Style="{StaticResource Pwd}"
-                               ToolTip="Password for the MedtronicSU OPC UA user (Step 4)"/>
-                </Grid>
-              </StackPanel>
-            </Border>
-
-            <!-- Config Options -->
-            <Border Grid.Column="2" Style="{StaticResource Card}">
-              <StackPanel>
-                <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,12">Configuration Options</TextBlock>
-                <Grid>
-                  <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="90"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" MinWidth="90"/>
+                    <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
                   <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
                   </Grid.RowDefinitions>
@@ -236,75 +279,44 @@ $manifest = Get-Manifest
                 </Grid>
               </StackPanel>
             </Border>
+
+            <!-- DOC machine assignments -->
+            <Border Grid.Column="2" Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,6">DOC Machine Assignment</TextBlock>
+                <TextBlock FontSize="12" Foreground="#64748B" Margin="0,0,0,10" TextWrapping="Wrap">
+                  Select the CNC machine for each DOC instance.
+                </TextBlock>
+                <Grid x:Name="GridDOCRow1">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110"/><ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="DOC Instance 1" Style="{StaticResource Label}" Margin="0,0,0,8"/>
+                  <ComboBox x:Name="CmbDOCMachine1" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
+                </Grid>
+                <Grid x:Name="GridDOCRow2" Visibility="Collapsed">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110"/><ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="DOC Instance 2" Style="{StaticResource Label}" Margin="0,0,0,8"/>
+                  <ComboBox x:Name="CmbDOCMachine2" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
+                </Grid>
+                <Grid x:Name="GridDOCRow3" Visibility="Collapsed">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110"/><ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="DOC Instance 3" Style="{StaticResource Label}" Margin="0,0,0,8"/>
+                  <ComboBox x:Name="CmbDOCMachine3" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
+                </Grid>
+              </StackPanel>
+            </Border>
           </Grid>
-
-          <!-- Fetch Machines button -->
-          <TextBlock FontSize="12" Foreground="#64748B" Margin="0,0,0,6" TextWrapping="Wrap">
-            Machine Name, IP, and Port are loaded automatically from the Site DB.
-            Click <Bold>Fetch Machines</Bold> to preview the list, then click Configure.
-          </TextBlock>
-          <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-            <Button x:Name="BtnFetchMachines" Style="{StaticResource SecondaryBtn}"
-                    Padding="20,10" FontSize="13" Content="Fetch Machines from Site DB"/>
-            <TextBlock x:Name="TxtFetchStatus" VerticalAlignment="Center" Margin="12,0,0,0"
-                       FontSize="12" Foreground="#64748B"/>
-          </StackPanel>
-
-          <!-- Machine preview (collapsed until fetch succeeds) -->
-          <Border x:Name="PanelMachines" Style="{StaticResource Card}" Margin="0,0,0,14" Visibility="Collapsed">
-            <StackPanel>
-              <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,10">CNC Machines from Site DB</TextBlock>
-              <DataGrid x:Name="DgMachines" AutoGenerateColumns="False" IsReadOnly="True"
-                        MaxHeight="160" BorderBrush="#E2E8F0" BorderThickness="1"
-                        GridLinesVisibility="Horizontal" HeadersVisibility="Column"
-                        Background="White" RowBackground="White" AlternatingRowBackground="#F8FAFC"
-                        FontSize="12" FontFamily="Consolas">
-                <DataGrid.Columns>
-                  <DataGridTextColumn Header="Machine Name" Binding="{Binding MachineName}" Width="*"/>
-                  <DataGridTextColumn Header="IP Address"   Binding="{Binding IPAddress}"   Width="130"/>
-                  <DataGridTextColumn Header="Port"         Binding="{Binding Port}"         Width="60"/>
-                  <DataGridTextColumn Header="CNC Type"     Binding="{Binding AssetFamily}"  Width="160"/>
-                  <DataGridTextColumn Header="DLL"          Binding="{Binding DLLName}"      Width="130"/>
-                  <DataGridTextColumn Header="Device Nr"    Binding="{Binding DeviceNr}"     Width="80"/>
-                </DataGrid.Columns>
-              </DataGrid>
-            </StackPanel>
-          </Border>
-
-          <!-- DOC Instance Machine Assignment (appears after fetch) -->
-          <Border x:Name="PanelDOCAssign" Style="{StaticResource Card}" Margin="0,0,0,14" Visibility="Collapsed">
-            <StackPanel>
-              <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,6">DOC Instance - Machine Assignment</TextBlock>
-              <TextBlock FontSize="12" Foreground="#64748B" Margin="0,0,0,10" TextWrapping="Wrap">Select the CNC machine configured for each DOC instance.</TextBlock>
-              <Grid x:Name="GridDOCRow1">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="120"/><ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="DOC Instance 1" Style="{StaticResource Label}" Margin="0,0,0,8"/>
-                <ComboBox x:Name="CmbDOCMachine1" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
-              </Grid>
-              <Grid x:Name="GridDOCRow2" Visibility="Collapsed">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="120"/><ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="DOC Instance 2" Style="{StaticResource Label}" Margin="0,0,0,8"/>
-                <ComboBox x:Name="CmbDOCMachine2" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
-              </Grid>
-              <Grid x:Name="GridDOCRow3" Visibility="Collapsed">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="120"/><ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="DOC Instance 3" Style="{StaticResource Label}" Margin="0,0,0,8"/>
-                <ComboBox x:Name="CmbDOCMachine3" Grid.Column="1" Padding="6,5" BorderBrush="#E2E8F0" Margin="0,0,0,8"/>
-              </Grid>
-            </StackPanel>
-          </Border>
 
           <!-- Configure button -->
           <Button x:Name="BtnConfigure" HorizontalAlignment="Left"
                   Padding="28,12" FontSize="14" FontWeight="SemiBold"
                   Cursor="Hand" BorderThickness="0" Background="#4361EE" Foreground="White" IsEnabled="False"
-                  ToolTip="Fetch machines from Site DB first to enable this button">
+                  ToolTip="Complete the options above, then click to begin configuration">
             <Button.Template>
               <ControlTemplate TargetType="Button">
                 <Border x:Name="BtnBd" Background="{TemplateBinding Background}" CornerRadius="7"
@@ -666,7 +678,7 @@ function Update-SiteDBFields {
 $controls['CmbSiteCode'].Add_SelectionChanged({ Update-SiteDBFields })
 
 $controls['CmbDOCCount'].Add_SelectionChanged({
-    if ($controls['PanelDOCAssign'].Visibility -ne 'Visible') { return }
+    if ($controls['PanelConfigOptions'].Visibility -ne 'Visible') { return }
     $cnt = if ($controls['CmbDOCCount'].SelectedItem) { [int]$controls['CmbDOCCount'].SelectedItem.Content } else { 3 }
     $controls['GridDOCRow2'].Visibility = if ($cnt -ge 2) { 'Visible' } else { 'Collapsed' }
     $controls['GridDOCRow3'].Visibility = if ($cnt -ge 3) { 'Visible' } else { 'Collapsed' }
@@ -894,9 +906,9 @@ function Run-NextAutoModule {
         }
 }
 
-# ---- Fetch Machines ---------------------------------------------------------
+# ---- Proceed button ---------------------------------------------------------
 
-$controls['BtnFetchMachines'].Add_Click({
+$controls['BtnProceed'].Add_Click({
     $siteCode  = if ($controls['CmbSiteCode'].SelectedItem) { $controls['CmbSiteCode'].SelectedItem.Content } else { '' }
     $dbHost    = $controls['TxtSiteDBHost'].Text.Trim()
     $dbUser    = $controls['TxtSiteDBUser'].Text.Trim()
@@ -907,9 +919,9 @@ $controls['BtnFetchMachines'].Add_Click({
         return
     }
 
-    $controls['BtnFetchMachines'].IsEnabled = $false
-    $controls['TxtFetchStatus'].Text        = 'Querying Site DB...'
-    $controls['TxtFetchStatus'].Foreground  = '#4361EE'
+    $controls['BtnProceed'].IsEnabled         = $false
+    $controls['TxtProceedStatus'].Text        = 'Connecting to Site DB...'
+    $controls['TxtProceedStatus'].Foreground  = '#4361EE'
 
     $fetchSync = [hashtable]::Synchronized(@{
         Done     = $false
@@ -1000,31 +1012,30 @@ $controls['BtnFetchMachines'].Add_Click({
         try { $capPS.EndInvoke($capHandle) } catch {}
         $capRS.Close()
 
-        $capControls['BtnFetchMachines'].IsEnabled = $true
+        $capControls['BtnProceed'].IsEnabled = $true
         if ($capSync.Error) {
-            $capControls['TxtFetchStatus'].Text       = "Error: $($capSync.Error)"
-            $capControls['TxtFetchStatus'].Foreground = '#EF4444'
+            $capControls['TxtProceedStatus'].Text       = "Error: $($capSync.Error)"
+            $capControls['TxtProceedStatus'].Foreground = '#EF4444'
             [System.Windows.MessageBox]::Show("Site DB query failed:`n$($capSync.Error)", "Fetch Error", "OK", "Error") | Out-Null
             return
         }
 
         $machineList = $capSync.Machines
         if (-not $machineList -or $machineList.Count -eq 0) {
-            $capControls['TxtFetchStatus'].Text       = "No machines found for site $($capControls['CmbSiteCode'].SelectedItem.Content)"
-            $capControls['TxtFetchStatus'].Foreground = '#D97706'
+            $capControls['TxtProceedStatus'].Text       = "No machines found for site $($capControls['CmbSiteCode'].SelectedItem.Content)"
+            $capControls['TxtProceedStatus'].Foreground = '#D97706'
             return
         }
 
         # Populate DataGrid
         $col = New-Object System.Collections.ObjectModel.ObservableCollection[object]
         foreach ($m in $machineList) { $col.Add($m) }
-        $capControls['DgMachines'].ItemsSource         = $col
-        $capControls['PanelMachines'].Visibility        = 'Visible'
-        $capControls['TxtFetchStatus'].Text             = "$($machineList.Count) machine(s) found  -  review above, then click Configure."
-        $capControls['TxtFetchStatus'].Foreground       = '#166534'
-        $capControls['BtnConfigure'].IsEnabled          = $true
+        $capControls['DgMachines'].ItemsSource   = $col
+        $capControls['TxtMachineCount'].Text     = "$($machineList.Count) machine(s) loaded from Site DB"
+        $capControls['TxtProceedStatus'].Text    = "$($machineList.Count) machine(s) - scroll down to configure"
+        $capControls['TxtProceedStatus'].Foreground = '#166534'
 
-        # Populate DOC machine dropdowns and reveal assignment panel
+        # Populate DOC machine dropdowns
         foreach ($n in 1,2,3) {
             $cmb = $capControls["CmbDOCMachine$n"]
             $cmb.Items.Clear()
@@ -1035,10 +1046,14 @@ $controls['BtnFetchMachines'].Add_Click({
             }
             if ($cmb.Items.Count -gt 0) { $cmb.SelectedIndex = 0 }
         }
-        $capControls['PanelDOCAssign'].Visibility = 'Visible'
+
+        # Show Configuration Options panel and sync DOC row visibility
+        $capControls['PanelConfigOptions'].Visibility = 'Visible'
         $docCnt = if ($capControls['CmbDOCCount'].SelectedItem) { [int]$capControls['CmbDOCCount'].SelectedItem.Content } else { 3 }
         $capControls['GridDOCRow2'].Visibility = if ($docCnt -ge 2) { 'Visible' } else { 'Collapsed' }
         $capControls['GridDOCRow3'].Visibility = if ($docCnt -ge 3) { 'Visible' } else { 'Collapsed' }
+        $capControls['BtnConfigure'].IsEnabled = $true
+        $capControls['MainScroller'].ScrollToEnd()
 
         # Store fetched machines for use during configuration
         $Script:FetchedMachines = $machineList
