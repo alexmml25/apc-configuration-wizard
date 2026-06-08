@@ -182,32 +182,28 @@ function Invoke-CNCnetPDM {
         Add-Result -Phase CNCnetPDM -Check "License key written to INI" -Status PASS
     }
 
-    # RS232 entries  -  remove any existing Line{N} entries for our machines first
+    # RS232 entries  -  remove ALL existing numeric-key entries inside [RS232] then rewrite
     $iniList = [System.Collections.Generic.List[string]]::new()
     $iniList.AddRange($iniLines)
 
-    # Remove existing Line entries that belong to our IP addresses (clean slate per-machine)
-    $machineIPs = $machines | ForEach-Object { $_.IPAddress }
-    $toRemove   = @()
+    $inRS232 = $false
+    $toRemove = @()
     for ($idx = 0; $idx -lt $iniList.Count; $idx++) {
         $l = $iniList[$idx]
-        if ($l -match '^Line\d+\s*=') {
-            foreach ($ip in $machineIPs) {
-                if ($l -contains $ip) { $toRemove += $idx; break }
-            }
-        }
+        if ($l.Trim() -eq '[RS232]') { $inRS232 = $true; continue }
+        if ($inRS232 -and $l.Trim() -match '^\[') { $inRS232 = $false }
+        if ($inRS232 -and $l.Trim() -match '^\d+\s*=') { $toRemove += $idx }
     }
     for ($r = $toRemove.Count - 1; $r -ge 0; $r--) { $iniList.RemoveAt($toRemove[$r]) }
-
     $iniLines = $iniList.ToArray()
 
-    # Find or create [RS232] section end insertion point
+    # Find insertion point (right after [RS232] header line)
     $rs232SectionEnd = -1
     $inRS232 = $false
     for ($idx = 0; $idx -lt $iniLines.Count; $idx++) {
         $l = $iniLines[$idx].Trim()
         if ($l -eq '[RS232]') { $inRS232 = $true; $rs232SectionEnd = $idx + 1; continue }
-        if ($inRS232 -and $l -match '^\[' -and $l -ne '[RS232]') { break }
+        if ($inRS232 -and $l -match '^\[') { break }
         if ($inRS232) { $rs232SectionEnd = $idx + 1 }
     }
 
@@ -216,9 +212,8 @@ function Invoke-CNCnetPDM {
     for ($i = 0; $i -lt $machines.Count; $i++) {
         $m       = $machines[$i]
         $lineNum = $i + 1
-        # Line format: {DevNr}; {Baud}; {Databits}; {Parity}; {StopBits}; {Name}; {IP}; {Port}; 0; localhost; {Idx}; none; none; none; 0; {DLL}
-        $lineVal = "$($m.DeviceNr); $($d.Baud); $($d.Databits); $($d.Parity); $($d.StopBits); $($m.MachineName); $($m.IPAddress); $($d.Port); $($d.Method); localhost; $lineNum; none; none; none; 0; $($m.DLLName)"
-        $entry   = "Line${lineNum}=$lineVal"
+        # Format matches existing: {N} = CNC{N};Baud;Databits;Parity;StopBits;MachineName;IP;Port;Method;localhost;Idx;0;none;none;0;DLL
+        $entry = "$lineNum = CNC${lineNum};$($d.Baud);$($d.Databits);$($d.Parity);$($d.StopBits);$($m.MachineName);$($m.IPAddress);$($d.Port);$($d.Method);localhost;$lineNum;0;none;none;0;$($m.DLLName)"
 
         $iniList2 = [System.Collections.Generic.List[string]]::new()
         $iniList2.AddRange($iniLines)
@@ -245,15 +240,16 @@ function Invoke-CNCnetPDM {
     } else {
         $melLines = [System.IO.File]::ReadAllLines($melcfgPath)
 
-        # Remove existing TCP{N} entries for our IPs
+        # Remove ALL existing TCP{N} entries from [HOSTS] then rewrite
         $melList = [System.Collections.Generic.List[string]]::new()
         $melList.AddRange($melLines)
+        $inHosts2 = $false
         $toRemove2 = @()
         for ($idx = 0; $idx -lt $melList.Count; $idx++) {
             $l = $melList[$idx]
-            if ($l -match '^TCP\d+\s*=') {
-                foreach ($ip in $machineIPs) { if ($l -contains $ip) { $toRemove2 += $idx; break } }
-            }
+            if ($l.Trim() -eq '[HOSTS]') { $inHosts2 = $true; continue }
+            if ($inHosts2 -and $l.Trim() -match '^\[') { $inHosts2 = $false }
+            if ($inHosts2 -and $l.Trim() -match '^TCP\d+\s*=') { $toRemove2 += $idx }
         }
         for ($r = $toRemove2.Count - 1; $r -ge 0; $r--) { $melList.RemoveAt($toRemove2[$r]) }
         $melLines = $melList.ToArray()
@@ -272,7 +268,7 @@ function Invoke-CNCnetPDM {
         for ($i = 0; $i -lt $machines.Count; $i++) {
             $m   = $machines[$i]
             $n   = $i + 1
-            $entry = "TCP${n}=$($m.IPAddress),$($m.Port)"
+            $entry = "TCP${n} = $($m.IPAddress),$($m.Port)"
 
             $mel2 = [System.Collections.Generic.List[string]]::new()
             $mel2.AddRange($melLines)
