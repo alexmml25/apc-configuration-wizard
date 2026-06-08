@@ -304,6 +304,28 @@ $manifest = Get-Manifest
             </StackPanel>
           </Border>
 
+          <!-- Start from step (for testing / partial re-runs) -->
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+            <TextBlock Text="Start from step" Style="{StaticResource Label}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <ComboBox x:Name="CmbStartStep" Padding="6,5" BorderBrush="#E2E8F0" Width="70">
+              <ComboBoxItem Content="1" IsSelected="True"/>
+              <ComboBoxItem Content="2"/>
+              <ComboBoxItem Content="3"/>
+              <ComboBoxItem Content="4"/>
+              <ComboBoxItem Content="5"/>
+              <ComboBoxItem Content="6"/>
+              <ComboBoxItem Content="7"/>
+              <ComboBoxItem Content="8"/>
+              <ComboBoxItem Content="9"/>
+              <ComboBoxItem Content="10"/>
+              <ComboBoxItem Content="11"/>
+              <ComboBoxItem Content="12"/>
+              <ComboBoxItem Content="13"/>
+            </ComboBox>
+            <TextBlock Text="(skip earlier steps - for testing only)" Foreground="#94A3B8"
+                       FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
+          </StackPanel>
+
           <!-- Configure button -->
           <Button x:Name="BtnConfigure" HorizontalAlignment="Left"
                   Padding="28,12" FontSize="14" FontWeight="SemiBold"
@@ -742,6 +764,7 @@ function Set-StepState {
         'Done'    { $icon.Text = [string][char]0x2713; $icon.Foreground = '#166534'; $status.Text = 'Complete';   $status.Foreground = '#166534'; $rerun.Visibility = 'Collapsed' }
         'Paused'  { $icon.Text = [string][char]0x23F8; $icon.Foreground = '#D97706'; $status.Text = 'Manual step';$status.Foreground = '#D97706'; $rerun.Visibility = 'Collapsed' }
         'Failed'  { $icon.Text = [string][char]0x2717; $icon.Foreground = '#EF4444'; $status.Text = 'Failed';     $status.Foreground = '#EF4444'; $rerun.Visibility = 'Visible'   }
+        'Skipped' { $icon.Text = '-';                  $icon.Foreground = '#CBD5E1'; $status.Text = 'Skipped';    $status.Foreground = '#CBD5E1'; $rerun.Visibility = 'Collapsed' }
     }
 }
 
@@ -1125,8 +1148,10 @@ $controls['BtnConfigure'].Add_Click({
     $Script:AutoState['SiteDBPassword']      = $sdbPwd
     Save-State -State $Script:AutoState
 
-    $Script:AutoIndex = 0
-    1..13 | ForEach-Object { Set-StepState -Index $_ -State 'Pending' }
+    $startStep = if ($controls['CmbStartStep'].SelectedItem) { [int]$controls['CmbStartStep'].SelectedItem.Content } else { 1 }
+    $Script:AutoIndex = $startStep - 1
+    1..($startStep - 1) | ForEach-Object { Set-StepState -Index $_ -State 'Skipped' }
+    ($startStep)..13   | ForEach-Object { Set-StepState -Index $_ -State 'Pending' }
     $controls['LogAll'].Text                      = ''
     $controls['BarOverall'].Value                 = 0
     $controls['TxtProgressLabel'].Text            = "0 / 13"
