@@ -228,7 +228,7 @@ $manifest = Get-Manifest
                     <ComboBoxItem Content="2"/>
                     <ComboBoxItem Content="3" IsSelected="True"/>
                   </ComboBox>
-                  <TextBlock Grid.Row="1" Grid.Column="0" Text="SINC Email" Style="{StaticResource Label}" Margin="0,0,0,0" VerticalAlignment="Top" Margin="0,6,0,0"/>
+                  <TextBlock Grid.Row="1" Grid.Column="0" Text="SINC Email" Style="{StaticResource Label}" Margin="0,6,0,0" VerticalAlignment="Top"/>
                   <TextBox   x:Name="TxtSINCEmail" Grid.Row="1" Grid.Column="2" Style="{StaticResource Input}"
                              Margin="0,0,0,0" ToolTip="Semicolon-separated email addresses for SINC alerts"/>
                 </Grid>
