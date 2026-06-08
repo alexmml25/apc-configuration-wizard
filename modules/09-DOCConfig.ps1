@@ -1,14 +1,14 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Step 9 - Configure DOC instance XML files for each DOC installation.
 .DESCRIPTION
     For each DOC instance (1 to State.DOCCount):
-    - DocDB.xml          → connection string → TimescaleDB / apcuser
-    - DOC_II.xml         → CSVFileOutputPath → SINC staging path for this CNC
-    - PartLookup.xml     → connection string; LoadMatrixRevision = MAX
-    - SpcDB.xml          → connection string
-    - IqsDocSpcDataCollector.xml → DBId = CNCAsset; Name prefix = Primary; Family = CNCType
+    - DocDB.xml          -> connection string -> TimescaleDB / apcuser
+    - DOC_II.xml         -> CSVFileOutputPath -> SINC staging path for this CNC
+    - PartLookup.xml     -> connection string; LoadMatrixRevision = MAX
+    - SpcDB.xml          -> connection string
+    - IqsDocSpcDataCollector.xml -> DBId = CNCAsset; Name prefix = Primary; Family = CNCType
     All files are edited in-place; originals are backed up with a .bak timestamp suffix.
 #>
 
@@ -112,7 +112,7 @@ function Invoke-DOCConfig {
                 elseif ($csvNode.Attributes['value']) { $csvNode.Attributes['value'].Value = $sincMachinePath }
                 Add-Result -Phase DOC -Check "DOC $d: DOC_II.xml CSVPath" -Status PASS -Detail $sincMachinePath
             } else {
-                Add-Result -Phase DOC -Check "DOC $d: DOC_II.xml CSVPath" -Status WARN -Detail "CSVFileOutputPath node not found — set manually"
+                Add-Result -Phase DOC -Check "DOC $d: DOC_II.xml CSVPath" -Status WARN -Detail "CSVFileOutputPath node not found  -  set manually"
             }
 
             Save-Xml -Xml $docIIXml -Path $docIIPath

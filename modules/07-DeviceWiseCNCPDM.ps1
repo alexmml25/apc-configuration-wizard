@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Step 7 - Register CNCnetPDM with deviceWise and map CNC paths.
@@ -6,7 +6,7 @@
     - Registers the CNCnetPDM instance folder with deviceWise
     - Polls until the instance reports Connected status
     - Maps each CNCnetPDM machine to its corresponding deviceWise CNC path
-      (CNCnetPDM machine 1 → CNC1_Path, etc.)
+      (CNCnetPDM machine 1 -> CNC1_Path, etc.)
 
     Prerequisite: CNCnetPDM must be configured (Step 8) and running before
     the deviceWise connection will show Connected. This step registers the
@@ -57,7 +57,7 @@ function Invoke-DeviceWiseCNCPDM {
 
     if (-not $cncPdmDir) {
         Add-Result -Phase DeviceWise -Check "CNCnetPDM directory" -Status WARN `
-            -Detail "Cannot locate CNCnetPDM directory. Register manually in Workbench → Admin → CNCnetPDM Instance Management"
+            -Detail "Cannot locate CNCnetPDM directory. Register manually in Workbench -> Admin -> CNCnetPDM Instance Management"
     } else {
         Add-Result -Phase DeviceWise -Check "CNCnetPDM directory" -Status PASS -Detail $cncPdmDir
     }
@@ -74,10 +74,10 @@ function Invoke-DeviceWiseCNCPDM {
             Add-Result -Phase DeviceWise -Check "CNCnetPDM instance registered" -Status PASS -Detail $cncPdmDir
         } else {
             Add-Result -Phase DeviceWise -Check "CNCnetPDM instance registered" -Status WARN `
-                -Detail "Register manually: Admin → CNCnetPDM Instance Management → Add → $cncPdmDir"
+                -Detail "Register manually: Admin -> CNCnetPDM Instance Management -> Add -> $cncPdmDir"
         }
 
-        # Poll for Connected status (up to 60s — CNCnetPDM may not be configured yet)
+        # Poll for Connected status (up to 60s  -  CNCnetPDM may not be configured yet)
         $waited = 0
         $connected = $false
         while ($waited -lt 60) {
@@ -92,7 +92,7 @@ function Invoke-DeviceWiseCNCPDM {
             Add-Result -Phase DeviceWise -Check "CNCnetPDM connection" -Status PASS -Detail "Connected"
         } else {
             Add-Result -Phase DeviceWise -Check "CNCnetPDM connection" -Status WARN `
-                -Detail "Not yet Connected — this is expected if CNCnetPDM is not fully configured yet (Step 8). Verify after Step 8 completes."
+                -Detail "Not yet Connected  -  this is expected if CNCnetPDM is not fully configured yet (Step 8). Verify after Step 8 completes."
         }
     }
 
@@ -112,13 +112,13 @@ function Invoke-DeviceWiseCNCPDM {
             deviceNr = $machine.DeviceNr
         }
         $mapResult = Invoke-DW -Method PUT -Path "/devices/CNCX_Paths" `
-            -Body $mapBody -Desc "Map $($machine.MachineName) → $cncPath"
+            -Body $mapBody -Desc "Map $($machine.MachineName) -> $cncPath"
 
         if ($mapResult) {
-            Add-Result -Phase DeviceWise -Check "CNC path mapping: $cncPath" -Status PASS -Detail "$($machine.MachineName) → $cncPath"
+            Add-Result -Phase DeviceWise -Check "CNC path mapping: $cncPath" -Status PASS -Detail "$($machine.MachineName) -> $cncPath"
         } else {
             Add-Result -Phase DeviceWise -Check "CNC path mapping: $cncPath" -Status WARN `
-                -Detail "Map manually: Devices → CNCX_Paths → select $($machine.MachineName) → $cncPath"
+                -Detail "Map manually: Devices -> CNCX_Paths -> select $($machine.MachineName) -> $cncPath"
         }
     }
 

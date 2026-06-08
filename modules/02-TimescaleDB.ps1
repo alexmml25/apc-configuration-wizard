@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Step 2 - Configure TimescaleDB on the APC VM.
@@ -145,7 +145,7 @@ END
     if (Invoke-Psql -Sql $createDb -Description "Create database $dbName") {
         Add-Result -Phase TSDB -Check "$dbName database" -Status PASS
     } else {
-        Add-Result -Phase TSDB -Check "$dbName database" -Status WARN -Detail "Already exists or error — continuing"
+        Add-Result -Phase TSDB -Check "$dbName database" -Status WARN -Detail "Already exists or error  -  continuing"
     }
 
     #endregion
@@ -178,7 +178,7 @@ SELECT create_hypertable('conditions', by_range('time'), if_not_exists => TRUE);
     foreach ($scriptName in $Manifest.SchemaScripts) {
         $scriptPath = Join-Path $scriptsPath $scriptName
         if (-not (Test-Path $scriptPath)) {
-            Add-Result -Phase TSDB -Check "Schema: $scriptName" -Status WARN -Detail "File not found: $scriptPath — skipped"
+            Add-Result -Phase TSDB -Check "Schema: $scriptName" -Status WARN -Detail "File not found: $scriptPath  -  skipped"
             continue
         }
         Write-Log INFO "Running schema script: $scriptName"
@@ -218,7 +218,7 @@ SELECT create_hypertable('conditions', by_range('time'), if_not_exists => TRUE);
 
         Add-Result -Phase TSDB -Check "ODBC DSN $odbcDsn" -Status PASS -Detail "Configured in HKLM ODBC.INI"
     } catch {
-        Add-Result -Phase TSDB -Check "ODBC DSN $odbcDsn" -Status WARN -Detail "Registry write failed: $_ — configure ODBC DSN manually if needed"
+        Add-Result -Phase TSDB -Check "ODBC DSN $odbcDsn" -Status WARN -Detail "Registry write failed: $_  -  configure ODBC DSN manually if needed"
     } finally {
         $apcPwd = ''
     }

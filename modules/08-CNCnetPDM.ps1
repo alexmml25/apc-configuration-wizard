@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Step 8 - Configure CNCnetPDM machine entries, license, and INI files.
@@ -78,7 +78,7 @@ function Invoke-CNCnetPDM {
             }
         } catch {
             Write-Log WARN "Excel COM read failed: $_. Trying XLSX XML fallback..."
-            # XLSX is a ZIP — read xl/worksheets/sheet1.xml directly
+            # XLSX is a ZIP  -  read xl/worksheets/sheet1.xml directly
             try {
                 Add-Type -AssemblyName System.IO.Compression.FileSystem
                 $zip    = [System.IO.Compression.ZipFile]::OpenRead($xlFile.FullName)
@@ -106,7 +106,7 @@ function Invoke-CNCnetPDM {
         }
     } else {
         Add-Result -Phase CNCnetPDM -Check "License Excel file" -Status WARN `
-            -Detail "No license .xlsx found under $repoRoot — enter license manually in CNCnetPDM.ini"
+            -Detail "No license .xlsx found under $repoRoot  -  enter license manually in CNCnetPDM.ini"
     }
 
     #endregion
@@ -138,7 +138,7 @@ function Invoke-CNCnetPDM {
             $newLines.Insert($sectionIdx + 1, "$key=$value")
             $lines.Value = $newLines.ToArray()
         } else {
-            # Section doesn't exist — append
+            # Section doesn't exist  -  append
             $newLines = New-Object System.Collections.Generic.List[string]
             $newLines.AddRange($lines.Value)
             $newLines.Add("")
@@ -170,7 +170,7 @@ function Invoke-CNCnetPDM {
         Add-Result -Phase CNCnetPDM -Check "License key written to INI" -Status PASS
     }
 
-    # RS232 entries — remove any existing Line{N} entries for our machines first
+    # RS232 entries  -  remove any existing Line{N} entries for our machines first
     $iniList = [System.Collections.Generic.List[string]]::new()
     $iniList.AddRange($iniLines)
 
@@ -229,7 +229,7 @@ function Invoke-CNCnetPDM {
     #region -- Edit melcfg.ini -----------------------------------------------
 
     if (-not (Test-Path $melcfgPath)) {
-        Add-Result -Phase CNCnetPDM -Check "melcfg.ini" -Status WARN -Detail "Not found: $melcfgPath — skipping TCP host entries"
+        Add-Result -Phase CNCnetPDM -Check "melcfg.ini" -Status WARN -Detail "Not found: $melcfgPath  -  skipping TCP host entries"
     } else {
         $melLines = [System.IO.File]::ReadAllLines($melcfgPath)
 
@@ -302,7 +302,7 @@ function Invoke-CNCnetPDM {
                 try {
                     if (Test-Path $dstPath) { Remove-Item $dstPath -Force }
                     Rename-Item $srcPath $dstName
-                    Add-Result -Phase CNCnetPDM -Check "DLL rename: $srcName → $dstName" -Status PASS
+                    Add-Result -Phase CNCnetPDM -Check "DLL rename: $srcName -> $dstName" -Status PASS
                 } catch {
                     Add-Result -Phase CNCnetPDM -Check "DLL rename: $srcName" -Status WARN -Detail "Rename failed: $_"
                 }
@@ -310,11 +310,11 @@ function Invoke-CNCnetPDM {
                 Add-Result -Phase CNCnetPDM -Check "DLL: $dstName" -Status PASS -Detail "Already renamed"
             } else {
                 Add-Result -Phase CNCnetPDM -Check "DLL: $srcName" -Status WARN `
-                    -Detail "Neither $srcName nor $dstName found in $dllDir — verify DLL placement manually"
+                    -Detail "Neither $srcName nor $dstName found in $dllDir  -  verify DLL placement manually"
             }
         }
     } else {
-        Add-Result -Phase CNCnetPDM -Check "DLL directory" -Status WARN -Detail "Directory not found: $dllDir — skipping DLL rename"
+        Add-Result -Phase CNCnetPDM -Check "DLL directory" -Status WARN -Detail "Directory not found: $dllDir  -  skipping DLL rename"
     }
 
     #endregion
@@ -340,5 +340,5 @@ function Invoke-CNCnetPDM {
     #endregion
 
     Write-Log PASS "CNCnetPDM configuration complete."
-    Write-Log INFO "Verify: CNCnetPDM Workbench → Machine Status should show green for each configured CNC after network connectivity is established."
+    Write-Log INFO "Verify: CNCnetPDM Workbench -> Machine Status should show green for each configured CNC after network connectivity is established."
 }

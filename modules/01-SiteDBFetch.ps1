@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Step 1 - Query the Site-level TSDB to retrieve CNC machine configurations.
@@ -169,13 +169,13 @@ ORDER  BY $($cols.MachineName)
 
         if (-not $machine.IPAddress -or $machine.IPAddress -notmatch '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') {
             Add-Result -Phase SiteDB -Check "$name IP address" -Status WARN `
-                -Detail "IP '$($machine.IPAddress)' may be invalid — verify before CNCnetPDM configuration"
+                -Detail "IP '$($machine.IPAddress)' may be invalid  -  verify before CNCnetPDM configuration"
         } else {
             Add-Result -Phase SiteDB -Check "$name IP address" -Status PASS -Detail $machine.IPAddress
         }
 
         if (-not $machine.DLLName) {
-            Add-Result -Phase SiteDB -Check "$name DLL name" -Status WARN -Detail "DLL name empty — defaulting to CitizenM.dll"
+            Add-Result -Phase SiteDB -Check "$name DLL name" -Status WARN -Detail "DLL name empty  -  defaulting to CitizenM.dll"
             $machine['DLLName'] = 'CitizenM.dll'
         } else {
             Add-Result -Phase SiteDB -Check "$name DLL name" -Status PASS -Detail $machine.DLLName

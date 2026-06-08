@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Step 13 - Verify the complete APC configuration and generate an HTML report.
@@ -142,7 +142,7 @@ function Invoke-Verification {
             "Connected instance(s): $($connected.Count)"
         }
     } else {
-        Warn 'CNCnetPDM' 'deviceWise connectivity check' 'DeviceWise token unavailable — verify CNCnetPDM status manually in Workbench'
+        Warn 'CNCnetPDM' 'deviceWise connectivity check' 'DeviceWise token unavailable  -  verify CNCnetPDM status manually in Workbench'
     }
 
     #endregion
@@ -177,7 +177,7 @@ function Invoke-Verification {
                     -Method GET -Headers $headers -TimeoutSec 10
                 if ($status.state -ne 'Started') { throw "State: $($status.state)" }
                 "State: Started"
-            } 'Verify in Workbench → Projects → SINC'
+            } 'Verify in Workbench -> Projects -> SINC'
         }
     }
 
@@ -296,7 +296,7 @@ function Invoke-Verification {
     Write-Log INFO "Summary: $passCount PASS / $warnCount WARN / $failCount FAIL out of $totalCount checks"
 
     if ($failCount -gt 0) {
-        Write-Log WARN "One or more checks FAILED — review the report and resolve before sign-off"
+        Write-Log WARN "One or more checks FAILED  -  review the report and resolve before sign-off"
     }
 
     #endregion

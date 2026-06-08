@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Step 5 - Import and configure the CHMI deviceWise project.
@@ -48,7 +48,7 @@ function Invoke-DeviceWiseCHMI {
 
     if (-not $chmiFile) {
         Add-Result -Phase DeviceWise -Check "CHMI project file" -Status WARN `
-            -Detail "No CHMI .dwx file found under $repoPath — import manually in Workbench → Projects → Import"
+            -Detail "No CHMI .dwx file found under $repoPath  -  import manually in Workbench -> Projects -> Import"
     } else {
         Write-Log INFO "Importing CHMI project: $($chmiFile.FullName)"
         try {
@@ -66,7 +66,7 @@ function Invoke-DeviceWiseCHMI {
             if ($resp.IsSuccessStatusCode) {
                 Add-Result -Phase DeviceWise -Check "CHMI project import" -Status PASS -Detail $chmiFile.Name
             } else {
-                Add-Result -Phase DeviceWise -Check "CHMI project import" -Status WARN -Detail "HTTP $($resp.StatusCode.value__) — verify in Workbench"
+                Add-Result -Phase DeviceWise -Check "CHMI project import" -Status WARN -Detail "HTTP $($resp.StatusCode.value__)  -  verify in Workbench"
             }
         } catch {
             Add-Result -Phase DeviceWise -Check "CHMI project import" -Status WARN -Detail $_
@@ -83,7 +83,7 @@ function Invoke-DeviceWiseCHMI {
     $machines = $State['CNCMachines']
     $cncCount = [math]::Min($machines.Count, 3)
 
-    # Build expected loaded component list dynamically from manifest — only for deployed CNC count
+    # Build expected loaded component list dynamically from manifest  -  only for deployed CNC count
     $loadedComponents = $Manifest.CHMIComponents.Loaded | Where-Object {
         $cncNum = if ($_ -match 'CNC(\d)') { [int]$Matches[1] } else { 1 }
         $cncNum -le $cncCount
@@ -98,7 +98,7 @@ function Invoke-DeviceWiseCHMI {
             Invoke-DW -Method POST -Path "/projects/components/$([System.Web.HttpUtility]::UrlEncode($comp))/load" -Desc "Load $comp" | Out-Null
             Add-Result -Phase DeviceWise -Check "CHMI component: $comp" -Status PASS -Detail "Load triggered"
         } else {
-            Add-Result -Phase DeviceWise -Check "CHMI component: $comp" -Status WARN -Detail "Not found — verify in Workbench → Projects"
+            Add-Result -Phase DeviceWise -Check "CHMI component: $comp" -Status WARN -Detail "Not found  -  verify in Workbench -> Projects"
         }
     }
 
@@ -114,7 +114,7 @@ function Invoke-DeviceWiseCHMI {
             Invoke-DW -Method POST -Path "/projects/components/$([System.Web.HttpUtility]::UrlEncode($comp))/start" -Desc "Start $comp" | Out-Null
             Add-Result -Phase DeviceWise -Check "CHMI trigger: $comp" -Status PASS -Detail "Start triggered"
         } else {
-            Add-Result -Phase DeviceWise -Check "CHMI trigger: $comp" -Status WARN -Detail "Not found — verify in Workbench"
+            Add-Result -Phase DeviceWise -Check "CHMI trigger: $comp" -Status WARN -Detail "Not found  -  verify in Workbench"
         }
     }
 

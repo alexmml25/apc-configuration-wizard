@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
@@ -196,7 +196,7 @@ $manifest = Get-Manifest
               <StackPanel>
                 <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,4">Component Passwords</TextBlock>
                 <TextBlock FontSize="11" Foreground="#92400E" TextWrapping="Wrap" Margin="0,0,0,12">
-                  In memory only — never written to disk or logs.
+                  In memory only  -  never written to disk or logs.
                 </TextBlock>
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" MinWidth="90"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
@@ -967,7 +967,7 @@ $controls['BtnFetchMachines'].Add_Click({
         foreach ($m in $machineList) { $col.Add($m) }
         $controls['DgMachines'].ItemsSource         = $col
         $controls['PanelMachines'].Visibility        = 'Visible'
-        $controls['TxtFetchStatus'].Text             = "$($machineList.Count) machine(s) found — review above, then click Configure."
+        $controls['TxtFetchStatus'].Text             = "$($machineList.Count) machine(s) found  -  review above, then click Configure."
         $controls['TxtFetchStatus'].Foreground       = '#166534'
         $controls['BtnConfigure'].IsEnabled          = $true
 

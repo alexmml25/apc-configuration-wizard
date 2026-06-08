@@ -1,11 +1,11 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Step 12 - Back up all configured applications to the site backup share.
 .DESCRIPTION
-    - deviceWise: REST API backup export → save to backup share
-    - Medtronic folder: robocopy C:\Medtronic\ → backup share
-    - CNCnetPDM: robocopy CNCnetPDM dir → backup share
+    - deviceWise: REST API backup export -> save to backup share
+    - Medtronic folder: robocopy C:\Medtronic\ -> backup share
+    - CNCnetPDM: robocopy CNCnetPDM dir -> backup share
     - CHMI/800xA: ABB COM AfwAsynchBackup (32-bit runspace) with guided fallback
     - Logs all backup destination paths for the verification report
 #>
@@ -36,7 +36,7 @@ function Invoke-Backup {
         Add-Result -Phase Backup -Check "Backup destination" -Status PASS -Detail $destRoot
     } catch {
         Add-Result -Phase Backup -Check "Backup destination" -Status WARN `
-            -Detail "Cannot create $destRoot : $_ — check network share connectivity"
+            -Detail "Cannot create $destRoot : $_  -  check network share connectivity"
     }
 
     $baseUrl = "http://localhost:${dwPort}$($dw.ApiBasePath)"
@@ -62,7 +62,7 @@ function Invoke-Backup {
     $projectNames = if ($projects) { $projects | ForEach-Object { if ($_.name) { $_.name } else { $_ } } } else { @() }
 
     if ($projectNames.Count -eq 0) {
-        Add-Result -Phase Backup -Check "deviceWise backup" -Status WARN -Detail "No projects found via API — backup manually from Workbench → Projects → Export"
+        Add-Result -Phase Backup -Check "deviceWise backup" -Status WARN -Detail "No projects found via API  -  backup manually from Workbench -> Projects -> Export"
     } else {
         foreach ($proj in $projectNames) {
             $encoded = [System.Web.HttpUtility]::UrlEncode($proj)
@@ -102,7 +102,7 @@ function Invoke-Backup {
                 Add-Result -Phase Backup -Check "Medtronic folder backup" -Status PASS -Detail $medtronicDst
             } else {
                 Add-Result -Phase Backup -Check "Medtronic folder backup" -Status WARN `
-                    -Detail "Robocopy exited $exitCode — check $destRoot\robocopy_Medtronic.log"
+                    -Detail "Robocopy exited $exitCode  -  check $destRoot\robocopy_Medtronic.log"
             }
         } catch {
             Add-Result -Phase Backup -Check "Medtronic folder backup" -Status WARN -Detail $_
@@ -153,7 +153,7 @@ function Invoke-Backup {
 
     $comSuccess = $false
     try {
-        # 800xA COM must run in a 32-bit process — invoke via 32-bit powershell
+        # 800xA COM must run in a 32-bit process  -  invoke via 32-bit powershell
         $ps32 = 'C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
         if (Test-Path $ps32) {
             $backupScript = @"
@@ -192,11 +192,11 @@ try {
 
     if (-not $comSuccess) {
         Add-Result -Phase Backup -Check "CHMI backup (COM)" -Status WARN `
-            -Detail "Automated backup unavailable — use guided fallback below"
+            -Detail "Automated backup unavailable  -  use guided fallback below"
         Write-Log MANUAL ""
         Write-Log MANUAL "== CHMI MANUAL BACKUP =="
         Write-Log MANUAL "1. Open ABB Engineering Workplace"
-        Write-Log MANUAL "2. Tools → Backup → Full Backup"
+        Write-Log MANUAL "2. Tools -> Backup -> Full Backup"
         Write-Log MANUAL "3. Save to: $chmiBackupDir"
         Write-Log MANUAL "4. Verify .afw file appears in that folder"
     }

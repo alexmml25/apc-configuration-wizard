@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Step 4 - Configure the deviceWise Gateway base platform via REST API.
@@ -131,7 +131,7 @@ function Invoke-DeviceWiseBase {
         if ($status -and $status.status -eq 'Installed') {
             Add-Result -Phase DeviceWise -Check "Package: $pkg" -Status PASS
         } else {
-            Add-Result -Phase DeviceWise -Check "Package: $pkg" -Status WARN -Detail "Status: $($status.status) — verify manually in Workbench"
+            Add-Result -Phase DeviceWise -Check "Package: $pkg" -Status WARN -Detail "Status: $($status.status)  -  verify manually in Workbench"
         }
     }
 
@@ -149,7 +149,7 @@ function Invoke-DeviceWiseBase {
     if ($licResult) {
         Add-Result -Phase DeviceWise -Check "License Manager address" -Status PASS -Detail $dw.LicenseManagerHost
     } else {
-        Add-Result -Phase DeviceWise -Check "License Manager address" -Status WARN -Detail "Check manually: Admin → License Client → $($dw.LicenseManagerHost)"
+        Add-Result -Phase DeviceWise -Check "License Manager address" -Status WARN -Detail "Check manually: Admin -> License Client -> $($dw.LicenseManagerHost)"
     }
 
     #endregion
@@ -161,7 +161,7 @@ function Invoke-DeviceWiseBase {
 
     $tagFiles = Get-ChildItem $tagsPath -Filter '*.csv' -ErrorAction SilentlyContinue
     if (-not $tagFiles) {
-        Add-Result -Phase DeviceWise -Check "OPC UA tag files" -Status WARN -Detail "No .csv tag files found in $tagsPath — import manually in Workbench → Devices → Import"
+        Add-Result -Phase DeviceWise -Check "OPC UA tag files" -Status WARN -Detail "No .csv tag files found in $tagsPath  -  import manually in Workbench -> Devices -> Import"
     } else {
         foreach ($tagFile in $tagFiles) {
             Write-Log INFO "Importing tag file: $($tagFile.Name)"
@@ -204,7 +204,7 @@ function Invoke-DeviceWiseBase {
     if ($epResult) {
         Add-Result -Phase DeviceWise -Check "OPC UA endpoint configured" -Status PASS -Detail "Port $($dw.OpcUaEndpointPort)"
     } else {
-        Add-Result -Phase DeviceWise -Check "OPC UA endpoint" -Status WARN -Detail "Configure manually: Admin → OPC UA Server → Endpoint → Port $($dw.OpcUaEndpointPort)"
+        Add-Result -Phase DeviceWise -Check "OPC UA endpoint" -Status WARN -Detail "Configure manually: Admin -> OPC UA Server -> Endpoint -> Port $($dw.OpcUaEndpointPort)"
     }
 
     # Start the endpoint
@@ -222,7 +222,7 @@ function Invoke-DeviceWiseBase {
     if ($exposeResult) {
         Add-Result -Phase DeviceWise -Check "OPC UA exposed devices" -Status PASS -Detail ($cncNodes -join ', ')
     } else {
-        Add-Result -Phase DeviceWise -Check "OPC UA exposed devices" -Status WARN -Detail "Set manually: Admin → OPC UA Server → Devices tab"
+        Add-Result -Phase DeviceWise -Check "OPC UA exposed devices" -Status WARN -Detail "Set manually: Admin -> OPC UA Server -> Devices tab"
     }
 
     #endregion
@@ -247,7 +247,7 @@ function Invoke-DeviceWiseBase {
                 Add-Result -Phase DeviceWise -Check "$cncNode $($varSpec.Name)" -Status PASS -Detail $varSpec.Value
             } else {
                 Add-Result -Phase DeviceWise -Check "$cncNode $($varSpec.Name)" -Status WARN `
-                    -Detail "Set manually: Devices → $cncNode → Variables → $($varSpec.Name) = $($varSpec.Value)"
+                    -Detail "Set manually: Devices -> $cncNode -> Variables -> $($varSpec.Name) = $($varSpec.Value)"
             }
         }
     }
@@ -273,10 +273,10 @@ function Invoke-DeviceWiseBase {
             Add-Result -Phase DeviceWise -Check "OPC UA user $($dw.OpcUaUser)" -Status PASS
         } else {
             Add-Result -Phase DeviceWise -Check "OPC UA user $($dw.OpcUaUser)" -Status WARN `
-                -Detail "Create manually: Admin → Security → Users → New → $($dw.OpcUaUser)"
+                -Detail "Create manually: Admin -> Security -> Users -> New -> $($dw.OpcUaUser)"
         }
     } else {
-        Add-Result -Phase DeviceWise -Check "OPC UA user $($dw.OpcUaUser)" -Status WARN -Detail "MedtronicSUPassword not in state — create user manually"
+        Add-Result -Phase DeviceWise -Check "OPC UA user $($dw.OpcUaUser)" -Status WARN -Detail "MedtronicSUPassword not in state  -  create user manually"
     }
 
     #endregion

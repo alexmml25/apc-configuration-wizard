@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Step 3 - Create the SINC staging folder structure on the APC VM.
@@ -64,7 +64,7 @@ function Invoke-SINCFolders {
     if (Test-Path $stagingRoot) {
         Add-Result -Phase SINC -Check "SINC staging root" -Status PASS -Detail $stagingRoot
     } else {
-        Add-Result -Phase SINC -Check "SINC staging root" -Status WARN -Detail "Root does not exist yet ($stagingRoot) — deviceWise may create it on service start"
+        Add-Result -Phase SINC -Check "SINC staging root" -Status WARN -Detail "Root does not exist yet ($stagingRoot)  -  deviceWise may create it on service start"
     }
 
     Write-Log PASS "SINC folder structure creation complete."

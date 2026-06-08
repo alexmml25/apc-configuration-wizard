@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Step 10 - Configure FileManager, DataCollector, and DataAnalyzer XML config files.
@@ -86,7 +86,7 @@ function Invoke-DataApps {
                 Add-Result -Phase DataApps -Check "FileManager: $cncNode CheckMismatchData" -Status PASS
             } else {
                 Add-Result -Phase DataApps -Check "FileManager: $cncNode CheckMismatchData" -Status WARN `
-                    -Detail "CNCSettings[@name='$cncNode'] not found — set CheckMismatchData=true manually"
+                    -Detail "CNCSettings[@name='$cncNode'] not found  -  set CheckMismatchData=true manually"
             }
         }
 
@@ -108,7 +108,7 @@ function Invoke-DataApps {
                 Add-Result -Phase DataApps -Check "FileManager: $instr" -Status PASS
             } else {
                 Add-Result -Phase DataApps -Check "FileManager: $instr" -Status WARN `
-                    -Detail "Instrument section '$instr' not found — configure manually"
+                    -Detail "Instrument section '$instr' not found  -  configure manually"
             }
         }
 
@@ -175,7 +175,7 @@ function Invoke-DataApps {
                 $node.Attributes['value'].Value = $newVal
                 Add-Result -Phase DataApps -Check "DataAnalyzer: $paramName" -Status PASS -Detail $newVal
             } elseif (-not $node) {
-                Add-Result -Phase DataApps -Check "DataAnalyzer: $paramName" -Status WARN -Detail "Key not found — set site code manually"
+                Add-Result -Phase DataApps -Check "DataAnalyzer: $paramName" -Status WARN -Detail "Key not found  -  set site code manually"
             }
         }
 
@@ -188,7 +188,7 @@ function Invoke-DataApps {
             $connVal = if ($connNode.Attributes['value']) { $connNode.Attributes['value'].Value } else { $connNode.Attributes['connectionString'].Value }
             if ($connVal -notlike '*TimescaleDB*' -and $connVal -notlike '*localhost*') {
                 Add-Result -Phase DataApps -Check "DataAnalyzer: DB connection" -Status WARN `
-                    -Detail "Connection string does not reference localhost/TimescaleDB — update manually"
+                    -Detail "Connection string does not reference localhost/TimescaleDB  -  update manually"
             } else {
                 Add-Result -Phase DataApps -Check "DataAnalyzer: DB connection" -Status PASS
             }

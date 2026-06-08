@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Step 6 - Import and configure the SINC deviceWise project.
@@ -49,7 +49,7 @@ function Invoke-DeviceWiseSINC {
 
     if (-not $sincFiles -or $sincFiles.Count -eq 0) {
         Add-Result -Phase DeviceWise -Check "SINC project files" -Status WARN `
-            -Detail "No SINC .dwx files found — import manually in Workbench → Projects → Import"
+            -Detail "No SINC .dwx files found  -  import manually in Workbench -> Projects -> Import"
     } else {
         foreach ($sincFile in $sincFiles) {
             Write-Log INFO "Importing SINC project: $($sincFile.Name)"
@@ -88,10 +88,10 @@ function Invoke-DeviceWiseSINC {
             Add-Result -Phase DeviceWise -Check "SINC EMAIL_TO" -Status PASS -Detail $emailTo
         } else {
             Add-Result -Phase DeviceWise -Check "SINC EMAIL_TO" -Status WARN `
-                -Detail "Set manually: $compName → Edit → Local Variables → EMAIL_TO = $emailTo"
+                -Detail "Set manually: $compName -> Edit -> Local Variables -> EMAIL_TO = $emailTo"
         }
     } else {
-        Add-Result -Phase DeviceWise -Check "SINC EMAIL_TO" -Status WARN -Detail "No email address provided — set manually"
+        Add-Result -Phase DeviceWise -Check "SINC EMAIL_TO" -Status WARN -Detail "No email address provided  -  set manually"
     }
 
     #endregion
@@ -127,7 +127,7 @@ function Invoke-DeviceWiseSINC {
                 Add-Result -Phase DeviceWise -Check "CNC_ASSET_Management: $cncNode" -Status PASS -Detail "Updated: $cncAsset | $cncType"
             } else {
                 Add-Result -Phase DeviceWise -Check "CNC_ASSET_Management: $cncNode" -Status WARN `
-                    -Detail "Set manually: Local Database → CNC_ASSET_Management → CNC_NODE=$cncNode, CNC_ASSET=$cncAsset, CNC_TYPE=$cncType"
+                    -Detail "Set manually: Local Database -> CNC_ASSET_Management -> CNC_NODE=$cncNode, CNC_ASSET=$cncAsset, CNC_TYPE=$cncType"
             }
         }
     }
@@ -162,7 +162,7 @@ function Invoke-DeviceWiseSINC {
                 Add-Result -Phase DeviceWise -Check "CNC_Settings: $cncNode" -Status PASS -Detail "Updated"
             } else {
                 Add-Result -Phase DeviceWise -Check "CNC_Settings: $cncNode" -Status WARN `
-                    -Detail "Set manually: Local Database → CNC_Settings → ASSET_NAME=$cncNode"
+                    -Detail "Set manually: Local Database -> CNC_Settings -> ASSET_NAME=$cncNode"
             }
         }
     }
@@ -185,7 +185,7 @@ function Invoke-DeviceWiseSINC {
             Invoke-DW -Method POST -Path "/projects/components/$([System.Web.HttpUtility]::UrlEncode($comp))/start" -Desc "Start $comp" | Out-Null
             Add-Result -Phase DeviceWise -Check "SINC: $comp" -Status PASS -Detail "Start triggered"
         } else {
-            Add-Result -Phase DeviceWise -Check "SINC: $comp" -Status WARN -Detail "Not found — verify in Workbench"
+            Add-Result -Phase DeviceWise -Check "SINC: $comp" -Status WARN -Detail "Not found  -  verify in Workbench"
         }
     }
 
