@@ -127,7 +127,7 @@ function Get-DOCFilePaths {
     $doc  = $Manifest.DOC
     $base = $doc.BasePath       -replace '\{N\}', $N
     $iqs  = $doc.PluginsIQSPath -replace '\{N\}', $N
-    $paths = [ordered]@{ Base = $base; IQS = $iqs }
+    $paths = [ordered]@{ BaseDir = $base; IqsDir = $iqs }   # keys are case-insensitive: not 'Iqs'
     foreach ($f in @(
         @{ Key = 'DocDb';      File = $doc.DocDBXml;        Dir = $base; Alt = $iqs  },
         @{ Key = 'DocII';      File = $doc.DocIIXml;        Dir = $base; Alt = $iqs  },
@@ -163,4 +163,85 @@ function Get-DOCInclusionList {
         }
     }
     return ,$list
+}
+
+function New-SandboxManifest {
+    <#
+        Test mode: copies the installed config files the wizard edits into $Root and returns a copy of
+        the manifest whose paths point there, so Steps 3, 8, 9 and 10 change only the copies.
+          <Root>\DataApps\        File Manager / Data Collector / Data Analyzer configs
+          <Root>\CNCnetPDM\       CNCnetPDM.ini, melcfg.ini, citizenm*/mitsubishim* driver .dll/.ini
+          <Root>\DOC-{n}\DOC_II\  DOC XMLs (SpcDb / Iqs under Plugins\IQS)
+          <Root>\SINC\            SINC staging folders
+          <Root>\DataCollector_Data\  local data root
+        Returns @{ Manifest; Copied = [string[]]; Missing = [string[]] }.
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [string]$Root)
+
+    $m = $Manifest | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+    $copied = [System.Collections.Generic.List[string]]::new()
+    $missing = [System.Collections.Generic.List[string]]::new()
+    New-Item -ItemType Directory -Path $Root -Force | Out-Null
+
+    function Copy-Into {
+        param([string]$Source, [string]$DestDir)
+        if (-not (Test-Path $Source)) { $missing.Add($Source); return }
+        New-Item -ItemType Directory -Path $DestDir -Force | Out-Null
+        Copy-Item $Source $DestDir -Force
+        $copied.Add($Source)
+    }
+
+    # Data applications
+    $daDir = Join-Path $Root 'DataApps'
+    foreach ($key in 'FileManagerConfig', 'DataCollectorConfig', 'DataAnalyzerConfig') {
+        $src = $Manifest.DataApps.$key
+        Copy-Into $src $daDir
+        $m.DataApps.$key = Join-Path $daDir (Split-Path $src -Leaf)
+    }
+    $m.DataApps.LocalDataRoot = Join-Path $Root 'DataCollector_Data'
+
+    # CNCnetPDM
+    $pdmSrc = @($Manifest.CNCnetPDM.InstallDir, $Manifest.CNCnetPDM.FallbackDir) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+    $pdmDst = Join-Path $Root 'CNCnetPDM'
+    if ($pdmSrc) {
+        Copy-Into (Join-Path $pdmSrc $Manifest.CNCnetPDM.IniFile)    $pdmDst
+        Copy-Into (Join-Path $pdmSrc $Manifest.CNCnetPDM.MelcfgFile) $pdmDst
+        $drvSrc = if ($Manifest.CNCnetPDM.DriverSubDir) { Join-Path $pdmSrc $Manifest.CNCnetPDM.DriverSubDir } else { $pdmSrc }
+        $drvDst = if ($Manifest.CNCnetPDM.DriverSubDir) { Join-Path $pdmDst $Manifest.CNCnetPDM.DriverSubDir } else { $pdmDst }
+        $bases  = @($Manifest.CNCnetPDM.DeviceNrRules.Generations.PSObject.Properties | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Value.DriverDll) })
+        Get-ChildItem $drvSrc -File -ErrorAction SilentlyContinue |
+            Where-Object { $n = $_.Name; $_.Extension -in '.dll', '.ini' -and ($bases | Where-Object { $n -like "$_*" }) } |
+            ForEach-Object { Copy-Into $_.FullName $drvDst }
+    } else {
+        $missing.Add("CNCnetPDM install folder ($($Manifest.CNCnetPDM.InstallDir))")
+    }
+    New-Item -ItemType Directory -Path $pdmDst -Force | Out-Null
+    $m.CNCnetPDM.InstallDir  = $pdmDst
+    $m.CNCnetPDM.FallbackDir = $pdmDst
+
+    # DOC instances
+    $m.DOC.BasePath       = Join-Path $Root 'DOC-{N}\DOC_II'
+    $m.DOC.PluginsIQSPath = Join-Path $Root 'DOC-{N}\DOC_II\Plugins\IQS'
+    for ($n = 1; $n -le [int]$Manifest.DOC.MaxInstances; $n++) {
+        $src = Get-DOCFilePaths -Manifest $Manifest -N $n
+        if (-not (Test-Path $src.BaseDir)) { continue }
+        $dst = Get-DOCFilePaths -Manifest $m -N $n
+        foreach ($key in 'DocDb', 'DocII', 'PartLookup') { Copy-Into $src[$key] $dst.BaseDir }
+        foreach ($key in 'SpcDb', 'Iqs')                 { Copy-Into $src[$key] $dst.IqsDir }
+    }
+
+    # SINC staging
+    $m.DeviceWise.SINCStaging = Join-Path $Root 'SINC'
+
+    return @{ Manifest = $m; Copied = [string[]]$copied; Missing = [string[]]$missing }
+}
+
+function Test-SandboxPath {
+    # True when not in test mode, or when $Path is inside the sandbox root (test mode must not create
+    # folders outside the sandbox, e.g. on instrument shares)
+    param([hashtable]$State, [string]$Path)
+    $root = $State['SandboxRoot']
+    if (-not $root) { return $true }
+    $full = [System.IO.Path]::GetFullPath($Path)
+    return $full.StartsWith([System.IO.Path]::GetFullPath($root), [System.StringComparison]::OrdinalIgnoreCase)
 }

@@ -1,0 +1,69 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>DOC-1 Measurement Data Collector</Name>
+  <Description>Collects data from the measurement system</Description>
+	<LogMinutia>true</LogMinutia>
+  <LogFile>..\Log\DataCollector-{DS}-{TS}.log</LogFile>
+  <Assets>
+    <AssetConfiguration>
+      <DBId>Citizen 70</DBId>
+      <Name>Primary [Citizen 70]</Name>
+      <Family>CITIZEN_L20X_IV</Family>
+    </AssetConfiguration>
+  </Assets>
+  <DataSourceTypeDescriptor>03 Data Type</DataSourceTypeDescriptor>
+  <MaxNumDataSourceRequeryAttempts>5</MaxNumDataSourceRequeryAttempts>
+  <NumberOfSubsequentEmptyEventQueriesToBeComplete>1</NumberOfSubsequentEmptyEventQueriesToBeComplete>
+  <SampleNumberDescriptor>Subject Number</SampleNumberDescriptor>
+  <ShowWindowAtStartup>false</ShowWindowAtStartup>
+  <SleepBeforeLookingForEventsSeconds>2</SleepBeforeLookingForEventsSeconds>
+  <SleepTimeForDataSourceRequerySeconds>1</SleepTimeForDataSourceRequerySeconds>
+  <SourceDataInclusionList>
+	<string>1ST_CTSCAN_MPR : CTSCAN</string>			
+	<string>SPC_CTSCAN_MPR : CTSCAN</string>			
+	<string>VER_CTSCAN_MPR : CTSCAN</string>
+	<string>1ST_CTSCAN1_MPR : CTSCAN1</string>			
+	<string>SPC_CTSCAN1_MPR : CTSCAN1</string>			
+	<string>VER_CTSCAN1_MPR : CTSCAN1</string>
+	<string>1ST_BENCH_MPR : BENCH</string>
+	<string>SPC_BENCH_MPR : BENCH</string>
+	<string>VER_BENCH_MPR : BENCH</string> 
+	
+	<string>1ST_CMM1_MCR : CMM</string>			
+	<string>SPC_CMM1_MCR : CMM</string>			
+	<string>VER_CMM1_MCR : CMM</string>
+	<string>1ST_CMM1_MCR : CMM1</string>			
+	<string>SPC_CMM1_MCR : CMM1</string>			
+	<string>VER_CMM1_MCR : CMM1</string>
+	<string>1ST_BENCH_MCR : BENCH</string>
+	<string>SPC_BENCH_MCR : BENCH</string>
+	<string>VER_BENCH_MCR : BENCH</string> 
+  </SourceDataInclusionList>
+  <UseInitialSubgroup>false</UseInitialSubgroup>
+  <WaitForLastTestName>v.SubgroupCompleteAutomation.^</WaitForLastTestName>
+  <ChangeOOStoOOCForTheseEvents>
+    <string>&lt;LWL</string>
+    <string>&lt;UWL</string>
+    <string>&gt;LWL</string>
+    <string>&gt;UWL</string>
+  </ChangeOOStoOOCForTheseEvents>
+  <ProcessNameDefinitions />
+  <SampleNumberDescriptorLimits>
+    <SleepTimeBetweenIterations>3</SleepTimeBetweenIterations>
+    <MaximumTimeSeconds>30</MaximumTimeSeconds>
+    <MaximumIterations>10</MaximumIterations>
+  </SampleNumberDescriptorLimits>
+  <WaitForLastEventLimits>	
+	<SleepTimeBetweenIterations>3</SleepTimeBetweenIterations>
+    <MaximumTimeSeconds>30</MaximumTimeSeconds>
+    <MaximumIterations>10</MaximumIterations>
+  </WaitForLastEventLimits>
+  <TestsLimits>
+    <SleepTimeBetweenIterations>3</SleepTimeBetweenIterations>
+    <MaximumTimeSeconds>30</MaximumTimeSeconds>
+    <MaximumIterations>10</MaximumIterations>
+  </TestsLimits>
+  <EventsLimits>
+	<SleepTimeBetweenIterations>3</SleepTimeBetweenIterations>
+  </EventsLimits>
+</Configuration>

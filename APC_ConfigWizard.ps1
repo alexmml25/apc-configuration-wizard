@@ -31,6 +31,9 @@ function Get-Manifest {
     return Get-Content $Script:ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 }
 $manifest = Get-Manifest
+. (Join-Path $Script:ModulesDir 'Common.ps1')
+$Script:RunManifest = $manifest   # replaced by the sandbox copy in test mode
+$Script:TestMode    = $false
 
 $xamlText = @'
 <Window
@@ -360,6 +363,10 @@ $xamlText = @'
             <TextBlock Text="(skip earlier steps - for testing only)" Foreground="#94A3B8"
                        FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
           </StackPanel>
+
+          <!-- Test mode -->
+          <CheckBox x:Name="ChkTestMode" Margin="0,0,0,14"
+                    Content="Test mode - work on sandbox copies under C:\APC_Config\Sandbox; skip DB, deviceWise, CHMI, backup and service steps"/>
 
           <!-- Configure button -->
           <Button x:Name="BtnConfigure" HorizontalAlignment="Left"
@@ -952,7 +959,7 @@ function Start-ModuleInWindow {
     $rs = [RunspaceFactory]::CreateRunspace()
     $rs.ApartmentState = 'MTA'; $rs.ThreadOptions = 'ReuseThread'; $rs.Open()
     $rs.SessionStateProxy.SetVariable('_sync',     $Script:RSSync)
-    $rs.SessionStateProxy.SetVariable('_manifest', $manifest)
+    $rs.SessionStateProxy.SetVariable('_manifest', $Script:RunManifest)
     $rs.SessionStateProxy.SetVariable('_state',    $State)
     $rs.SessionStateProxy.SetVariable('_modPath',  (Join-Path $Script:ModulesDir $ModuleFile))
     $rs.SessionStateProxy.SetVariable('_fn',       $FunctionName)
@@ -1026,6 +1033,13 @@ function Run-NextAutoModule {
     }
 
     $mod = $Script:StepDefs[$Script:AutoIndex]
+    if ($Script:TestMode -and $mod.Index -in @($manifest.TestMode.SkipSteps)) {
+        Set-StepState -Index $mod.Index -State 'Skipped'
+        $controls['LogAll'].AppendText("-- Step $($mod.Index) $($mod.Name): skipped in test mode --`r`n")
+        $Script:AutoIndex++
+        Run-NextAutoModule
+        return
+    }
     Add-LogSection -Title "Step $($mod.Index) -- $($mod.Name)"
     Set-StepState -Index $mod.Index -State 'Running'
     $controls['TxtProgressLabel'].Text = "$($Script:AutoIndex) / $($Script:StepDefs.Count)"
@@ -1295,13 +1309,35 @@ $controls['BtnConfigure'].Add_Click({
     $Script:AutoState['APCUserPassword']     = $apcPwd
     $Script:AutoState['MedtronicSUPassword'] = $suPwd
     $Script:AutoState['SiteDBPassword']      = $sdbPwd
+    # Test mode: copy installed configs into a sandbox and point the steps at the copies
+    $Script:TestMode    = $controls['ChkTestMode'].IsChecked -eq $true
+    $Script:RunManifest = $manifest
+    $sandboxLog = @()
+    if ($Script:TestMode) {
+        $sandboxRoot = Join-Path $manifest.TestMode.SandboxRoot (Get-Date -Format 'yyyyMMdd-HHmmss')
+        try {
+            $sb = New-SandboxManifest -Manifest $manifest -Root $sandboxRoot
+        } catch {
+            [System.Windows.MessageBox]::Show("Could not create the test sandbox:`n$_", "Test Mode", "OK", "Error") | Out-Null; return
+        }
+        $Script:RunManifest = $sb.Manifest
+        $Script:AutoState['SandboxRoot']       = $sandboxRoot
+        $Script:AutoState['DataAppsLocalRoot'] = $sb.Manifest.DataApps.LocalDataRoot
+        $sandboxLog += "TEST MODE - sandbox: $sandboxRoot"
+        $sandboxLog += "  Copied $($sb.Copied.Count) installed file(s) into the sandbox"
+        foreach ($miss in $sb.Missing) { $sandboxLog += "  Not found (step will report it): $miss" }
+        $sandboxLog += "  Skipped steps: $(@($manifest.TestMode.SkipSteps) -join ', ')"
+        $window.Title = 'APC Configuration Deployment Wizard  [TEST MODE]'
+    } else {
+        $window.Title = 'APC Configuration Deployment Wizard'
+    }
     Save-State -State $Script:AutoState
 
     $startStep = if ($controls['CmbStartStep'].SelectedItem) { [int]$controls['CmbStartStep'].SelectedItem.Content } else { 1 }
     $Script:AutoIndex = $startStep - 1
     1..($startStep - 1) | ForEach-Object { Set-StepState -Index $_ -State 'Skipped' }
     ($startStep)..13   | ForEach-Object { Set-StepState -Index $_ -State 'Pending' }
-    $controls['LogAll'].Text                      = ''
+    $controls['LogAll'].Text                      = if ($sandboxLog) { ($sandboxLog -join "`r`n") + "`r`n`r`n" } else { '' }
     $controls['BarOverall'].Value                 = 0
     $controls['TxtProgressLabel'].Text            = "0 / 13"
     $controls['PanelProgress'].Visibility         = 'Visible'

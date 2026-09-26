@@ -87,10 +87,10 @@ function Invoke-DOCConfig {
     foreach ($m in $machines) {
         $n     = $m.CNCIndex
         $paths = Get-DOCFilePaths -Manifest $Manifest -N $n
-        Write-Log INFO "DOC $n -> CNC$n ($($m.MachineName)) at $($paths.Base)"
+        Write-Log INFO "DOC $n -> CNC$n ($($m.MachineName)) at $($paths.BaseDir)"
 
-        if (-not (Test-Path $paths.Base)) {
-            Add-Result -Phase DOC -Check "DOC $n install folder" -Status FAIL -Detail "Not found: $($paths.Base)"
+        if (-not (Test-Path $paths.BaseDir)) {
+            Add-Result -Phase DOC -Check "DOC $n install folder" -Status FAIL -Detail "Not found: $($paths.BaseDir)"
             continue
         }
 

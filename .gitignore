@@ -11,3 +11,6 @@ desktop.ini
 
 # macOS
 .DS_Store
+
+# Personal Claude Code settings
+.claude/settings.local.json

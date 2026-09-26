@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>DOC-1 TimescaleDB</Name>
+  <Description>DOC Measurement Database Settings</Description>	
+	<ConnectionString>Server=localhost;Port=5432;Database=TimescaleDB;User Id=apcuser;Timeout=15;</ConnectionString>
+	<EncryptedPassword>TWVkdHJvbmljMQ==</EncryptedPassword>
+	<LogSQLStatements>false</LogSQLStatements>
+  <SQLQueryTimeoutSeconds>20</SQLQueryTimeoutSeconds>
+	<OnlyShowSubgroupProcessing>false</OnlyShowSubgroupProcessing>
+  <OOC_EventType>1</OOC_EventType>
+  <OOS_EventType>9</OOS_EventType>
+  <ShowErrorWhenNoRowsReturned>false</ShowErrorWhenNoRowsReturned>
+  <AllOOXEventsPerTest>true</AllOOXEventsPerTest>
+</Configuration>

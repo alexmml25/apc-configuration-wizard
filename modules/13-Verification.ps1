@@ -425,7 +425,7 @@ function Invoke-Verification {
     foreach ($m in $machines) {
         $d = $m.CNCIndex
         $p = Get-DOCFilePaths -Manifest $Manifest -N $d
-        if (-not (Test-Path $p.Base)) { $docItems.Dirs += "DOC$d missing: $($p.Base)"; continue }
+        if (-not (Test-Path $p.BaseDir)) { $docItems.Dirs += "DOC$d missing: $($p.BaseDir)"; continue }
 
         $docDbXml = LoadXml $p.DocDb;  $spcDbXml = LoadXml $p.SpcDb;  $plXml = LoadXml $p.PartLookup
         $docIIXml = LoadXml $p.DocII;  $iqsXml   = LoadXml $p.Iqs

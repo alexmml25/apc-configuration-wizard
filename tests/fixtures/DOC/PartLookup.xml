@@ -1,0 +1,54 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>DOC-1 Part Lookup</Name>
+  <Description>PartLookup Configuration</Description>
+	<LoadMatrixFromDB>true</LoadMatrixFromDB>
+	<LoadWorkbookFromDB>true</LoadWorkbookFromDB>	
+	<ConnectionString>Server=localhost;Port=5432;Database=TimescaleDB;User Id=apcuser;Timeout=15</ConnectionString>
+  <EncryptedPassword>TWVkdHJvbmljMQ==</EncryptedPassword>
+	<SQLQueryTimeoutSeconds>20</SQLQueryTimeoutSeconds>
+	<LoadMatrixRevision>MAX</LoadMatrixRevision>
+	<CopyFromWorkbookTemplate>./Plugins/DOCW_Template.xlsx</CopyFromWorkbookTemplate>
+  <SaveWorkbookToFolder>./DOCW/</SaveWorkbookToFolder>
+	<ColumnCountMismatchIsError>false</ColumnCountMismatchIsError>
+  <Columns>
+    <MatrixFileDataColumn>
+      <!--Required columns : [PartNumber, DrawingFamily, Asset, DOCWorksheet, MaterialNumber]-->
+      <Header>Part Number</Header>
+      <Name>PartNumber</Name>
+      <Number>1</Number>
+    </MatrixFileDataColumn>
+    <MatrixFileDataColumn>
+      <!--Required columns : [PartNumber, DrawingFamily, Asset, DOCWorksheet, MaterialNumber]-->
+      <Header>Drawing Family</Header>
+      <Name>DrawingFamily</Name>
+      <Number>2</Number>
+    </MatrixFileDataColumn>
+    <MatrixFileDataColumn>
+      <!--Required columns : [PartNumber, DrawingFamily, Asset, DOCWorksheet, MaterialNumber]-->
+      <Header>Asset Family</Header>
+      <Name>Asset</Name>
+      <Number>3</Number>
+    </MatrixFileDataColumn>
+    <MatrixFileDataColumn>
+      <!--Required columns : [PartNumber, DrawingFamily, Asset, DOCWorksheet, MaterialNumber]-->
+      <Header>DOC Worksheet</Header>
+      <Name>DOCWorksheet</Name>
+      <Number>4</Number>
+    </MatrixFileDataColumn>
+    <MatrixFileDataColumn>
+      <!--Required columns : [PartNumber, DrawingFamily, Asset, DOCWorksheet, MaterialNumber]-->
+      <Header>Material</Header>
+      <Name>MaterialNumber</Name>
+      <Number>5</Number>
+    </MatrixFileDataColumn>
+    <MatrixFileDataColumn>
+      <!--Required columns : [PartNumber, DrawingFamily, Asset, DOCWorksheet, MaterialNumber]-->
+      <Header>Linked Processes</Header>
+      <Name>LinkedProcesses</Name>
+      <Number>31</Number>
+    </MatrixFileDataColumn>
+  </Columns>
+  <HeaderTextMismatchIsError>false</HeaderTextMismatchIsError>
+  <PartMatrixFile>..\MAT-XXXX-G5_CHMI.csv_notused</PartMatrixFile>
+</Configuration>

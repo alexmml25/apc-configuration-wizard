@@ -89,6 +89,10 @@ function Invoke-DataApps {
         param([string]$Path, [string]$Label)
         if (-not $Path -or $Path -eq 'NA') { return }
         if (Test-Path $Path) { return }
+        if (-not (Test-SandboxPath $State $Path)) {
+            Write-Log INFO "Test mode: not creating $Path (outside sandbox)"
+            return
+        }
         $qualifier = if ($Path -match '^([A-Za-z]:)') { $Matches[1] } else { '' }
         if ($qualifier -and -not (Test-Path "$qualifier\")) {
             Add-Result -Phase DataApps -Check "Directory: $Label" -Status WARN -Detail "Drive $qualifier not available - create $Path manually"

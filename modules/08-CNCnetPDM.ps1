@@ -283,7 +283,9 @@ function Invoke-CNCnetPDM {
     #region -- Restart CNCnetPDM service and verify ---------------------------
 
     $svcName = $Manifest.Services.CNCnetPDM
-    try {
+    if ($State['SandboxRoot']) {
+        Add-Result -Phase CNCnetPDM -Check "CNCnetPDM service restart" -Status PASS -Detail "Skipped in test mode"
+    } else { try {
         Write-Log INFO "Restarting CNCnetPDM service ($svcName)..."
         Restart-Service -Name $svcName -Force -ErrorAction Stop
         Start-Sleep -Seconds 5
@@ -296,7 +298,7 @@ function Invoke-CNCnetPDM {
         }
     } catch {
         Add-Result -Phase CNCnetPDM -Check "CNCnetPDM service restart" -Status WARN -Detail "$_"
-    }
+    } }
 
     #endregion
 

@@ -1,0 +1,95 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Name>DOC-1 DOC_II</Name>
+  <Description>Core Configuration</Description>
+  <LogMinutia>true</LogMinutia>
+  <LogFile>..\Log\DocCalcEngine_{DS}-{TS}.Log</LogFile>
+  <PluginsFolders>
+    <string>.\Plugins</string>
+    <string>.\DevelopmentPlugins</string>
+  </PluginsFolders>
+  <CompletedWorkbookFileOutputPath>C:\WKBK\{OF}-{BN}-{PN}-{DS}-{TS}.xlsx</CompletedWorkbookFileOutputPath>
+  <CSVFileOutputPath>C:\SINC\CSV Files\{AI}\{AF}-{AN}-{PN}-{BN}_{PR}_{PSN}_{DS} {TS}.csv</CSVFileOutputPath>
+  <SaveSpcInspectionGroupData>false</SaveSpcInspectionGroupData>
+  <BusinessRules>
+    <EnsureCSVOutputDirEmptyBeforeExport>false</EnsureCSVOutputDirEmptyBeforeExport>
+    <MatchGroupByProcessNameOnly>true</MatchGroupByProcessNameOnly>
+    <OnlyActOnSpcProvidedProcessName>false</OnlyActOnSpcProvidedProcessName>
+    <DiscardPartSampleWhenRunOrVerHasOOS>false</DiscardPartSampleWhenRunOrVerHasOOS>
+    <CancelAllOtherPendingCalculationGroupsWhenBadInspectionGroup>false</CancelAllOtherPendingCalculationGroupsWhenBadInspectionGroup>
+    <DocSetupModeSettings>
+      <PerformCalculationsWhenOOC>true</PerformCalculationsWhenOOC>
+      <PerformCalculationsWhenOOS>true</PerformCalculationsWhenOOS>
+      <PerformCalculationsWhenNoEvents>true</PerformCalculationsWhenNoEvents>
+      <ExecutablesForCondition>
+        <GoodExecutables />
+        <OOCExecutables />
+        <OOSExecutables />
+      </ExecutablesForCondition>
+    </DocSetupModeSettings>
+    <DocRunModeSettings>
+      <PerformCalculationsWhenOOC>true</PerformCalculationsWhenOOC>
+      <PerformCalculationsWhenOOS>false</PerformCalculationsWhenOOS>
+      <ExecutablesForCondition>
+        <GoodExecutables />
+        <OOCExecutables />
+        <OOSExecutables />
+      </ExecutablesForCondition>
+    </DocRunModeSettings>
+    <DocVerificationModeSettings>
+      <PerformCalculationsWhenOOC>true</PerformCalculationsWhenOOC>
+      <PerformCalculationsWhenOOS>false</PerformCalculationsWhenOOS>
+      <ExecutablesForCondition>
+        <GoodExecutables />
+        <OOCExecutables />
+        <OOSExecutables />
+      </ExecutablesForCondition>
+    </DocVerificationModeSettings>
+			<MaxSecondsWaitForLockOnSPCDataProcessing>180</MaxSecondsWaitForLockOnSPCDataProcessing>
+    <MaxTimeToWaitForAllCalculationGroups>3600</MaxTimeToWaitForAllCalculationGroups>
+    <MaxTimeToWaitForAllInspectionGroups>2400</MaxTimeToWaitForAllInspectionGroups>
+    <MaxTimeToWaitForAllInspectionGroupTests>150</MaxTimeToWaitForAllInspectionGroupTests>
+    <WaitForAckFlagToReturnDocStatusToIdle>false</WaitForAckFlagToReturnDocStatusToIdle>
+    <ClearPartSampleWhenComplete>true</ClearPartSampleWhenComplete>
+    <LowerInspectionGroupFlagAutomaticallyWhenPartFlagAckRequiredIsFalseSeconds>5</LowerInspectionGroupFlagAutomaticallyWhenPartFlagAckRequiredIsFalseSeconds>
+    <CancelAllOtherPendingCalculationGroupsWhenBadInspectionGroup>false</CancelAllOtherPendingCalculationGroupsWhenBadInspectionGroup>
+    <RaiseBadPartWhenUndeterminable>false</RaiseBadPartWhenUndeterminable>
+	<ConfirmWhenNewPartSampleNumberFound>false</ConfirmWhenNewPartSampleNumberFound>
+	<RemeasurementFlagAckRequired>false</RemeasurementFlagAckRequired>
+	</BusinessRules>
+  <OperatorInterface>
+    <OperatorErrorResponsesRequired>
+      <AssetNotFound>false</AssetNotFound>
+      <NotCurrentBatch>false</NotCurrentBatch>
+      <NotCurrentPart>false</NotCurrentPart>
+    </OperatorErrorResponsesRequired>
+    <OperatorInteractions>
+      <NewPartSampleFound>
+        <Title>New Part Sample Found</Title>
+        <Query>New Part Sample Found - How Do You Want To Proceed?</Query>
+        <ResponsesCSV>Continue,Discard New Sample</ResponsesCSV>
+      </NewPartSampleFound>
+      <MissingTests>
+        <Title>Missing Tests</Title>
+        <Query>Missing Tests - How Do You Want To Proceed?</Query>
+        <ResponsesCSV>Calculate,Discard Part</ResponsesCSV>
+      </MissingTests>
+      <OOSFoundAcceptResults>
+        <Title>Bad Part Detected</Title>
+        <Query>Part Measured OOS - How Do You Want To Proceed?</Query>
+        <ResponsesCSV>Accept,Remeasure</ResponsesCSV>
+      </OOSFoundAcceptResults>
+      <MakeOffsetsWithOOS>
+        <Title>Make Offsets</Title>
+        <Query>Make offsets with OOS measurements?</Query>
+        <ResponsesCSV>Calculate,Discard Part</ResponsesCSV>
+      </MakeOffsetsWithOOS>
+      <WaitingForPrimaryIG>
+        <Title>Primary Inspection Group Not Found</Title>
+        <Query>Primary Inspection Group Not Yet Completed - Proceed?</Query>
+        <ResponsesCSV>Yes,Discard Data</ResponsesCSV>
+      </WaitingForPrimaryIG>
+    </OperatorInteractions>
+    <ShowTimeouts>false</ShowTimeouts>
+  </OperatorInterface>
+</Configuration>
