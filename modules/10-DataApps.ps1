@@ -26,11 +26,9 @@
     - Opc_CNCAssets / Opc_DOCCHMIs / Opc_DataAnalyzers sized to the CNC count
     - Verify Db_ConnectionString points at local TimescaleDB as apcuser
 
-    Blocks are cloned from the installed config; if a type is missing there, the
-    repo template (Manifest.DataApps.Templates) is used instead.
+    Blocks are cloned from the installed config (the application installer provides one
+    block per instrument type); a type with no block there is reported as FAIL.
 #>
-
-$Script:DataAppsRepoRoot = Split-Path -Parent $PSScriptRoot
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
 
@@ -77,15 +75,6 @@ function Invoke-DataApps {
         return $xml
     }
 
-    function Load-Template {
-        param([string]$Name)
-        $p = Join-Path $Script:DataAppsRepoRoot $Name
-        if (-not (Test-Path $p)) { return $null }
-        $xml = New-Object System.Xml.XmlDocument
-        $xml.LoadXml([System.IO.File]::ReadAllText($p))
-        return $xml
-    }
-
     function Save-Xml {
         param([System.Xml.XmlDocument]$Xml, [string]$Path)
         $s = [System.Xml.XmlWriterSettings]::new()
@@ -126,7 +115,7 @@ function Invoke-DataApps {
     # Clone $Template into $Doc under a new element name, rewriting CNC{x} references to CNC{n}
     function Copy-Block {
         param([System.Xml.XmlDocument]$Doc, [System.Xml.XmlElement]$Template, [string]$NewName, [int]$Cnc = 0)
-        $src = if ($Template.OwnerDocument -ne $Doc) { $Doc.ImportNode($Template, $true) } else { $Template.CloneNode($true) }
+        $src = $Template.CloneNode($true)
         $el  = $Doc.CreateElement($NewName)
         foreach ($child in @($src.ChildNodes)) { $el.AppendChild($child) | Out-Null }
         if ($Cnc -gt 0) {
@@ -137,17 +126,12 @@ function Invoke-DataApps {
         return $el
     }
 
-    # First child of $Section whose element name matches $Pattern, from installed doc or repo template
+    # First child element of $Section in the installed config that satisfies $Match
     function Find-Template {
-        param([System.Xml.XmlDocument]$Installed, [System.Xml.XmlDocument]$Repo, [string]$Section, [scriptblock]$Match)
-        foreach ($doc in @($Installed, $Repo)) {
-            if (-not $doc) { continue }
-            $sec = $doc.SelectSingleNode("/configuration/$Section")
-            if (-not $sec) { continue }
-            $hit = @($sec.ChildNodes) | Where-Object { $_.NodeType -eq 'Element' -and (& $Match $_) } | Select-Object -First 1
-            if ($hit) { return $hit }
-        }
-        return $null
+        param([System.Xml.XmlDocument]$Doc, [string]$Section, [scriptblock]$Match)
+        $sec = $Doc.SelectSingleNode("/configuration/$Section")
+        if (-not $sec) { return $null }
+        @($sec.ChildNodes) | Where-Object { $_.NodeType -eq 'Element' -and (& $Match $_) } | Select-Object -First 1
     }
 
     function Clear-Section {
@@ -162,8 +146,8 @@ function Invoke-DataApps {
     }
 
     function Rebuild-CNCSettings {
-        param([System.Xml.XmlDocument]$Doc, [System.Xml.XmlDocument]$Repo, [switch]$CheckMismatch)
-        $tpl = Find-Template $Doc $Repo 'CNCSettings' { param($e) $e.LocalName -match '^CNC\d+\.Asset$' }
+        param([System.Xml.XmlDocument]$Doc, [switch]$CheckMismatch)
+        $tpl = Find-Template $Doc 'CNCSettings' { param($e) $e.LocalName -match '^CNC\d+\.Asset$' }
         if (-not $tpl) { throw "No CNC{n}.Asset template found in CNCSettings" }
         $sec = Clear-Section $Doc 'CNCSettings'
         for ($n = 1; $n -le $cncCount; $n++) {
@@ -187,16 +171,15 @@ function Invoke-DataApps {
         Add-Result -Phase DataApps -Check "File Manager config" -Status FAIL -Detail "Not found: $fmPath"
         $fmFailed = $true
     } else {
-        $fmRepo = Load-Template $da.Templates.FileManager
         try {
-            Rebuild-CNCSettings -Doc $fmXml -Repo $fmRepo -CheckMismatch
+            Rebuild-CNCSettings -Doc $fmXml -CheckMismatch
             Add-Result -Phase DataApps -Check "File Manager: CNCSettings" -Status PASS -Detail "CNC1..CNC$cncCount, CheckMismatchData=true"
 
             # Collect templates before clearing <Paths>
             $pathTemplates = @{}
             foreach ($ins in $plan) {
                 $type = $ins.Type
-                $pathTemplates[$type] = Find-Template $fmXml $fmRepo 'Paths' {
+                $pathTemplates[$type] = Find-Template $fmXml 'Paths' {
                     param($e) $n = $e.SelectSingleNode('Name'); $n -and $n.InnerText -match "^$type\d*$"
                 }
             }
@@ -205,7 +188,7 @@ function Invoke-DataApps {
             foreach ($ins in $plan) {
                 $tpl = $pathTemplates[$ins.Type]
                 if (-not $tpl) {
-                    Add-Result -Phase DataApps -Check "File Manager: $($ins.Type)" -Status FAIL -Detail "No Path template for $($ins.Type) in installed config or repo template"
+                    Add-Result -Phase DataApps -Check "File Manager: $($ins.Type)" -Status FAIL -Detail "No <Paths> entry for $($ins.Type) in installed config to copy from"
                     $fmFailed = $true; continue
                 }
                 $newPath = Get-NewPath $ins.Type
@@ -249,7 +232,6 @@ function Invoke-DataApps {
         Add-Result -Phase DataApps -Check "Data Collector config" -Status FAIL -Detail "Not found: $dcPath"
         $dcFailed = $true
     } else {
-        $dcRepo = Load-Template $da.Templates.DataCollector
         try {
             $con = $dcXml.SelectSingleNode('/configuration/AppSettingsSection/ConString')
             if ($con -and $con.InnerText -match 'Database=TimescaleDB' -and $con.InnerText -match 'User Id=apcuser' -and $con.InnerText -match 'Server=localhost') {
@@ -258,13 +240,13 @@ function Invoke-DataApps {
                 Add-Result -Phase DataApps -Check "Data Collector: DB connection" -Status WARN -Detail "ConString does not point at localhost/TimescaleDB as apcuser - confirm with APC Team"
             }
 
-            Rebuild-CNCSettings -Doc $dcXml -Repo $dcRepo
+            Rebuild-CNCSettings -Doc $dcXml
             Add-Result -Phase DataApps -Check "Data Collector: CNCSettings" -Status PASS -Detail "CNC1..CNC$cncCount"
 
             $dtTemplates = @{}
             foreach ($ins in $plan) {
                 $type = $ins.Type
-                $dtTemplates[$type] = Find-Template $dcXml $dcRepo 'DataTypeSettings' {
+                $dtTemplates[$type] = Find-Template $dcXml 'DataTypeSettings' {
                     param($e) $e.LocalName -match "^CNC\d+\.$type\d*$"
                 }
             }
@@ -297,7 +279,7 @@ function Invoke-DataApps {
             }
             foreach ($ins in $plan) {
                 if (-not $dtTemplates[$ins.Type]) {
-                    Add-Result -Phase DataApps -Check "Data Collector: $($ins.Type)" -Status FAIL -Detail "No DataTypeSettings template for $($ins.Type)"
+                    Add-Result -Phase DataApps -Check "Data Collector: $($ins.Type)" -Status FAIL -Detail "No DataTypeSettings block for $($ins.Type) in installed config to copy from"
                     $dcFailed = $true; continue
                 }
                 $checkPath = Get-NewPath $ins.Type

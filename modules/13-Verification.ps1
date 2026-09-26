@@ -1000,7 +1000,7 @@ function Invoke-Verification {
     #region Fill D01555624 Word document --------------------------------------
 
     $wizardRoot    = Split-Path $PSScriptRoot -Parent
-    $templatePath  = Join-Path $wizardRoot 'D01555624_A_EN.docx'
+    $templatePath  = Join-Path $wizardRoot 'templates\D01555624_A_EN.docx'
     $docxOutPath   = Join-Path $reportDir "D01555624_Filled_$ts.docx"
     $performer     = "$env:USERNAME / $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
 

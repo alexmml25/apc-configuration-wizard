@@ -239,11 +239,6 @@
     "FileManagerConfig":   "C:\\Medtronic\\Data Collector File Manager\\DataCollector_FileManager.exe.config",
     "DataCollectorConfig": "C:\\Medtronic\\Data Collector\\DataCollector.exe.config",
     "DataAnalyzerConfig":  "C:\\Medtronic\\Data Analyzer\\DataAnalyzer.exe.config",
-    "Templates": {
-      "FileManager":   "DataCollector_FileManager.exe.config",
-      "DataCollector": "DataCollector.exe.config",
-      "DataAnalyzer":  "DataAnalyzer.exe.config"
-    },
     "LocalDataRoot": "C:\\Medtronic\\DataCollector_Data",
     "Instruments": [
       { "Type": "CMM",       "SingleName": "CMM1",       "MaxCount": 3 },
