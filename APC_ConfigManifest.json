@@ -184,8 +184,14 @@
     "MelcfgFile":       "melcfg.ini",
     "RS232Section":     "RS232",
     "HostsSection":     "HOSTS",
-    "ExcelLicenseFile": "CNCnetPDM_License.xlsx",
-    "LicenseCellRef":   "A1",
+    "DriverSubDir":     "",
+    "DeviceNrRules": {
+      "Generations": {
+        "IV": { "Prefix": "10", "DriverDll": "citizenm.dll" },
+        "V":  { "Prefix": "11", "DriverDll": "mitsubishim.dll" }
+      }
+    },
+    "DefaultLicense":   "ENPQRSLNTZNOLLNVRUPTIRPQKLLXEFMLGTQJRQMSLFNLLNOS",
     "Defaults": {
       "Baud":        19200,
       "Databits":    8,
@@ -194,7 +200,7 @@
       "Port":        683,
       "Method":      0,
       "DNSName":     "localhost",
-      "PLCAddr":     "none",
+      "PLCAddr":     "0",
       "Share":       "none",
       "LogfileName": "none",
       "LogfileVer":  0
@@ -216,34 +222,49 @@
   },
 
   "DOC": {
-    "BasePath":        "C:\\Medtronic\\DOC-{N}\\DOC_II",
-    "PluginsIQSPath":  "C:\\Medtronic\\DOC-{N}\\DOC_II\\Plugins\\IQS",
-    "MaxInstances":    3,
-    "DocDBXml":        "DocDB.xml",
-    "DocIIXml":        "DOC_II.xml",
-    "PartLookupXml":   "PartLookup.xml",
-    "SpcDBXml":        "SpcDB.xml",
-    "IqsCollectorXml": "IqsDocSpcDataCollector.xml",
-    "CSVOutputPathTemplate": "C:\\Program Files\\deviceWISE\\Gateway\\staging\\SINC\\{MachineName}",
-    "LoadMatrixRevision":    "MAX"
+    "BasePath":           "C:\\Medtronic\\DOC-{N}\\DOC_II",
+    "PluginsIQSPath":     "C:\\Medtronic\\DOC-{N}\\DOC_II\\Plugins\\IQS",
+    "MaxInstances":       3,
+    "DocDBXml":           "DocDb.xml",
+    "DocIIXml":           "DOC_II.xml",
+    "PartLookupXml":      "PartLookup.xml",
+    "SpcDBXml":           "SpcDb.xml",
+    "IqsCollectorXml":    "IqsDocSpcDataCollector.xml",
+    "CSVFileNamePattern": "{AF}-{AN}-{BN}-{PF}-{PN}-{PSN} {DS} {TS}.csv",
+    "LoadMatrixRevision": "MAX",
+    "ProcessPrefixes":    [ "1ST", "SPC", "VER" ]
   },
 
   "DataApps": {
-    "FileManagerConfig":   "C:\\Medtronic\\Data Collector File Manager\\FileManager.exe.config",
+    "FileManagerConfig":   "C:\\Medtronic\\Data Collector File Manager\\DataCollector_FileManager.exe.config",
     "DataCollectorConfig": "C:\\Medtronic\\Data Collector\\DataCollector.exe.config",
     "DataAnalyzerConfig":  "C:\\Medtronic\\Data Analyzer\\DataAnalyzer.exe.config",
-    "FileManager": {
-      "InstallDir":  "C:\\Medtronic\\Data Collector File Manager",
-      "DataRoot":    "C:\\Medtronic\\DataCollector_Data"
+    "Templates": {
+      "FileManager":   "DataCollector_FileManager.exe.config",
+      "DataCollector": "DataCollector.exe.config",
+      "DataAnalyzer":  "DataAnalyzer.exe.config"
     },
-    "DataCollector": {
-      "InstallDir":  "C:\\Medtronic\\Data Collector",
-      "ArchiveRoot": "C:\\Medtronic\\DataCollector_Archive"
-    },
-    "DataAnalyzer": {
-      "InstallDir":  "C:\\Medtronic\\Data Analyzer"
-    },
-    "InstrumentTypes": [ "CMM", "CTSCAN", "BENCH", "CONTRACER" ]
+    "LocalDataRoot": "C:\\Medtronic\\DataCollector_Data",
+    "Instruments": [
+      { "Type": "CMM",       "SingleName": "CMM1",       "MaxCount": 3 },
+      { "Type": "CTSCAN",    "SingleName": "CTSCAN1",    "MaxCount": 3 },
+      { "Type": "BENCH",     "SingleName": "BENCH",      "MaxCount": 3 },
+      { "Type": "CONTRACER", "SingleName": "CONTRACER1", "MaxCount": 3 }
+    ],
+    "SiteDefaults": {
+      "Default": {
+        "CMM":       { "Count": 1, "CNCs": [1],       "SourcePath": "", "ErrorPath": "", "BroadcastPath": "" },
+        "CTSCAN":    { "Count": 1, "CNCs": [2, 3],    "SourcePath": "", "ErrorPath": "", "BroadcastPath": "" },
+        "BENCH":     { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "", "ErrorPath": "", "BroadcastPath": "" },
+        "CONTRACER": { "Count": 3, "CNCs": [1],       "SourcePath": "", "ErrorPath": "", "BroadcastPath": "" }
+      },
+      "MPR": {
+        "CMM":       { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "D:\\CMM_Measurement_Reports\\CSVCLC",        "ErrorPath": "D:\\CMM_Measurement_Reports\\CSVCLCError",        "BroadcastPath": "C:\\Medtronic\\DataCollector_Data\\CMM\\Broadcast" },
+        "CTSCAN":    { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "Z:\\CTScan_Inspection\\CSVCLC",             "ErrorPath": "Z:\\CTScan_Inspection\\CSVCLCError",             "BroadcastPath": "C:\\Medtronic\\DataCollector_Data\\CTSCAN\\Broadcast" },
+        "BENCH":     { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "C:\\Medtronic\\DataCollector_Data\\BENCH",  "ErrorPath": "",                                               "BroadcastPath": "" },
+        "CONTRACER": { "Count": 3, "CNCs": [1, 2, 3], "SourcePath": "D:\\Contracer_Measurement_Reports\\CSVCLC", "ErrorPath": "D:\\Contracer_Measurement_Reports\\CSVCLCError", "BroadcastPath": "" }
+      }
+    }
   },
 
   "CHMI": {

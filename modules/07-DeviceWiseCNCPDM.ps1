@@ -13,6 +13,8 @@
     path; connectivity confirmation may require Step 8 to complete first.
 #>
 
+. (Join-Path $PSScriptRoot 'Common.ps1')
+
 function Invoke-DeviceWiseCNCPDM {
     [CmdletBinding()]
     param(
@@ -27,7 +29,7 @@ function Invoke-DeviceWiseCNCPDM {
     $cncPdm   = $Manifest.CNCnetPDM
     $dwPort   = $State['DeviceWisePort']
     $dwToken  = $State['DeviceWiseToken']
-    $machines = $State['CNCMachines']
+    $machines = Get-AssignedCNCs -State $State -Manifest $Manifest   # CNC n = DOC instance n
 
     if ($dwPort -eq 0) { throw "DeviceWisePort not set. Run Step 4 first." }
 
@@ -103,7 +105,7 @@ function Invoke-DeviceWiseCNCPDM {
     Write-Log INFO "Mapping CNCnetPDM machines to deviceWise CNC paths..."
     for ($i = 0; $i -lt $machines.Count; $i++) {
         $machine  = $machines[$i]
-        $cncIndex = $i + 1
+        $cncIndex = $machine.CNCIndex
         $cncPath  = "CNC${cncIndex}_Path"
 
         $mapBody = @{

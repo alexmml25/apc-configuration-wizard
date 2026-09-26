@@ -3,13 +3,15 @@
 .SYNOPSIS
     Step 3 - Create the SINC staging folder structure on the APC VM.
 .DESCRIPTION
-    For each CNC machine in State.CNCMachines, creates the three subdirectories
-    required by the SINC integration:
-      C:\Program Files\deviceWISE\Gateway\staging\SINC\{MachineName}\Processing
-      C:\Program Files\deviceWISE\Gateway\staging\SINC\{MachineName}\DoneSuccess
-      C:\Program Files\deviceWISE\Gateway\staging\SINC\{MachineName}\DoneError
-    Uses the machine name as the folder name (matching deviceWise CNC path naming).
+    For each DOC-assigned CNC (CNC n = DOC instance n), creates the three subdirectories
+    required by the SINC integration (SOP):
+      C:\Program Files\deviceWISE\Gateway\staging\SINC\CNC{n}\Processing
+      C:\Program Files\deviceWISE\Gateway\staging\SINC\CNC{n}\DoneSuccess
+      C:\Program Files\deviceWISE\Gateway\staging\SINC\CNC{n}\DoneError
+    DOC_II.xml CSVFileOutputPath (Step 9) writes into SINC\CNC{n}\.
 #>
+
+. (Join-Path $PSScriptRoot 'Common.ps1')
 
 function Invoke-SINCFolders {
     [CmdletBinding()]
@@ -21,7 +23,7 @@ function Invoke-SINCFolders {
 
     Write-Log STEP "SINC Staging Folder Structure"
 
-    $machines   = $State['CNCMachines']
+    $machines   = Get-AssignedCNCs -State $State -Manifest $Manifest
     $stagingRoot = $Manifest.DeviceWise.SINCStaging
 
     if (-not $machines -or $machines.Count -eq 0) {
@@ -35,7 +37,7 @@ function Invoke-SINCFolders {
     $subFolders = @('Processing', 'DoneSuccess', 'DoneError')
 
     foreach ($machine in $machines) {
-        $cncName = $machine.MachineName
+        $cncName = "CNC$($machine.CNCIndex)"
         $cncRoot = Join-Path $stagingRoot $cncName
 
         foreach ($sub in $subFolders) {

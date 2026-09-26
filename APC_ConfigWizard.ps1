@@ -32,7 +32,7 @@ function Get-Manifest {
 }
 $manifest = Get-Manifest
 
-[xml]$xaml = @'
+$xamlText = @'
 <Window
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -301,6 +301,41 @@ $manifest = Get-Manifest
                 <TextBox x:Name="TxtSINCEmail" Grid.Column="1" Style="{StaticResource Input}"
                          ToolTip="Semicolon-separated email addresses for SINC alerts"/>
               </Grid>
+            </StackPanel>
+          </Border>
+
+          <!-- CNCnetPDM Configuration -->
+          <Border Style="{StaticResource Card}" Margin="0,0,0,14">
+            <StackPanel>
+              <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,12">CNCnetPDM Configuration</TextBlock>
+              <CheckBox x:Name="ChkDefaultLicense" Content="Use default perpetual license" IsChecked="True" Margin="0,0,0,10"/>
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="120"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="License key" Style="{StaticResource Label}"/>
+                <TextBox x:Name="TxtLicense" Grid.Column="1" Style="{StaticResource Input}" FontFamily="Consolas" IsEnabled="False"
+                         ToolTip="Written to CNCnetPDM.ini [GENERAL] License. Untick the box above to enter a different key."/>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <!-- Data Applications (File Manager / Data Collector) -->
+          <Border Style="{StaticResource Card}" Margin="0,0,0,14">
+            <StackPanel>
+              <TextBlock FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,4">Data Applications - Instruments</TextBlock>
+              <TextBlock Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12">Tick the CNCs that use each instrument. Source = shared folder the instrument drops files into. Error path blank = local DoneError folder. Broadcast (MES) blank = NA.</TextBlock>
+              <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="120"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Local data root" Style="{StaticResource Label}"/>
+                <TextBox x:Name="TxtDataRoot" Grid.Column="1" Style="{StaticResource Input}"
+                         ToolTip="File Manager NewPath and Data Collector CheckPath root (one sub-folder per instrument)"/>
+              </Grid>
+              <!--DATAAPPS_INSTRUMENTS-->
             </StackPanel>
           </Border>
 
@@ -625,6 +660,35 @@ $manifest = Get-Manifest
 </Window>
 '@
 
+# Data Applications instrument rows (one block per manifest instrument type)
+$instFrag = foreach ($inst in $manifest.DataApps.Instruments) {
+    $t     = $inst.Type
+    $qty   = (1..[int]$inst.MaxCount | ForEach-Object { "<ComboBoxItem Content=`"$_`"/>" }) -join ''
+    $chks  = (1..3 | ForEach-Object { "<CheckBox x:Name=`"ChkInst_${t}_$_`" Content=`"CNC$_`" VerticalAlignment=`"Center`" Margin=`"0,0,14,0`"/>" }) -join ''
+    @"
+              <Border BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Padding="0,10,0,2">
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                  <TextBlock Grid.Row="0" Grid.Column="0" Text="$t" FontWeight="SemiBold" Foreground="#1C2136" VerticalAlignment="Center" Margin="0,0,0,8"/>
+                  <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,8">
+                    <TextBlock Text="Qty" Foreground="#475569" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ComboBox x:Name="CmbInstQty_$t" Width="56" Padding="6,3" BorderBrush="#E2E8F0">$qty</ComboBox>
+                    <TextBlock Text="Used by" Foreground="#475569" VerticalAlignment="Center" Margin="18,0,8,0"/>
+                    $chks
+                  </StackPanel>
+                  <TextBlock Grid.Row="1" Grid.Column="0" Text="Source path" Style="{StaticResource Label}"/>
+                  <TextBox   Grid.Row="1" Grid.Column="1" x:Name="TxtInstSrc_$t" Style="{StaticResource Input}" ToolTip="Shared folder where the $t drops measurement files (File Manager Path)"/>
+                  <TextBlock Grid.Row="2" Grid.Column="0" Text="Error path" Style="{StaticResource Label}"/>
+                  <TextBox   Grid.Row="2" Grid.Column="1" x:Name="TxtInstErr_$t" Style="{StaticResource Input}" ToolTip="Rejected files (File Manager ErrorPath). Blank = local DoneError folder"/>
+                  <TextBlock Grid.Row="3" Grid.Column="0" Text="Broadcast (MES)" Style="{StaticResource Label}"/>
+                  <TextBox   Grid.Row="3" Grid.Column="1" x:Name="TxtInstBc_$t" Style="{StaticResource Input}" ToolTip="Data Collector BroadcastFilePaths. Blank = NA"/>
+                </Grid>
+              </Border>
+"@
+}
+[xml]$xaml = $xamlText.Replace('<!--DATAAPPS_INSTRUMENTS-->', ($instFrag -join "`n"))
+
 # Build window
 $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [System.Windows.Markup.XamlReader]::Load($reader)
@@ -689,7 +753,51 @@ function Update-SiteDBFields {
     }
 }
 
-$controls['CmbSiteCode'].Add_SelectionChanged({ Update-SiteDBFields })
+# Prefill Data Applications instrument selection from manifest SiteDefaults
+function Update-DataAppsDefaults {
+    $site = if ($controls['CmbSiteCode'].SelectedItem) { $controls['CmbSiteCode'].SelectedItem.Content } else { '' }
+    $da   = $manifest.DataApps
+    $defs = if ($site -and $da.SiteDefaults.PSObject.Properties[$site]) { $da.SiteDefaults.$site } else { $da.SiteDefaults.Default }
+    $controls['TxtDataRoot'].Text = $da.LocalDataRoot
+    foreach ($inst in $da.Instruments) {
+        $t = $inst.Type
+        $p = $defs.PSObject.Properties[$t]
+        $d = if ($p) { $p.Value } else { $null }
+        $controls["CmbInstQty_$t"].SelectedIndex = if ($d) { [math]::Max(0, [int]$d.Count - 1) } else { 0 }
+        foreach ($n in 1,2,3) { $controls["ChkInst_${t}_$n"].IsChecked = [bool]($d -and ($n -in @($d.CNCs))) }
+        $controls["TxtInstSrc_$t"].Text = if ($d) { $d.SourcePath }    else { '' }
+        $controls["TxtInstErr_$t"].Text = if ($d) { $d.ErrorPath }     else { '' }
+        $controls["TxtInstBc_$t"].Text  = if ($d) { $d.BroadcastPath } else { '' }
+    }
+}
+
+function Update-DataAppsCNCVisibility {
+    param([int]$CncCount)
+    foreach ($inst in $manifest.DataApps.Instruments) {
+        foreach ($n in 1,2,3) {
+            $controls["ChkInst_$($inst.Type)_$n"].Visibility = if ($n -le $CncCount) { 'Visible' } else { 'Collapsed' }
+        }
+    }
+}
+
+function Get-DataAppsSelection {
+    param([int]$CncCount)
+    foreach ($inst in $manifest.DataApps.Instruments) {
+        $t    = $inst.Type
+        $cncs = @(1..$CncCount | Where-Object { $controls["ChkInst_${t}_$_"].IsChecked -eq $true })
+        $qty  = if ($controls["CmbInstQty_$t"].SelectedItem) { [int]$controls["CmbInstQty_$t"].SelectedItem.Content } else { 1 }
+        @{
+            Type          = $t
+            Count         = $qty
+            CNCs          = $cncs
+            SourcePath    = $controls["TxtInstSrc_$t"].Text.Trim()
+            ErrorPath     = $controls["TxtInstErr_$t"].Text.Trim()
+            BroadcastPath = $controls["TxtInstBc_$t"].Text.Trim()
+        }
+    }
+}
+
+$controls['CmbSiteCode'].Add_SelectionChanged({ Update-SiteDBFields; Update-DataAppsDefaults })
 
 function Update-DOCMachineChoices {
     # Collect which machine name each active box has selected
@@ -715,13 +823,26 @@ $controls['CmbDOCCount'].Add_SelectionChanged({
     $controls['GridDOCRow2'].Visibility = if ($cnt -ge 2) { 'Visible' } else { 'Collapsed' }
     $controls['GridDOCRow3'].Visibility = if ($cnt -ge 3) { 'Visible' } else { 'Collapsed' }
     Update-DOCMachineChoices
+    Update-DataAppsCNCVisibility -CncCount $cnt
 })
 
 foreach ($n in 1,2,3) {
     $controls["CmbDOCMachine$n"].Add_SelectionChanged({ Update-DOCMachineChoices })
 }
+# CNCnetPDM license: default from manifest, editable when the checkbox is cleared
+$controls['TxtLicense'].Text = $manifest.CNCnetPDM.DefaultLicense
+$controls['ChkDefaultLicense'].Add_Checked({
+    $controls['TxtLicense'].Text      = $manifest.CNCnetPDM.DefaultLicense
+    $controls['TxtLicense'].IsEnabled = $false
+})
+$controls['ChkDefaultLicense'].Add_Unchecked({
+    $controls['TxtLicense'].IsEnabled = $true
+    $controls['TxtLicense'].Focus() | Out-Null
+})
+
 $controls['CmbSiteCode'].SelectedIndex = 0
 Update-SiteDBFields
+Update-DataAppsDefaults
 
 # Step definitions
 $Script:StepDefs = @(
@@ -1027,7 +1148,6 @@ $controls['BtnProceed'].Add_Click({
                         AssetFamily = $cncType
                         CNCType     = $cncType
                         DLLName     = if ($parts.Count -ge 5) { $parts[4].Trim() } else { '' }
-                        DeviceNr    = $idx
                     }
                     $idx++
                 }
@@ -1043,6 +1163,7 @@ $controls['BtnProceed'].Add_Click({
     $capSync  = $fetchSync; $capPS = $ps; $capRS = $rs; $capHandle = $handle
     $capControls  = $controls
     $capUpdateDOC = ${function:Update-DOCMachineChoices}
+    $capInstTypes = @($manifest.DataApps.Instruments | ForEach-Object { $_.Type })
 
     $fetchTimer = New-Object System.Windows.Threading.DispatcherTimer
     $fetchTimer.Interval = [TimeSpan]::FromMilliseconds(300)
@@ -1094,6 +1215,11 @@ $controls['BtnProceed'].Add_Click({
         $docCnt = if ($capControls['CmbDOCCount'].SelectedItem) { [int]$capControls['CmbDOCCount'].SelectedItem.Content } else { 3 }
         $capControls['GridDOCRow2'].Visibility = if ($docCnt -ge 2) { 'Visible' } else { 'Collapsed' }
         $capControls['GridDOCRow3'].Visibility = if ($docCnt -ge 3) { 'Visible' } else { 'Collapsed' }
+        foreach ($t in $capInstTypes) {
+            foreach ($n in 1,2,3) {
+                $capControls["ChkInst_${t}_$n"].Visibility = if ($n -le $docCnt) { 'Visible' } else { 'Collapsed' }
+            }
+        }
         $capControls['BtnConfigure'].IsEnabled = $true
         $capControls['MainScroller'].ScrollToEnd()
 
@@ -1134,9 +1260,30 @@ $controls['BtnConfigure'].Add_Click({
         $docMachineAssignments += if ($cmb -and $cmb.SelectedItem) { $cmb.SelectedItem.Content } else { '' }
     }
 
+    $license = $controls['TxtLicense'].Text.Trim()
+    if (-not $license) {
+        [System.Windows.MessageBox]::Show("Enter the CNCnetPDM license key or tick 'Use default perpetual license'.", "Missing", "OK", "Warning") | Out-Null; return
+    }
+    $dataRoot = $controls['TxtDataRoot'].Text.Trim()
+    $dataApps = @(Get-DataAppsSelection -CncCount $docCount)
+    $activeInst = @($dataApps | Where-Object { $_.CNCs.Count -gt 0 })
+    if (-not $dataRoot) {
+        [System.Windows.MessageBox]::Show("Enter the Data Applications local data root.", "Missing", "OK", "Warning") | Out-Null; return
+    }
+    if ($activeInst.Count -eq 0) {
+        [System.Windows.MessageBox]::Show("Tick at least one CNC for an instrument under Data Applications.", "Missing", "OK", "Warning") | Out-Null; return
+    }
+    $noSource = @($activeInst | Where-Object { -not $_.SourcePath } | ForEach-Object { $_.Type })
+    if ($noSource.Count -gt 0) {
+        [System.Windows.MessageBox]::Show("Enter a source path for: $($noSource -join ', ')", "Missing", "OK", "Warning") | Out-Null; return
+    }
+
     $Script:AutoState = Get-CurrentState
     $Script:AutoState['CNCMachines']           = $fetchedMachines
     $Script:AutoState['DOCMachineAssignments'] = $docMachineAssignments
+    $Script:AutoState['DataAppsInstruments']   = $dataApps
+    $Script:AutoState['DataAppsLocalRoot']     = $dataRoot
+    $Script:AutoState['CNCnetPDMLicense']      = $license
 
     $apcPwd = New-Object System.Security.SecureString
     foreach ($c in $controls['PwdAPCUser'].Password.ToCharArray()) { $apcPwd.AppendChar($c) }

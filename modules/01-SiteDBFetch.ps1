@@ -19,6 +19,8 @@
     manifest PasswordB64 is decoded and used.
 #>
 
+. (Join-Path $PSScriptRoot 'Common.ps1')
+
 function Invoke-SiteDBFetch {
     [CmdletBinding()]
     param(
@@ -80,7 +82,7 @@ function Invoke-SiteDBFetch {
         try {
             $plainPwd = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($srvEntry.PasswordB64))
         } catch {
-            Write-Log WARN "Could not decode manifest PasswordB64 for site $siteCode: $_"
+            Write-Log WARN "Could not decode manifest PasswordB64 for site ${siteCode}: $_"
         }
     }
 
@@ -101,7 +103,7 @@ WHERE  $($cols.CNCnetPDMRequired) = true
 ORDER  BY $($cols.MachineName)
 "@
 
-    Write-Log INFO "Site DB: $dbHost:$dbPort / $dbName"
+    Write-Log INFO "Site DB: ${dbHost}:$dbPort / $dbName"
     Write-Log INFO "Table  : $($db.AssetTable) | Filter: $($cols.CNCnetPDMRequired) = true"
 
     $env:PGPASSWORD = $plainPwd
@@ -159,13 +161,18 @@ ORDER  BY $($cols.MachineName)
 
     #region -- Validate and assign device numbers ----------------------------
 
-    $index = 1
     foreach ($machine in $machines) {
         $name = $machine.MachineName
 
-        # DeviceNr is sequential (no device_nr column in schema)
-        $machine['DeviceNr']  = $index
-        $machine['CNCIndex']  = $index
+        # CNCnetPDM DeviceNr / driver derived from asset family + machine name (see Common.ps1)
+        $devInfo = Get-CNCDeviceInfo -Machine $machine -Manifest $Manifest
+        $machine['DeviceNr']  = $devInfo.DeviceNr
+        $machine['DriverDll'] = $devInfo.DriverDll
+        if ($devInfo.Error) {
+            Add-Result -Phase SiteDB -Check "$name DeviceNr" -Status WARN -Detail "$($devInfo.Error) - required if this machine is assigned to a DOC instance"
+        } else {
+            Add-Result -Phase SiteDB -Check "$name DeviceNr" -Status PASS -Detail "$($devInfo.DeviceNr) / $($devInfo.DriverDll)"
+        }
 
         if (-not $machine.IPAddress -or $machine.IPAddress -notmatch '^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$') {
             Add-Result -Phase SiteDB -Check "$name IP address" -Status WARN `
@@ -181,7 +188,6 @@ ORDER  BY $($cols.MachineName)
             Add-Result -Phase SiteDB -Check "$name DLL name" -Status PASS -Detail $machine.DLLName
         }
 
-        $index++
     }
 
     #endregion

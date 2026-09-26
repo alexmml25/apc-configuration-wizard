@@ -93,7 +93,7 @@ function Invoke-TimescaleDBSetup {
         }
     } catch {
         Add-Result -Phase TSDB -Check "PostgreSQL restart" -Status FAIL -Detail $_
-        throw "Failed to restart $svcName: $_"
+        throw "Failed to restart ${svcName}: $_"
     }
 
     #endregion
@@ -141,7 +141,7 @@ END
 
     #region -- Create TimescaleDB database ------------------------------------
 
-    $createDb = "SELECT 'CREATE DATABASE \"$dbName\" OWNER $dbUser' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$dbName')\gexec"
+    $createDb = "SELECT 'CREATE DATABASE `"$dbName`" OWNER $dbUser' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$dbName')\gexec"
     if (Invoke-Psql -Sql $createDb -Description "Create database $dbName") {
         Add-Result -Phase TSDB -Check "$dbName database" -Status PASS
     } else {

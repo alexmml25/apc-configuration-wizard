@@ -314,12 +314,12 @@ function Main {
         @{ Number =  5; File = '05-DeviceWiseCHMI.ps1';   Fn = 'Invoke-DeviceWiseCHMI'   },
         @{ Number =  6; File = '06-DeviceWiseSINC.ps1';   Fn = 'Invoke-DeviceWiseSINC'   },
         @{ Number =  7; File = '07-DeviceWiseCNCPDM.ps1'; Fn = 'Invoke-DeviceWiseCNCPDM' },
-        @{ Number =  8; File = '08-CNCnetPDM.ps1';        Fn = 'Invoke-CNCnetPDMConfig'  },
+        @{ Number =  8; File = '08-CNCnetPDM.ps1';        Fn = 'Invoke-CNCnetPDM'        },
         @{ Number =  9; File = '09-DOCConfig.ps1';        Fn = 'Invoke-DOCConfig'        },
-        @{ Number = 10; File = '10-DataApps.ps1';         Fn = 'Invoke-DataAppsConfig'   },
-        @{ Number = 11; File = '11-CHMI.ps1';             Fn = 'Invoke-CHMIConfig'       },
-        @{ Number = 12; File = '12-Backup.ps1';           Fn = 'Invoke-ApplicationBackup'},
-        @{ Number = 13; File = '13-Verification.ps1';     Fn = 'Invoke-ConfigVerification'}
+        @{ Number = 10; File = '10-DataApps.ps1';         Fn = 'Invoke-DataApps'         },
+        @{ Number = 11; File = '11-CHMI.ps1';             Fn = 'Invoke-CHMI'             },
+        @{ Number = 12; File = '12-Backup.ps1';           Fn = 'Invoke-Backup'           },
+        @{ Number = 13; File = '13-Verification.ps1';     Fn = 'Invoke-Verification'      }
     )
 
     $allPassed = $true

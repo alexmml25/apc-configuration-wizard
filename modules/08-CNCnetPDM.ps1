@@ -3,13 +3,18 @@
 .SYNOPSIS
     Step 8 - Configure CNCnetPDM machine entries, license, and INI files.
 .DESCRIPTION
-    - Reads the license key from the Excel file in the repository
-    - Writes the license key to CNCnetPDM.ini [License] section
-    - For each CNC machine: appends a Line{N} entry in CNCnetPDM.ini [RS232]
-    - For each CNC machine: appends TCP{N} entry in melcfg.ini [HOSTS]
-    - Renames CNC DLL files to their device-number-based names
+    Machines are the DOC-assigned CNCs (CNC n = DOC instance n). DeviceNr and driver DLL
+    come from Get-CNCDeviceInfo (Common.ps1): e.g. CITIZEN_L20X_IV + Humacao_L20X_8 -> 1008 / citizenm.dll.
+
+    - License key (wizard input, else manifest DefaultLicense) -> CNCnetPDM.ini [GENERAL] License
+    - CNCnetPDM.ini [RS232]: one active entry per CNC (existing active entries replaced)
+        {n} = {DeviceNr};19200;8;N;1;{MachineName};{IP};{Port};0;localhost;{n};0;none;none;0;{citizenm|mitsubishim}.dll
+    - melcfg.ini: one [Machine{nn}] section per CNC (Device=TCP{n}) and TCP{n} = {IP},{Port} in [HOSTS]
+    - Driver files: {dll}_CNC{n}.dll / .ini renamed to {dll}_{DeviceNr}.dll / .ini
     - Restarts the CNCnetPDM service and verifies it starts cleanly
 #>
+
+. (Join-Path $PSScriptRoot 'Common.ps1')
 
 function Invoke-CNCnetPDM {
     [CmdletBinding()]
@@ -21,26 +26,42 @@ function Invoke-CNCnetPDM {
 
     Write-Log STEP "CNCnetPDM Configuration"
 
-    $allMachines    = $State['CNCMachines']
-    $docAssignments = $State['DOCMachineAssignments']
-    $docCount       = [int]$State['DOCCount']
+    $cncPdm   = $Manifest.CNCnetPDM
+    $d        = $cncPdm.Defaults
+    $machines = Get-AssignedCNCs -State $State -Manifest $Manifest
+    $ts       = Get-Date -Format 'yyyyMMdd-HHmmss'
 
-    # Build the ordered list of machines for CNC1..CNCn (DOC-assigned only, not all Site DB machines)
-    $machines = @()
-    for ($i = 0; $i -lt $docCount; $i++) {
-        $name = if ($docAssignments -and $i -lt $docAssignments.Count) { $docAssignments[$i] } else { '' }
-        $m = $allMachines | Where-Object { $_.MachineName -eq $name } | Select-Object -First 1
-        if (-not $m -and $allMachines.Count -gt $i) { $m = $allMachines[$i] }
-        if ($m) { $machines += $m }
+    #region -- Validate machine identifiers ------------------------------------
+
+    if ($machines.Count -eq 0) {
+        Add-Result -Phase CNCnetPDM -Check "CNC assignments" -Status FAIL -Detail "No DOC-assigned machines in State"
+        throw "No CNC machines assigned - run Site DB fetch and select DOC machines first."
     }
+    $bad = $false
+    foreach ($m in $machines) {
+        if ($m.DeviceNrError) {
+            Add-Result -Phase CNCnetPDM -Check "CNC$($m.CNCIndex) DeviceNr ($($m.MachineName))" -Status FAIL -Detail $m.DeviceNrError
+            $bad = $true
+        } else {
+            Add-Result -Phase CNCnetPDM -Check "CNC$($m.CNCIndex) DeviceNr ($($m.MachineName))" -Status PASS `
+                -Detail "$($m.DeviceNr) / $($m.DriverDll) ($($m.AssetFamily))"
+        }
+    }
+    $dupes = $machines | Where-Object { $_.DeviceNr } | Group-Object { $_.DeviceNr } | Where-Object { $_.Count -gt 1 }
+    foreach ($g in $dupes) {
+        Add-Result -Phase CNCnetPDM -Check "DeviceNr $($g.Name) unique" -Status FAIL `
+            -Detail "Used by $(($g.Group | ForEach-Object { $_.MachineName }) -join ', ')"
+        $bad = $true
+    }
+    if ($bad) { throw "CNCnetPDM DeviceNr could not be derived for all CNCs - fix Site DB asset family / machine names." }
 
-    $cncPdm    = $Manifest.CNCnetPDM
-    $defaults  = $cncPdm.Defaults
+    #endregion
 
-    # Resolve CNCnetPDM install directory
+    #region -- Locate install directory ---------------------------------------
+
     $cncPdmDir = $null
     foreach ($candidate in @($cncPdm.InstallDir, $cncPdm.FallbackDir)) {
-        if (Test-Path $candidate) { $cncPdmDir = $candidate; break }
+        if ($candidate -and (Test-Path $candidate)) { $cncPdmDir = $candidate; break }
     }
     if (-not $cncPdmDir) {
         $found = Get-ChildItem 'C:\' -Directory -Filter '*CNCnetPDM*' -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -54,275 +75,207 @@ function Invoke-CNCnetPDM {
 
     $iniPath    = Join-Path $cncPdmDir $cncPdm.IniFile
     $melcfgPath = Join-Path $cncPdmDir $cncPdm.MelcfgFile
+    $driverDir  = if ($cncPdm.DriverSubDir) { Join-Path $cncPdmDir $cncPdm.DriverSubDir } else { $cncPdmDir }
 
-    #region -- Read license key from Excel ------------------------------------
+    #endregion
 
-    $licenseKey = ''
-    $repoRoot   = $Manifest.APC.RepositoryRoot
+    #region -- INI helpers -----------------------------------------------------
 
-    # Search for license Excel file
-    $xlFile = Get-ChildItem $repoRoot -Filter $cncPdm.LicenseExcelFile -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $xlFile) {
-        # Try any .xlsx with 'License' in name
-        $xlFile = Get-ChildItem $repoRoot -Filter '*License*.xlsx' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    function Read-IniLines {
+        param([string]$Path)
+        $list = [System.Collections.Generic.List[string]]::new()
+        $list.AddRange([string[]][System.IO.File]::ReadAllLines($Path))
+        return ,$list
     }
 
-    if ($xlFile) {
-        Write-Log INFO "Reading license key from: $($xlFile.FullName)"
-        try {
-            $xl = New-Object -ComObject Excel.Application
-            $xl.Visible = $false
-            $xl.DisplayAlerts = $false
-            try {
-                $wb   = $xl.Workbooks.Open($xlFile.FullName, 0, $true)
-                $ws   = $wb.Sheets.Item(1)
-                $licenseKey = [string]$ws.Cells.Item(1, 1).Value2
-                $wb.Close($false)
-                if ($licenseKey) {
-                    Write-Log INFO "License key read from Excel (A1)"
-                    Add-Result -Phase CNCnetPDM -Check "License key (Excel)" -Status PASS -Detail "Key: $($licenseKey.Substring(0, [Math]::Min(8,$licenseKey.Length)))..."
-                } else {
-                    throw "Cell A1 is empty"
-                }
-            } finally {
-                $xl.Quit()
-                [System.Runtime.InteropServices.Marshal]::ReleaseComObject($xl) | Out-Null
-            }
-        } catch {
-            Write-Log WARN "Excel COM read failed: $_. Trying XLSX XML fallback..."
-            # XLSX is a ZIP  -  read xl/worksheets/sheet1.xml directly
-            try {
-                Add-Type -AssemblyName System.IO.Compression.FileSystem
-                $zip    = [System.IO.Compression.ZipFile]::OpenRead($xlFile.FullName)
-                $entry  = $zip.Entries | Where-Object { $_.FullName -eq 'xl/worksheets/sheet1.xml' } | Select-Object -First 1
-                if (-not $entry) { throw "sheet1.xml not in XLSX" }
-                $sr     = [System.IO.StreamReader]::new($entry.Open())
-                $xmlStr = $sr.ReadToEnd()
-                $sr.Close()
-                $zip.Dispose()
-                [xml]$sheetXml = $xmlStr
-                # First <v> element inside first <c> element
-                $vNode = $sheetXml.SelectSingleNode('//ns:worksheet/ns:sheetData/ns:row[1]/ns:c[1]/ns:v',
-                    (New-Object System.Xml.XmlNamespaceManager($sheetXml.NameTable)).tap({
-                        $_.AddNamespace('ns','http://schemas.openxmlformats.org/spreadsheetml/2006/main')
-                    }))
-                if ($vNode) { $licenseKey = $vNode.InnerText }
-                if ($licenseKey) {
-                    Write-Log INFO "License key read via XLSX XML fallback"
-                    Add-Result -Phase CNCnetPDM -Check "License key (XLSX)" -Status PASS
-                }
-            } catch {
-                Add-Result -Phase CNCnetPDM -Check "License key" -Status WARN `
-                    -Detail "Could not read Excel: $_. Enter license key manually in CNCnetPDM.ini [License] section."
+    function Write-IniLines {
+        param([string]$Path, [System.Collections.Generic.List[string]]$Lines)
+        Copy-Item $Path "$Path.$ts.bak" -Force
+        [System.IO.File]::WriteAllText($Path, (($Lines -join "`r`n") + "`r`n"), [System.Text.Encoding]::ASCII)
+    }
+
+    # Returns @{ Header = <index of [Section]>; End = <index of next section header or Count> } or $null
+    function Find-Section {
+        param([System.Collections.Generic.List[string]]$Lines, [string]$Section)
+        for ($i = 0; $i -lt $Lines.Count; $i++) {
+            if ($Lines[$i].Trim() -ieq "[$Section]") {
+                $end = $i + 1
+                while ($end -lt $Lines.Count -and $Lines[$end].Trim() -notmatch '^\[') { $end++ }
+                return @{ Header = $i; End = $end }
             }
         }
-    } else {
-        Add-Result -Phase CNCnetPDM -Check "License Excel file" -Status WARN `
-            -Detail "No license .xlsx found under $repoRoot  -  enter license manually in CNCnetPDM.ini"
+        return $null
+    }
+
+    # Removes lines matching $Pattern inside a section, then collapses repeated blank lines
+    function Remove-SectionLines {
+        param([System.Collections.Generic.List[string]]$Lines, [string]$Section, [string]$Pattern)
+        $sec = Find-Section $Lines $Section
+        if (-not $sec) { return }
+        for ($i = $sec.End - 1; $i -gt $sec.Header; $i--) {
+            if ($Lines[$i] -match $Pattern) { $Lines.RemoveAt($i) }
+        }
+        $sec = Find-Section $Lines $Section
+        for ($i = $sec.End - 1; $i -gt $sec.Header + 1; $i--) {
+            if (-not $Lines[$i].Trim() -and -not $Lines[$i - 1].Trim()) { $Lines.RemoveAt($i) }
+        }
+        if ($sec.Header + 1 -lt $Lines.Count -and -not $Lines[$sec.Header + 1].Trim()) { $Lines.RemoveAt($sec.Header + 1) }
+    }
+
+    function Set-IniKey {
+        param([System.Collections.Generic.List[string]]$Lines, [string]$Section, [string]$Key, [string]$Value)
+        $sec = Find-Section $Lines $Section
+        if (-not $sec) { throw "[$Section] section not found" }
+        for ($i = $sec.Header + 1; $i -lt $sec.End; $i++) {
+            if ($Lines[$i] -match "^\s*$([regex]::Escape($Key))\s*=") { $Lines[$i] = "$Key = $Value"; return }
+        }
+        $Lines.Insert($sec.Header + 1, "$Key = $Value")
+    }
+
+    function Get-MachinePort {
+        param($Machine)
+        if ("$($Machine.Port)" -match '^\d+$') { [int]$Machine.Port } else { [int]$d.Port }
     }
 
     #endregion
 
-    #region -- Edit CNCnetPDM.ini --------------------------------------------
+    #region -- License key ----------------------------------------------------
+
+    $licenseKey = if ($State['CNCnetPDMLicense']) { [string]$State['CNCnetPDMLicense'] } else { [string]$cncPdm.DefaultLicense }
+    $licenseKey = $licenseKey.Trim()
+    $licenseSrc = if ($State['CNCnetPDMLicense'] -and $State['CNCnetPDMLicense'] -ne $cncPdm.DefaultLicense) { 'entered in wizard' } else { 'manifest default' }
+
+    #endregion
+
+    #region -- CNCnetPDM.ini ---------------------------------------------------
 
     if (-not (Test-Path $iniPath)) {
         Add-Result -Phase CNCnetPDM -Check "CNCnetPDM.ini" -Status FAIL -Detail "Not found: $iniPath"
         throw "CNCnetPDM.ini not found at $iniPath"
     }
+    $ini = Read-IniLines $iniPath
 
-    $iniLines = [System.IO.File]::ReadAllLines($iniPath)
-
-    # Helper: upsert a key in a section
-    function Set-IniValue {
-        param([ref][string[]]$lines, [string]$section, [string]$key, [string]$value)
-        $sectionIdx = -1
-        $keyIdx     = -1
-        for ($idx = 0; $idx -lt $lines.Value.Count; $idx++) {
-            $l = $lines.Value[$idx].Trim()
-            if ($l -eq "[$section]") { $sectionIdx = $idx }
-            if ($sectionIdx -ge 0 -and $l -match "^$key\s*=") { $keyIdx = $idx; break }
-        }
-        if ($keyIdx -ge 0) {
-            $lines.Value[$keyIdx] = "$key=$value"
-        } elseif ($sectionIdx -ge 0) {
-            $newLines = New-Object System.Collections.Generic.List[string]
-            $newLines.AddRange($lines.Value)
-            $newLines.Insert($sectionIdx + 1, "$key=$value")
-            $lines.Value = $newLines.ToArray()
-        } else {
-            # Section doesn't exist  -  append
-            $newLines = New-Object System.Collections.Generic.List[string]
-            $newLines.AddRange($lines.Value)
-            $newLines.Add("")
-            $newLines.Add("[$section]")
-            $newLines.Add("$key=$value")
-            $lines.Value = $newLines.ToArray()
-        }
-    }
-
-    # Helper: get next available Line{N} index in [RS232]
-    function Get-NextRS232Index {
-        param([string[]]$lines)
-        $maxIdx = 0
-        $inRS232 = $false
-        foreach ($l in $lines) {
-            if ($l.Trim() -eq '[RS232]') { $inRS232 = $true; continue }
-            if ($inRS232 -and $l.Trim() -match '^\[') { break }
-            if ($inRS232 -and $l.Trim() -match '^Line(\d+)\s*=') {
-                $n = [int]$Matches[1]
-                if ($n -gt $maxIdx) { $maxIdx = $n }
-            }
-        }
-        return $maxIdx + 1
-    }
-
-    # License key
     if ($licenseKey) {
-        Set-IniValue -lines ([ref]$iniLines) -section 'License' -key 'LicenseKey' -value $licenseKey
-        Add-Result -Phase CNCnetPDM -Check "License key written to INI" -Status PASS
+        Set-IniKey $ini 'GENERAL' 'License' $licenseKey
+        Add-Result -Phase CNCnetPDM -Check "License key written to [GENERAL]" -Status PASS `
+            -Detail "$($licenseKey.Substring(0, [Math]::Min(8, $licenseKey.Length)))... ($licenseSrc)"
+    } else {
+        Add-Result -Phase CNCnetPDM -Check "License key" -Status WARN `
+            -Detail "No license supplied - apply the perpetual license via CNCnetPDM Workbench (License -> View/Edit)."
     }
 
-    # RS232 entries  -  remove ALL existing numeric-key entries inside [RS232] then rewrite
-    $iniList = [System.Collections.Generic.List[string]]::new()
-    $iniList.AddRange($iniLines)
-
-    $inRS232 = $false
-    $toRemove = @()
-    for ($idx = 0; $idx -lt $iniList.Count; $idx++) {
-        $l = $iniList[$idx]
-        if ($l.Trim() -eq '[RS232]') { $inRS232 = $true; continue }
-        if ($inRS232 -and $l.Trim() -match '^\[') { $inRS232 = $false }
-        if ($inRS232 -and $l.Trim() -match '^\d+\s*=') { $toRemove += $idx }
-    }
-    for ($r = $toRemove.Count - 1; $r -ge 0; $r--) { $iniList.RemoveAt($toRemove[$r]) }
-    $iniLines = $iniList.ToArray()
-
-    # Find insertion point (right after [RS232] header line)
-    $rs232SectionEnd = -1
-    $inRS232 = $false
-    for ($idx = 0; $idx -lt $iniLines.Count; $idx++) {
-        $l = $iniLines[$idx].Trim()
-        if ($l -eq '[RS232]') { $inRS232 = $true; $rs232SectionEnd = $idx + 1; continue }
-        if ($inRS232 -and $l -match '^\[') { break }
-        if ($inRS232) { $rs232SectionEnd = $idx + 1 }
+    $rs = $cncPdm.RS232Section
+    if (-not (Find-Section $ini $rs)) { $ini.Add(''); $ini.Add("[$rs]") }
+    Remove-SectionLines $ini $rs '^\s*(;\s*)?(CNC)?\d+\s*=|^\s*;\s*For testing only'
+    $insertAt = (Find-Section $ini $rs).Header + 1
+    foreach ($m in $machines) {
+        $n = $m.CNCIndex
+        $fields = @(
+            $m.DeviceNr, $d.Baud, $d.Databits, $d.Parity, $d.StopBits,
+            $m.MachineName, $m.IPAddress, (Get-MachinePort $m), $d.Method, $d.DNSName,
+            $n, $d.PLCAddr, $d.Share, $d.LogfileName, $d.LogfileVer, $m.DriverDll
+        )
+        $ini.Insert($insertAt, "$n = $($fields -join ';')")
+        $insertAt++
+        Add-Result -Phase CNCnetPDM -Check "CNCnetPDM.ini line $n ($($m.MachineName))" -Status PASS -Detail "DeviceNr $($m.DeviceNr), $($m.IPAddress), $($m.DriverDll)"
     }
 
-    $d = $defaults
-    $insertIdx = $rs232SectionEnd
-    for ($i = 0; $i -lt $machines.Count; $i++) {
-        $m       = $machines[$i]
-        $lineNum = $i + 1
-        # Format matches existing: {N} = CNC{N};Baud;Databits;Parity;StopBits;MachineName;IP;Port;Method;localhost;Idx;0;none;none;0;DLL
-        $entry = "$lineNum = CNC${lineNum};$($d.Baud);$($d.Databits);$($d.Parity);$($d.StopBits);$($m.MachineName);$($m.IPAddress);$($d.Port);$($d.Method);localhost;$lineNum;0;none;none;0;$($m.DLLName)"
-
-        $iniList2 = [System.Collections.Generic.List[string]]::new()
-        $iniList2.AddRange($iniLines)
-        if ($insertIdx -ge 0) {
-            $iniList2.Insert($insertIdx, $entry)
-            $insertIdx++
-        } else {
-            $iniList2.Add(''); $iniList2.Add('[RS232]'); $iniList2.Add($entry)
-        }
-        $iniLines = $iniList2.ToArray()
-
-        Add-Result -Phase CNCnetPDM -Check "CNCnetPDM.ini Line$lineNum ($($m.MachineName))" -Status PASS
-    }
-
-    [System.IO.File]::WriteAllLines($iniPath, $iniLines)
+    Write-IniLines $iniPath $ini
     Write-Log INFO "CNCnetPDM.ini saved: $iniPath"
 
     #endregion
 
-    #region -- Edit melcfg.ini -----------------------------------------------
+    #region -- melcfg.ini ------------------------------------------------------
 
     if (-not (Test-Path $melcfgPath)) {
-        Add-Result -Phase CNCnetPDM -Check "melcfg.ini" -Status WARN -Detail "Not found: $melcfgPath  -  skipping TCP host entries"
+        Add-Result -Phase CNCnetPDM -Check "melcfg.ini" -Status FAIL -Detail "Not found: $melcfgPath"
     } else {
-        $melLines = [System.IO.File]::ReadAllLines($melcfgPath)
+        $mel = Read-IniLines $melcfgPath
 
-        # Remove ALL existing TCP{N} entries from [HOSTS] then rewrite
-        $melList = [System.Collections.Generic.List[string]]::new()
-        $melList.AddRange($melLines)
-        $inHosts2 = $false
-        $toRemove2 = @()
-        for ($idx = 0; $idx -lt $melList.Count; $idx++) {
-            $l = $melList[$idx]
-            if ($l.Trim() -eq '[HOSTS]') { $inHosts2 = $true; continue }
-            if ($inHosts2 -and $l.Trim() -match '^\[') { $inHosts2 = $false }
-            if ($inHosts2 -and $l.Trim() -match '^TCP\d+\s*=') { $toRemove2 += $idx }
-        }
-        for ($r = $toRemove2.Count - 1; $r -ge 0; $r--) { $melList.RemoveAt($toRemove2[$r]) }
-        $melLines = $melList.ToArray()
-
-        # Find [HOSTS] section end
-        $hostsSectionEnd = -1
-        $inHosts = $false
-        for ($idx = 0; $idx -lt $melLines.Count; $idx++) {
-            $l = $melLines[$idx].Trim()
-            if ($l -eq '[HOSTS]') { $inHosts = $true; $hostsSectionEnd = $idx + 1; continue }
-            if ($inHosts -and $l -match '^\[' -and $l -ne '[HOSTS]') { break }
-            if ($inHosts) { $hostsSectionEnd = $idx + 1 }
-        }
-
-        $insertIdx = $hostsSectionEnd
-        for ($i = 0; $i -lt $machines.Count; $i++) {
-            $m   = $machines[$i]
-            $n   = $i + 1
-            $entry = "TCP${n} = $($m.IPAddress),$($m.Port)"
-
-            $mel2 = [System.Collections.Generic.List[string]]::new()
-            $mel2.AddRange($melLines)
-            if ($insertIdx -ge 0) {
-                $mel2.Insert($insertIdx, $entry)
-                $insertIdx++
-            } else {
-                $mel2.Add(''); $mel2.Add('[HOSTS]'); $mel2.Add($entry)
+        # [MachineNN] sections: one per CNC, cloned from the first existing section
+        $template = $null; $firstAt = -1
+        for ($i = $mel.Count - 1; $i -ge 0; $i--) {
+            if ($mel[$i].Trim() -match '^\[Machine\d+\]$') {
+                $end = $i + 1
+                while ($end -lt $mel.Count -and $mel[$end].Trim() -notmatch '^\[') { $end++ }
+                $template = @($mel.GetRange($i + 1, $end - $i - 1))
+                $mel.RemoveRange($i, $end - $i)
+                $firstAt = $i
             }
-            $melLines = $mel2.ToArray()
+        }
+        if (-not $template) {
+            $template = @('Controller=M7NX', 'Device=TCP1', 'CacheEnable=0')
+            $chg      = Find-Section $mel 'CHGAPIVL'
+            $firstAt  = if ($chg) { $chg.Header } else { $mel.Count }
+        }
+        while ($template.Count -gt 0 -and -not $template[-1].Trim()) { $template = @($template | Select-Object -SkipLast 1) }
 
-            Add-Result -Phase CNCnetPDM -Check "melcfg.ini TCP$n ($($m.MachineName))" -Status PASS
+        $block = [System.Collections.Generic.List[string]]::new()
+        foreach ($m in $machines) {
+            $n = $m.CNCIndex
+            $block.Add(('[Machine{0:D2}]' -f $n))
+            foreach ($l in $template) { $block.Add(($l -replace '^(\s*Device\s*=\s*)TCP\d+', "`${1}TCP$n")) }
+            $block.Add('')
+        }
+        $mel.InsertRange($firstAt, $block)
+
+        # [HOSTS]: TCP{n} = IP,Port
+        $hs = $cncPdm.HostsSection
+        if (-not (Find-Section $mel $hs)) { $mel.Add(''); $mel.Add("[$hs]") }
+        Remove-SectionLines $mel $hs '^\s*(;\s*)?TCP\d+\s*='
+        $sec = Find-Section $mel $hs
+        $insertAt = $sec.End
+        while ($insertAt -gt $sec.Header + 1 -and -not $mel[$insertAt - 1].Trim()) { $insertAt-- }
+        foreach ($m in $machines) {
+            $mel.Insert($insertAt, "TCP$($m.CNCIndex) = $($m.IPAddress),$(Get-MachinePort $m)")
+            $insertAt++
+            Add-Result -Phase CNCnetPDM -Check "melcfg.ini Machine$('{0:D2}' -f $m.CNCIndex) / TCP$($m.CNCIndex) ($($m.MachineName))" -Status PASS
         }
 
-        [System.IO.File]::WriteAllLines($melcfgPath, $melLines)
+        Write-IniLines $melcfgPath $mel
         Write-Log INFO "melcfg.ini saved: $melcfgPath"
     }
 
     #endregion
 
-    #region -- Rename DLL files -----------------------------------------------
+    #region -- Driver files ----------------------------------------------------
 
-    $dllDir = Join-Path $cncPdmDir $cncPdm.DllSubDir
-    Write-Log INFO "DLL directory: $dllDir"
-
-    if (Test-Path $dllDir) {
-        for ($i = 0; $i -lt $machines.Count; $i++) {
-            $m        = $machines[$i]
-            $n        = $i + 1
-            $dllBase  = [System.IO.Path]::GetFileNameWithoutExtension($m.DLLName) # e.g. citizenm or mitsubishim
-            $dstName  = "${dllBase}_CNC${n}.dll"          # target: citizenm_CNC1.dll (matches RS232 device nr)
-            $srcName  = "${dllBase}_$($m.DeviceNr).dll"   # source: numeric variant if not yet renamed
-            $srcPath  = Join-Path $dllDir $srcName
-            $dstPath  = Join-Path $dllDir $dstName
-
-            if ($srcPath -eq $dstPath) {
-                Add-Result -Phase CNCnetPDM -Check "DLL rename: $srcName" -Status PASS -Detail "No rename needed (names match)"
-            } elseif (Test-Path $srcPath) {
-                try {
-                    if (Test-Path $dstPath) { Remove-Item $dstPath -Force }
-                    Rename-Item $srcPath $dstName
-                    Add-Result -Phase CNCnetPDM -Check "DLL rename: $srcName -> $dstName" -Status PASS
-                } catch {
-                    Add-Result -Phase CNCnetPDM -Check "DLL rename: $srcName" -Status WARN -Detail "Rename failed: $_"
-                }
-            } elseif (Test-Path $dstPath) {
-                Add-Result -Phase CNCnetPDM -Check "DLL: $dstName" -Status PASS -Detail "Already renamed"
+    Write-Log INFO "Driver directory: $driverDir"
+    if (-not (Test-Path $driverDir)) {
+        Add-Result -Phase CNCnetPDM -Check "Driver directory" -Status FAIL -Detail "Not found: $driverDir"
+    } else {
+        foreach ($dll in @($machines | ForEach-Object { $_.DriverDll } | Select-Object -Unique)) {
+            if (Test-Path (Join-Path $driverDir $dll)) {
+                Add-Result -Phase CNCnetPDM -Check "Driver $dll present" -Status PASS
             } else {
-                Add-Result -Phase CNCnetPDM -Check "DLL: $srcName" -Status WARN `
-                    -Detail "Neither $srcName nor $dstName found in $dllDir  -  verify DLL placement manually"
+                Add-Result -Phase CNCnetPDM -Check "Driver $dll present" -Status WARN -Detail "Not found in $driverDir"
             }
         }
-    } else {
-        Add-Result -Phase CNCnetPDM -Check "DLL directory" -Status WARN -Detail "Directory not found: $dllDir  -  skipping DLL rename"
+
+        foreach ($m in $machines) {
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($m.DriverDll)
+            foreach ($ext in 'dll', 'ini') {
+                $srcName = "${base}_CNC$($m.CNCIndex).$ext"
+                $dstName = "${base}_$($m.DeviceNr).$ext"
+                $srcPath = Join-Path $driverDir $srcName
+                $dstPath = Join-Path $driverDir $dstName
+                if (Test-Path $dstPath) {
+                    Add-Result -Phase CNCnetPDM -Check "Driver file $dstName" -Status PASS -Detail "Present"
+                } elseif (Test-Path $srcPath) {
+                    try {
+                        Rename-Item $srcPath $dstName -ErrorAction Stop
+                        Add-Result -Phase CNCnetPDM -Check "Driver file $srcName -> $dstName" -Status PASS
+                    } catch {
+                        Add-Result -Phase CNCnetPDM -Check "Driver file $srcName" -Status FAIL -Detail "Rename failed: $_"
+                    }
+                } elseif ($ext -eq 'dll') {
+                    Add-Result -Phase CNCnetPDM -Check "Driver file $dstName" -Status WARN `
+                        -Detail "Neither $srcName nor $dstName found in $driverDir - place/rename manually"
+                } else {
+                    Write-Log INFO "No $srcName / $dstName in $driverDir (driver ini optional)"
+                }
+            }
+        }
     }
 
     #endregion
@@ -348,5 +301,6 @@ function Invoke-CNCnetPDM {
     #endregion
 
     Write-Log PASS "CNCnetPDM configuration complete."
+    Write-Log INFO "Backups (.$ts.bak) written next to CNCnetPDM.ini and melcfg.ini."
     Write-Log INFO "Verify: CNCnetPDM Workbench -> Machine Status should show green for each configured CNC after network connectivity is established."
 }

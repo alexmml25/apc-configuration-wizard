@@ -1,16 +1,22 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     Step 9 - Configure DOC instance XML files for each DOC installation.
 .DESCRIPTION
-    For each DOC instance (1 to State.DOCCount):
-    - DocDB.xml          -> connection string -> TimescaleDB / apcuser
-    - DOC_II.xml         -> CSVFileOutputPath -> SINC staging path for this CNC
-    - PartLookup.xml     -> connection string; LoadMatrixRevision = MAX
-    - SpcDB.xml          -> connection string
-    - IqsDocSpcDataCollector.xml -> DBId = CNCAsset; Name prefix = Primary; Family = CNCType
-    All files are edited in-place; originals are backed up with a .bak timestamp suffix.
+    For each DOC instance n (1..DOCCount), paired with CNC n (the DOC-assigned machine):
+      DOC_II\DocDb.xml                     verify ConnectionString (localhost / TimescaleDB / apcuser)
+      DOC_II\DOC_II.xml                    CSVFileOutputPath = <SINC staging>\CNC{n}\<CSVFileNamePattern>
+      DOC_II\PartLookup.xml                verify ConnectionString; LoadMatrixRevision = MAX
+      DOC_II\Plugins\IQS\SpcDb.xml         verify ConnectionString
+      DOC_II\Plugins\IQS\IqsDocSpcDataCollector.xml
+          AssetConfiguration: DBId = machine, Name = Primary [machine], Family = asset family
+          SourceDataInclusionList: 1ST_/SPC_/VER_<instrument>_<site> : <instrument>
+            for the instruments selected for CNC n in Data Applications
+    The <Name> of every file is set to "DOC-{n} ...". Connection strings are verified, never changed (SOP).
+    Originals are backed up with a timestamp suffix.
 #>
+
+. (Join-Path $PSScriptRoot 'Common.ps1')
 
 function Invoke-DOCConfig {
     [CmdletBinding()]
@@ -22,163 +28,162 @@ function Invoke-DOCConfig {
 
     Write-Log STEP "DOC Instance XML Configuration"
 
-    $machines = $State['CNCMachines']
-    $docCount = [int]$State['DOCCount']
     $docCfg   = $Manifest.DOC
-    $pg       = $Manifest.PostgreSQL
-    $sinc     = $Manifest.DeviceWise.SINCStaging
-    $ts       = "2025-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+    $machines = Get-AssignedCNCs -State $State -Manifest $Manifest
+    $ts       = Get-Date -Format 'yyyyMMdd-HHmmss'
 
-    if ($docCount -le 0 -or $docCount -gt 3) { $docCount = 1 }
-
-    # TSDB connection string (odb format for .xml apps)
-    $connString = "Server=localhost;Port=5432;Database=TimescaleDB;User Id=apcuser;Password=;"
+    if ($machines.Count -eq 0) {
+        Add-Result -Phase DOC -Check "DOC assignments" -Status FAIL -Detail "No DOC-assigned machines in State"
+        throw "No DOC-assigned machines - run Site DB fetch and select DOC machines first."
+    }
 
     function Backup-AndLoad {
         param([string]$Path)
         if (-not (Test-Path $Path)) { return $null }
         Copy-Item $Path "$Path.$ts.bak" -Force
-        [xml]$xml = [System.IO.File]::ReadAllText($Path)
+        $xml = New-Object System.Xml.XmlDocument
+        $xml.LoadXml([System.IO.File]::ReadAllText($Path))
         return $xml
     }
 
     function Save-Xml {
-        param([xml]$Xml, [string]$Path)
-        $settings           = [System.Xml.XmlWriterSettings]::new()
-        $settings.Indent    = $true
-        $settings.Encoding  = [System.Text.UTF8Encoding]::new($false)
-        $writer = [System.Xml.XmlWriter]::Create($Path, $settings)
-        $Xml.Save($writer)
-        $writer.Close()
+        param([System.Xml.XmlDocument]$Xml, [string]$Path)
+        $s = [System.Xml.XmlWriterSettings]::new()
+        $s.Indent   = $true
+        $s.Encoding = [System.Text.UTF8Encoding]::new($true)
+        $w = [System.Xml.XmlWriter]::Create($Path, $s)
+        try { $Xml.Save($w) } finally { $w.Close() }
     }
 
-    function Set-XmlConnectionString {
-        param([xml]$Xml, [string]$NewConnStr)
-        $nodes = $Xml.SelectNodes('//*[local-name()="connectionStrings"]/*[@name]')
-        foreach ($n in $nodes) {
-            if ($n.Attributes['connectionString']) {
-                $n.Attributes['connectionString'].Value = $NewConnStr
-            }
+    function Set-Text {
+        param([System.Xml.XmlNode]$Parent, [string]$Name, [string]$Value)
+        $node = $Parent.SelectSingleNode($Name)
+        if (-not $node) {
+            $node = $Parent.OwnerDocument.CreateElement($Name)
+            $Parent.AppendChild($node) | Out-Null
         }
-        # Also try <add key="..." value="..." /> style
-        $kv = $Xml.SelectNodes('//*[local-name()="add"][@key]')
-        foreach ($n in $kv) {
-            $key = $n.Attributes['key'].Value
-            if ($key -like '*Connect*' -or $key -like '*Connection*') {
-                $n.Attributes['value'].Value = $NewConnStr
-            }
+        $node.InnerText = $Value
+    }
+
+    # Top-level <Name> "DOC-1 DocDb" -> "DOC-{n} DocDb"
+    function Set-InstanceName {
+        param([System.Xml.XmlDocument]$Xml, [int]$N)
+        $node = $Xml.SelectSingleNode('/Configuration/Name')
+        if ($node -and $node.InnerText -match '^DOC-\d+') { $node.InnerText = $node.InnerText -replace '^DOC-\d+', "DOC-$N" }
+    }
+
+    function Test-ConnString {
+        param([System.Xml.XmlDocument]$Xml, [string]$Label, [int]$N)
+        $cs = $Xml.SelectSingleNode('/Configuration/ConnectionString')
+        $v  = if ($cs) { $cs.InnerText } else { '' }
+        if ($v -match 'Server=localhost' -and $v -match 'Database=TimescaleDB' -and $v -match 'User Id=apcuser') {
+            Add-Result -Phase DOC -Check "DOC ${N}: $Label connection" -Status PASS
+        } else {
+            Add-Result -Phase DOC -Check "DOC ${N}: $Label connection" -Status WARN `
+                -Detail "ConnectionString does not point at localhost/TimescaleDB as apcuser - confirm with APC Team (not modified)"
         }
     }
 
-    for ($d = 1; $d -le $docCount; $d++) {
-        # Machine pairing: prefer user assignment, fall back to positional index
-        $assignments  = $State['DOCMachineAssignments']
-        $assignedName = if ($assignments -and $assignments.Count -ge $d) { $assignments[$d - 1] } else { '' }
-        $machine = if ($assignedName) {
-            $machines | Where-Object { $_.MachineName -eq $assignedName } | Select-Object -First 1
-        } else { $null }
-        if (-not $machine) { $machine = if (($d - 1) -lt $machines.Count) { $machines[$d - 1] } else { $machines[0] } }
-        $cncNode    = "CNC$d"
-        $basePath   = $docCfg.BasePath -replace '\{N\}', $d
+    foreach ($m in $machines) {
+        $n     = $m.CNCIndex
+        $paths = Get-DOCFilePaths -Manifest $Manifest -N $n
+        Write-Log INFO "DOC $n -> CNC$n ($($m.MachineName)) at $($paths.Base)"
 
-        Write-Log INFO "Configuring DOC instance $d at: $basePath"
-
-        if (-not (Test-Path $basePath)) {
-            Add-Result -Phase DOC -Check "DOC $d base path" -Status WARN -Detail "Path not found: $basePath"
+        if (-not (Test-Path $paths.Base)) {
+            Add-Result -Phase DOC -Check "DOC $n install folder" -Status FAIL -Detail "Not found: $($paths.Base)"
             continue
         }
 
-        #region DocDB.xml -------------------------------------------------------
-        $docDbPath = Join-Path $basePath $docCfg.DocDBXml
-        $docDbXml  = Backup-AndLoad $docDbPath
-        if ($docDbXml) {
-            Set-XmlConnectionString -Xml $docDbXml -NewConnStr $connString
-            Save-Xml -Xml $docDbXml -Path $docDbPath
-            Add-Result -Phase DOC -Check "DOC ${d}: DocDB.xml" -Status PASS -Detail "Connection string updated"
+        #region DocDb.xml
+        $xml = Backup-AndLoad $paths.DocDb
+        if ($xml) {
+            Set-InstanceName $xml $n
+            Test-ConnString $xml 'DocDb.xml' $n
+            Save-Xml $xml $paths.DocDb
         } else {
-            Add-Result -Phase DOC -Check "DOC ${d}: DocDB.xml" -Status WARN -Detail "File not found: $docDbPath"
+            Add-Result -Phase DOC -Check "DOC ${n}: DocDb.xml" -Status FAIL -Detail "Not found: $($paths.DocDb)"
         }
         #endregion
 
-        #region DOC_II.xml ------------------------------------------------------
-        $docIIPath = Join-Path $basePath $docCfg.DocIIXml
-        $docIIXml  = Backup-AndLoad $docIIPath
-        if ($docIIXml) {
-            $sincMachinePath = Join-Path $sinc $machine.MachineName
-
-            # Update CSVFileOutputPath
-            $csvNode = $docIIXml.SelectSingleNode('//*[local-name()="CSVFileOutputPath"]')
-            if (-not $csvNode) {
-                $csvNode = $docIIXml.SelectSingleNode('//*[local-name()="add"][@key="CSVFileOutputPath"]')
+        #region DOC_II.xml
+        $xml = Backup-AndLoad $paths.DocII
+        if ($xml) {
+            Set-InstanceName $xml $n
+            $csvPath = Get-DOCCsvOutputPath -Manifest $Manifest -N $n
+            Set-Text $xml.DocumentElement 'CSVFileOutputPath' $csvPath
+            Save-Xml $xml $paths.DocII
+            Add-Result -Phase DOC -Check "DOC ${n}: DOC_II.xml CSVFileOutputPath" -Status PASS -Detail $csvPath
+            $sincDir = Split-Path $csvPath -Parent
+            if (-not (Test-Path $sincDir)) {
+                Add-Result -Phase DOC -Check "DOC ${n}: SINC folder" -Status WARN -Detail "$sincDir does not exist - run Step 3"
             }
-            if ($csvNode) {
-                if ($csvNode.InnerText -ne $null) { $csvNode.InnerText = $sincMachinePath }
-                elseif ($csvNode.Attributes['value']) { $csvNode.Attributes['value'].Value = $sincMachinePath }
-                Add-Result -Phase DOC -Check "DOC ${d}: DOC_II.xml CSVPath" -Status PASS -Detail $sincMachinePath
+        } else {
+            Add-Result -Phase DOC -Check "DOC ${n}: DOC_II.xml" -Status FAIL -Detail "Not found: $($paths.DocII)"
+        }
+        #endregion
+
+        #region PartLookup.xml
+        $xml = Backup-AndLoad $paths.PartLookup
+        if ($xml) {
+            Set-InstanceName $xml $n
+            Test-ConnString $xml 'PartLookup.xml' $n
+            Set-Text $xml.DocumentElement 'LoadMatrixRevision' $docCfg.LoadMatrixRevision
+            Save-Xml $xml $paths.PartLookup
+            Add-Result -Phase DOC -Check "DOC ${n}: PartLookup.xml LoadMatrixRevision" -Status PASS -Detail $docCfg.LoadMatrixRevision
+        } else {
+            Add-Result -Phase DOC -Check "DOC ${n}: PartLookup.xml" -Status FAIL -Detail "Not found: $($paths.PartLookup)"
+        }
+        #endregion
+
+        #region SpcDb.xml
+        $xml = Backup-AndLoad $paths.SpcDb
+        if ($xml) {
+            Set-InstanceName $xml $n
+            Test-ConnString $xml 'SpcDb.xml' $n
+            Save-Xml $xml $paths.SpcDb
+        } else {
+            Add-Result -Phase DOC -Check "DOC ${n}: SpcDb.xml" -Status FAIL -Detail "Not found: $($paths.SpcDb)"
+        }
+        #endregion
+
+        #region IqsDocSpcDataCollector.xml
+        $xml = Backup-AndLoad $paths.Iqs
+        if ($xml) {
+            Set-InstanceName $xml $n
+            $root   = $xml.DocumentElement
+            $assets = $root.SelectSingleNode('Assets')
+            if (-not $assets) { $assets = $xml.CreateElement('Assets'); $root.AppendChild($assets) | Out-Null }
+            $asset = $assets.SelectSingleNode('AssetConfiguration')
+            if (-not $asset) { $asset = $xml.CreateElement('AssetConfiguration'); $assets.AppendChild($asset) | Out-Null }
+            foreach ($extra in @($assets.SelectNodes('AssetConfiguration') | Select-Object -Skip 1)) { $assets.RemoveChild($extra) | Out-Null }
+            $family = if ($m.AssetFamily) { $m.AssetFamily } else { $m.CNCType }
+            Set-Text $asset 'DBId'   $m.MachineName
+            Set-Text $asset 'Name'   "Primary [$($m.MachineName)]"
+            Set-Text $asset 'Family' $family
+            Add-Result -Phase DOC -Check "DOC ${n}: Iqs asset" -Status PASS -Detail "DBId=$($m.MachineName) Family=$family"
+
+            $entries = Get-DOCInclusionList -Manifest $Manifest -State $State -Cnc $n
+            $incl = $root.SelectSingleNode('SourceDataInclusionList')
+            if (-not $incl) { $incl = $xml.CreateElement('SourceDataInclusionList'); $root.AppendChild($incl) | Out-Null }
+            foreach ($c in @($incl.ChildNodes)) { $incl.RemoveChild($c) | Out-Null }
+            foreach ($e in $entries) {
+                $el = $xml.CreateElement('string'); $el.InnerText = $e
+                $incl.AppendChild($el) | Out-Null
+            }
+            if ($entries.Count -eq 0) {
+                Add-Result -Phase DOC -Check "DOC ${n}: Iqs SourceDataInclusionList" -Status WARN -Detail "No instruments selected for CNC$n - list is empty"
             } else {
-                Add-Result -Phase DOC -Check "DOC ${d}: DOC_II.xml CSVPath" -Status WARN -Detail "CSVFileOutputPath node not found  -  set manually"
+                $names = ($entries | ForEach-Object { ($_ -split ' : ')[1] } | Select-Object -Unique) -join ', '
+                Add-Result -Phase DOC -Check "DOC ${n}: Iqs SourceDataInclusionList" -Status PASS -Detail "$($entries.Count) entries ($names, site $($State['SiteCode']))"
             }
 
-            Save-Xml -Xml $docIIXml -Path $docIIPath
+            Save-Xml $xml $paths.Iqs
         } else {
-            Add-Result -Phase DOC -Check "DOC ${d}: DOC_II.xml" -Status WARN -Detail "File not found: $docIIPath"
-        }
-        #endregion
-
-        #region PartLookup.xml --------------------------------------------------
-        $plPath = Join-Path $basePath $docCfg.PartLookupXml
-        $plXml  = Backup-AndLoad $plPath
-        if ($plXml) {
-            Set-XmlConnectionString -Xml $plXml -NewConnStr $connString
-
-            # Ensure LoadMatrixRevision = MAX
-            $lmrNode = $plXml.SelectSingleNode('//*[local-name()="LoadMatrixRevision"]')
-            if ($lmrNode) { $lmrNode.InnerText = 'MAX' }
-
-            Save-Xml -Xml $plXml -Path $plPath
-            Add-Result -Phase DOC -Check "DOC ${d}: PartLookup.xml" -Status PASS
-        } else {
-            Add-Result -Phase DOC -Check "DOC ${d}: PartLookup.xml" -Status WARN -Detail "File not found: $plPath"
-        }
-        #endregion
-
-        #region SpcDB.xml -------------------------------------------------------
-        $spcPath = Join-Path $basePath $docCfg.SpcDBXml
-        $spcXml  = Backup-AndLoad $spcPath
-        if ($spcXml) {
-            Set-XmlConnectionString -Xml $spcXml -NewConnStr $connString
-            Save-Xml -Xml $spcXml -Path $spcPath
-            Add-Result -Phase DOC -Check "DOC ${d}: SpcDB.xml" -Status PASS
-        } else {
-            Add-Result -Phase DOC -Check "DOC ${d}: SpcDB.xml" -Status WARN -Detail "File not found: $spcPath"
-        }
-        #endregion
-
-        #region IqsDocSpcDataCollector.xml ---------------------------------------
-        $iqsPath = Join-Path $basePath $docCfg.IqsCollectorXml
-        $iqsXml  = Backup-AndLoad $iqsPath
-        if ($iqsXml) {
-            # DBId = CNCAsset (machine name)
-            $dbIdNode = $iqsXml.SelectSingleNode('//*[local-name()="DBId"]')
-            if ($dbIdNode) { $dbIdNode.InnerText = $machine.MachineName }
-
-            # Name = "Primary" (or "Primary {MachineName}" if a prefix is expected)
-            $nameNode = $iqsXml.SelectSingleNode('//*[local-name()="Name"]')
-            if ($nameNode) { $nameNode.InnerText = "Primary" }
-
-            # Family = CNCType
-            $famNode = $iqsXml.SelectSingleNode('//*[local-name()="Family"]')
-            if ($famNode) { $famNode.InnerText = $machine.CNCType }
-
-            Save-Xml -Xml $iqsXml -Path $iqsPath
-            Add-Result -Phase DOC -Check "DOC ${d}: IqsDocSpcDataCollector.xml" -Status PASS `
-                -Detail "DBId=$($machine.MachineName) Family=$($machine.CNCType)"
-        } else {
-            Add-Result -Phase DOC -Check "DOC ${d}: IqsDocSpcDataCollector.xml" -Status WARN -Detail "File not found: $iqsPath"
+            Add-Result -Phase DOC -Check "DOC ${n}: IqsDocSpcDataCollector.xml" -Status FAIL -Detail "Not found: $($paths.Iqs)"
         }
         #endregion
     }
 
-    Write-Log PASS "DOC XML configuration complete ($docCount instance(s))."
-    Write-Log INFO "Backup files (.bak) created alongside each modified XML. Review and delete after validation."
+    Write-Log PASS "DOC XML configuration complete ($($machines.Count) instance(s))."
+    Write-Log INFO "Backups (.$ts.bak) created alongside each modified XML. Review and delete after validation."
 }
