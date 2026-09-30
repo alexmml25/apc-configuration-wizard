@@ -16,7 +16,7 @@ Add a dated entry to the **Log** whenever something is changed or tested, and up
 | Area | State |
 |---|---|
 | Steps 1-13 | All written. Steps 3, 8, 9 and 10 rebuilt against the real config files (Sept 2026). |
-| Automated tests | 140 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
+| Automated tests | 143 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
 | Test mode (sandbox) | VM re-run 2026-09-30 after the fixes: Steps 1, 3, 8, 9 and 10 complete with no FAIL. The only warnings are driver `.dll` files not found and instrument shares not reachable from the test VM. |
 | Real run on a VM | First real run on the test VM 2026-09-30 (Reviewed steps only): Steps 1, 3, 8, 9 and 10 wrote the real files, and CNCnetPDM created the `.dll` files. The device connection check needs follow-up (see Open items). |
 | deviceWise (Steps 4-7, 12 export) | **Cannot work as written.** The gateway has no HTTP/REST API; the modules call endpoints that don't exist. Proposed: guided manual steps (see Open items). |
@@ -144,13 +144,21 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - [ ] **Step 11 (CHMI):** some CHMI **general property configs** still need to be updated by the wizard. Details are to come from the user when Step 11 is reviewed. Noted 2026-09-30; a TODO is also in `modules/11-CHMI.ps1`.
 - [ ] Check the manifest Site DB host: `SiteServers.MPR/MCR.Host` is `sjum1cappd0017`, which is also the APC VM the deviceWise scans ran on. Confirm this is intended.
 - [ ] Finish Part 3 of the test checklist after the first reviewed-steps run: restart File Manager, Data Collector and Data Analyzer, check the DOC indicators, and test file routing.
-- [ ] Device 1001 (Citizen 01): no connection result in 60 s, although port 683 answers. Check what its log shows when it is connected but idle, so the check does not WARN falsely.
+- [ ] Device 1001 (Citizen 01) **is connected**: its log shows `Parts_Machined Command incorrect, deactivated / Part_Required …`, so the controller answers but rejects those two counter commands. Check the counter commands (ParameterNumber 8300/8304) in `citizenm_1001.ini` for this controller.
+- [ ] Device 4010 (L320EA 10): no connection result in 60 s, although port 683 answers. Is it green in CNCnetControl?
+- [ ] `\\sjum1bfile05` is not reachable from the test VM (the CTSCAN share). Confirm whether the test VM should reach it.
 - [ ] Device 4001 (L320EA 1, `_V`): `INIT Error(-2113798123)` although port 683 answers. Is the `melcfg.ini` `Controller=M7NX` (copied to every MachineNN) right for V-series machines, or does it depend on the family?
 - [ ] Merge `config-files-rework` into `main` once the VM tests pass.
 
 ---
 
 ## Log
+
+### 2026-09-30 - Second real run: connection check and share timeouts refined
+- **Step 8, Citizen 01 (1001):** the log line `Parts_Machined Command incorrect, deactivated` was counted as not connected. That line means the controller answered, so it is now **PASS**, with a separate **WARN** listing the deactivated commands and the driver `.ini` to check. Only `Not connected`, `initialization failed` and `INIT Error` count as not connected.
+- **Step 10:** the unreachable share `\\sjum1bfile05` made the step hang for about 2 minutes. UNC paths now get a quick SMB (port 445) check first (`Test-ShareServerReachable`, about 1.5 s), which warns immediately. Step 13 uses the same check for File Manager sources.
+- **Step 10:** created the local `D:\CMM_…\CSVCLC` and `D:\Contracer_…\CSVCLC` source folders on the real run, as intended.
+- **Tests:** 143 passing.
 
 ### 2026-09-30 - MPR CTSCAN default is now the UNC path
 - At Humacao, Z: is mapped one level deeper: `\\sjum1bfile05\CMMprograms\REPORTS`, so `Z:\CTScan_Inspection\CSVCLC` is the same folder as the UNC path. The user confirmed this.

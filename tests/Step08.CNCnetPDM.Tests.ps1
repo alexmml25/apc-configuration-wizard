@@ -150,6 +150,17 @@ Describe 'Step 8 - CNCnetPDM rules' {
         $r.Detail | Should -Match '10\.101\.99\.47:683'
     }
 
+    It 'counts a device whose commands were rejected as connected, and lists the deactivated commands' {
+        $dir = New-PdmInstall
+        Set-ServiceCreatesDriverDlls $dir -Connect CommandIncorrect
+        Invoke-CNCnetPDM -Manifest (New-PdmManifest $dir) -State (New-HumState -DocCount 1)
+        (Get-StepResults | Where-Object Check -like 'CNC1 device 1001 connected*').Status | Should -Be 'PASS'
+        $cmd = Get-StepResults | Where-Object Check -eq 'CNC1 device 1001 driver commands'
+        $cmd.Status | Should -Be 'WARN'
+        $cmd.Detail | Should -Match 'Parts_Machined, Part_Required'
+        $cmd.Detail | Should -Match 'citizenm_1001\.ini'
+    }
+
     It 'ignores log lines written before the restart' {
         $dir = New-PdmInstall
         $logDir = Join-Path $dir 'log'

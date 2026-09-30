@@ -88,6 +88,10 @@ function Invoke-DataApps {
     function Ensure-Dir {
         param([string]$Path, [string]$Label)
         if (-not $Path -or $Path -eq 'NA') { return }
+        if (-not (Test-ShareServerReachable $Path)) {
+            Add-Result -Phase DataApps -Check "Directory: $Label" -Status WARN -Detail "Server for $Path not reachable (SMB port 445) - check network/VPN and access"
+            return
+        }
         if (Test-Path $Path) { return }
         # only folders on this VM's local disks are created; shares and mapped drives are only checked
         if (-not (Test-LocalFixedPath $Path)) {
@@ -217,7 +221,7 @@ function Invoke-DataApps {
                 if ($ins.SourcePath -and (Test-LocalFixedPath $ins.SourcePath)) { Ensure-Dir $ins.SourcePath "$($ins.Type) source" }
                 if (-not $ins.SourcePath) {
                     Add-Result -Phase DataApps -Check "File Manager: $($ins.Type) source" -Status WARN -Detail "No source share entered - template path kept, update <Path> manually"
-                } elseif (-not (Test-Path $ins.SourcePath)) {
+                } elseif (-not (Test-ShareServerReachable $ins.SourcePath) -or -not (Test-Path $ins.SourcePath)) {
                     Add-Result -Phase DataApps -Check "File Manager: $($ins.Type) source" -Status WARN -Detail "Source not reachable from VM: $($ins.SourcePath) (network paths are not created - check the share and access)"
                 }
                 Add-Result -Phase DataApps -Check "File Manager: $($ins.Type)" -Status PASS -Detail "$($ins.Names -join ', ') -> $newPath"

@@ -89,7 +89,7 @@ Describe 'Step 10 - Humacao site defaults rebuilt from the default configs' {
         Join-Path $state.DataAppsLocalRoot 'CMM/Backup' | Should -Exist
         # only 'drive not available' / 'network share' warnings are expected (no D: or share access on the test machine);
         # nothing is created outside the sandbox
-        @(Get-StepResults -Status WARN | Where-Object { $_.Check -like 'Directory*' -and $_.Detail -notmatch 'not available|network share' }) | Should -BeNullOrEmpty
+        @(Get-StepResults -Status WARN | Where-Object { $_.Check -like 'Directory*' -and $_.Detail -notmatch 'not available|network share|not reachable' }) | Should -BeNullOrEmpty
         Test-Path 'D:\CMM_Measurement_Reports\CSVCLCError' | Should -BeFalse
     }
 
@@ -187,6 +187,6 @@ Describe 'Step 10 - local vs network folders' {
     }
 
     It 'does not create folders on a network share, only warns' {
-        (Get-StepResults | Where-Object Check -eq 'Directory: CTSCAN ErrorPath').Detail | Should -Match 'network share'
+        (Get-StepResults | Where-Object Check -eq 'Directory: CTSCAN ErrorPath').Detail | Should -Match 'network share|not reachable'
     }
 }

@@ -352,18 +352,22 @@ function Invoke-CNCnetPDM {
         }
 
         # Device connection, from each device's own log: the latest of
-        #   "Success writing/reading ... controller"                    -> connected
-        #   "Not connected" / "initialization failed" / "Error(s) reported" -> not (yet) connected
+        #   "Success ... controller" or "<cmd> Command incorrect, deactivated" -> connected (the controller answered)
+        #   "Not connected" / "initialization failed" / "INIT Error"          -> not (yet) connected
+        # Commands the driver deactivated are reported separately (they point at the driver .ini)
         Write-Log INFO "Waiting up to $($cncPdm.ConnectWaitSeconds) s for devices to connect (logs in $logDir)..."
-        $okPattern  = '\bSuccess\b.*controller'
-        $errPattern = 'Not connected|initialization failed|Error\(s\) reported'
+        $okPattern  = '\bSuccess\b.*controller|Command incorrect'
+        $errPattern = 'Not connected|initialization failed|INIT Error'
         $conn = @{}
+        $deactivated = @{}
         $deadline = (Get-Date).AddSeconds([int]$cncPdm.ConnectWaitSeconds)
         do {
             foreach ($m in $machines) {
                 if ($conn[$m.DeviceNr] -eq 'OK') { continue }
-                $last = Read-NewLogLines $logInfo[$m.DeviceNr].Path $logInfo[$m.DeviceNr].Offset |
-                        Where-Object { $_ -match $okPattern -or $_ -match $errPattern } | Select-Object -Last 1
+                $new  = Read-NewLogLines $logInfo[$m.DeviceNr].Path $logInfo[$m.DeviceNr].Offset
+                $deactivated[$m.DeviceNr] = @($new | ForEach-Object { [regex]::Matches($_, '(\S+) Command incorrect, deactivated') } |
+                                              ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+                $last = $new | Where-Object { $_ -match $okPattern -or $_ -match $errPattern } | Select-Object -Last 1
                 $conn[$m.DeviceNr] = if (-not $last) { '' } elseif ($last -match $okPattern) { 'OK' } else { $last }
             }
             $waiting = @($machines | Where-Object { $conn[$_.DeviceNr] -ne 'OK' })
@@ -373,6 +377,11 @@ function Invoke-CNCnetPDM {
 
         foreach ($m in $machines) {
             $label = "CNC$($m.CNCIndex) device $($m.DeviceNr) connected ($($m.MachineName))"
+            if ($deactivated[$m.DeviceNr].Count -gt 0) {
+                $iniName = "$([System.IO.Path]::GetFileNameWithoutExtension($m.DriverDll))_$($m.DeviceNr).ini"
+                Add-Result -Phase CNCnetPDM -Check "CNC$($m.CNCIndex) device $($m.DeviceNr) driver commands" -Status WARN `
+                    -Detail "Deactivated by the driver (controller rejected them): $($deactivated[$m.DeviceNr] -join ', ') - check $iniName for this controller"
+            }
             if ($conn[$m.DeviceNr] -eq 'OK') {
                 Add-Result -Phase CNCnetPDM -Check $label -Status PASS
                 continue

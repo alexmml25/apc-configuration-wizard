@@ -667,7 +667,8 @@ function Invoke-Verification {
         if (-not $fmXml) { throw "Config not found" }
         $empty = @($fmPaths | Where-Object { -not (FmChild $_ 'Path') } | ForEach-Object { FmChild $_ 'Name' })
         if ($empty) { throw "Source path empty for: $($empty -join ', ')" }
-        $unreach = @($fmPaths | ForEach-Object { FmChild $_ 'Path' } | Select-Object -Unique | Where-Object { -not (Test-Path $_) })
+        $unreach = @($fmPaths | ForEach-Object { FmChild $_ 'Path' } | Select-Object -Unique |
+                     Where-Object { -not (Test-ShareServerReachable $_) -or -not (Test-Path $_) })
         if ($unreach) { throw "Source not reachable: $($unreach -join ', ')" }
         "Source paths set and reachable for $($fmPaths.Count) entries"
     } '' 7 2

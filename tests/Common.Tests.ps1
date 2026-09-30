@@ -114,6 +114,17 @@ Describe 'Test-LocalFixedPath' {
     }
 }
 
+Describe 'Test-ShareServerReachable' {
+    It 'is true for local paths' {
+        Test-ShareServerReachable (Join-Path $TestDrive 'x') | Should -BeTrue
+    }
+    It 'is false, within seconds, for a server that does not exist' {
+        $t = [Diagnostics.Stopwatch]::StartNew()
+        Test-ShareServerReachable '\\apc-wizard-test.invalid\share\x' | Should -BeFalse
+        $t.Elapsed.TotalSeconds | Should -BeLessThan 10
+    }
+}
+
 Describe 'DOC helpers' {
     It 'builds the SINC CSV output path with the SOP pattern' {
         Get-DOCCsvOutputPath -Manifest $manifest -N 2 |

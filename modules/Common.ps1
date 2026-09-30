@@ -282,3 +282,18 @@ function Test-LocalFixedPath {
     }
     return $true   # a path without a drive letter (relative, or a non-Windows test path)
 }
+
+function Test-ShareServerReachable {
+    <#
+        For a UNC path (\\server\share\...), quickly checks the server answers on SMB (TCP 445), so an
+        unreachable server is reported in seconds instead of Test-Path hanging for minutes.
+        Always true for non-UNC paths.
+    #>
+    param([string]$Path, [int]$TimeoutMs = 1500)
+    if ($Path -notmatch '^[\\/]{2}([^\\/]+)') { return $true }
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $ar = $client.BeginConnect($Matches[1], 445, $null, $null)
+        return ($ar.AsyncWaitHandle.WaitOne($TimeoutMs) -and $client.Connected)
+    } catch { return $false } finally { $client.Close() }
+}

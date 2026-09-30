@@ -29,7 +29,7 @@ function global:Start-Sleep { param($Seconds, $Milliseconds) }   # no waiting in
 # Make the service stub behave like CNCnetPDM: on start it creates <dll>_<DeviceNr>.dll for each <dll>_<DeviceNr>.ini
 # and, unless -Connect None, writes a connection result to each device log (<Dir>\log\log_<DeviceNr>_<yyMMdd>.txt)
 function Set-ServiceCreatesDriverDlls {
-    param([string]$Dir, [ValidateSet('Success', 'NotConnected', 'None')] [string]$Connect = 'Success')
+    param([string]$Dir, [ValidateSet('Success', 'NotConnected', 'CommandIncorrect', 'None')] [string]$Connect = 'Success')
     $global:OnServiceRestart = {
         $logDir = Join-Path $Dir 'log'
         New-Item -ItemType Directory -Path $logDir -Force | Out-Null
@@ -39,6 +39,7 @@ function Set-ServiceCreatesDriverDlls {
             $line = switch ($Connect) {
                 'Success'      { "2026-09-30 12:24:33.509 Success writing command: <169|2|0|598> to controller" }
                 'NotConnected' { "2026-09-30 12:24:33.509 Error(s) reported by device ${nr}: INIT Not connected(-2113798134)" }
+                'CommandIncorrect' { "2026-09-30 15:27:43.451 Error(s) reported by device ${nr}: Parts_Machined Command incorrect, deactivated Part_Required Command incorrect, deactivated" }
                 default        { $null }
             }
             if ($line) { Add-Content (Join-Path $logDir "log_${nr}_$(Get-Date -Format 'yyMMdd').txt") $line }
