@@ -186,11 +186,19 @@
     "HostsSection":     "HOSTS",
     "DriverSubDir":     "",
     "DeviceNrRules": {
-      "Generations": {
-        "IV": { "Prefix": "10", "DriverDll": "citizenm.dll" },
-        "V":  { "Prefix": "11", "DriverDll": "mitsubishim.dll" }
-      }
+      "Description":  "DeviceNr = <family digit><machine number, 3 digits>, e.g. CITIZEN_L20E_V + 'Citizen 100' -> 4100",
+      "FamilyDigits": {
+        "CITIZEN_L20X_IV": 1,
+        "CITIZEN_L20E_IV": 2,
+        "CITIZEN_M32_IV":  3,
+        "CITIZEN_L20E_V":  4,
+        "CITIZEN_M32_V":   5,
+        "CITIZEN_L12":     6,
+        "CITIZEN_L12_IV":  6
+      },
+      "MaxMachineNumber": 999
     },
+    "DriverDlls": [ "citizenm.dll", "mitsubishim.dll" ],
     "DefaultLicense":   "ENPQRSLNTZNOLLNVRUPTIRPQKLLXEFMLGTQJRQMSLFNLLNOS",
     "Defaults": {
       "Baud":        19200,

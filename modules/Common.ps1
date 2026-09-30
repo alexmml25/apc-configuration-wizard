@@ -6,11 +6,11 @@
 
 function Get-CNCDeviceInfo {
     <#
-        Derives CNCnetPDM identifiers for a Site DB machine using Manifest.CNCnetPDM.DeviceNrRules:
-          Generation  - from the asset family suffix (_IV / _V)
-          DeviceNr    - <generation prefix><last digits of machine name, 2 digits>
-                        e.g. CITIZEN_L20X_IV + Humacao_L20X_8 -> 1008, CITIZEN_L20E_V + MCR-CNC-0004 -> 1104
-          DriverDll   - RS232 DLL field for the generation (citizenm.dll / mitsubishim.dll)
+        Derives CNCnetPDM identifiers for a Site DB machine (Manifest.CNCnetPDM.DeviceNrRules):
+          DeviceNr   - <family digit><machine number, 3 digits>  (CNCnetPDM accepts 4 digits)
+                       family digit from FamilyDigits, machine number = trailing digits of the name
+                       e.g. CITIZEN_L20X_IV + 'Citizen 08' -> 1008, CITIZEN_L20E_V + 'Citizen 100' -> 4100
+          DriverDll  - the machine's DLL name from the Site DB (f_dllname), e.g. citizenm.dll
         Error is set (and DeviceNr empty) when a rule cannot be applied.
     #>
     param([Parameter(Mandatory)] $Machine, [Parameter(Mandatory)] [object]$Manifest)
@@ -18,33 +18,35 @@ function Get-CNCDeviceInfo {
     $rules  = $Manifest.CNCnetPDM.DeviceNrRules
     $family = [string]$Machine.AssetFamily
     if (-not $family) { $family = [string]$Machine.CNCType }
-    $info = @{ Generation = ''; DeviceNr = ''; DriverDll = ''; Error = '' }
+    $key  = ($family.Trim() -replace '\s+', '_').ToUpper()
+    $info = @{ Family = $key; DeviceNr = ''; DriverDll = ([string]$Machine.DLLName).Trim(); Error = '' }
 
-    if ($family -notmatch '(?i)[_\s](IV|V)\s*$') {
-        $info.Error = "Asset family '$family' does not end in _IV or _V"
+    $digit = $rules.FamilyDigits.PSObject.Properties[$key]
+    if (-not $digit) {
+        $info.Error = "Asset family '$family' has no Device Nr digit (known: $(($rules.FamilyDigits.PSObject.Properties.Name) -join ', '))"
         return $info
     }
-    $info.Generation = $Matches[1].ToUpper()
-    $gen = $rules.Generations.($info.Generation)
-    $info.DriverDll = $gen.DriverDll
-
     if ([string]$Machine.MachineName -notmatch '(\d+)\s*$') {
-        $info.Error = "Machine name '$($Machine.MachineName)' does not end in a CNC number"
+        $info.Error = "Machine name '$($Machine.MachineName)' does not end in a machine number"
         return $info
     }
     $num = [int]$Matches[1]
-    if ($num -lt 1 -or $num -gt 99) {
-        $info.Error = "CNC number $num from '$($Machine.MachineName)' is outside 1-99"
+    if ($num -lt 1 -or $num -gt [int]$rules.MaxMachineNumber) {
+        $info.Error = "Machine number $num from '$($Machine.MachineName)' is outside 1-$($rules.MaxMachineNumber)"
         return $info
     }
-    $info.DeviceNr = '{0}{1:D2}' -f $gen.Prefix, $num
+    if (-not $info.DriverDll) {
+        $info.Error = "No DLL name in the Site DB (f_dllname) for '$($Machine.MachineName)'"
+        return $info
+    }
+    $info.DeviceNr = '{0}{1:D3}' -f [int]$digit.Value, $num
     return $info
 }
 
 function Get-AssignedCNCs {
     <#
         Returns the machines assigned to CNC1..CNC{DOCCount} (CNC n = DOC instance n), as hashtables
-        with CNCIndex, DeviceNr, DriverDll, Generation and DeviceNrError added.
+        with CNCIndex, DeviceNr, DriverDll and DeviceNrError added.
         Falls back to Site DB order when no DOC assignment is recorded for a slot.
     #>
     param([Parameter(Mandatory)] [hashtable]$State, [Parameter(Mandatory)] [object]$Manifest)
@@ -69,7 +71,6 @@ function Get-AssignedCNCs {
         $h['CNCIndex']      = $i + 1
         $h['DeviceNr']      = $info.DeviceNr
         $h['DriverDll']     = $info.DriverDll
-        $h['Generation']    = $info.Generation
         $h['DeviceNrError'] = $info.Error
         $result += $h
     }
@@ -211,7 +212,7 @@ function New-SandboxManifest {
         Copy-Into (Join-Path $pdmSrc $Manifest.CNCnetPDM.MelcfgFile) $pdmDst
         $drvSrc = if ($Manifest.CNCnetPDM.DriverSubDir) { Join-Path $pdmSrc $Manifest.CNCnetPDM.DriverSubDir } else { $pdmSrc }
         $drvDst = if ($Manifest.CNCnetPDM.DriverSubDir) { Join-Path $pdmDst $Manifest.CNCnetPDM.DriverSubDir } else { $pdmDst }
-        $bases  = @($Manifest.CNCnetPDM.DeviceNrRules.Generations.PSObject.Properties | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Value.DriverDll) })
+        $bases  = @($Manifest.CNCnetPDM.DriverDlls | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_) })
         Get-ChildItem $drvSrc -File -ErrorAction SilentlyContinue |
             Where-Object { $n = $_.Name; $_.Extension -in '.dll', '.ini' -and ($bases | Where-Object { $n -like "$_*" }) } |
             ForEach-Object { Copy-Into $_.FullName $drvDst }

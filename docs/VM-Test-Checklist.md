@@ -66,8 +66,9 @@ Open `C:\APC_Config\Sandbox\<date-time>\` and check each folder.
 - [ ] `CNCnetPDM.ini` `[GENERAL]` has `License = <expected key>`.
 - [ ] `[RS232]` has one line per CNC and no other active lines, e.g.
   `1 = 1001;19200;8;N;1;<machine>;<IP>;683;0;localhost;1;0;none;none;0;citizenm.dll`
-  - Device Nr = `10` (family `_IV`) or `11` (family `_V`) + the machine number as 2 digits.
-  - DLL = `citizenm.dll` for `_IV`, `mitsubishim.dll` for `_V`.
+  - Device Nr = family digit + machine number as 3 digits. Digits: L20X_IV `1`, L20E_IV `2`, M32_IV `3`,
+    L20E_V `4`, M32_V `5`, L12 `6`. Example: CITIZEN_L20E_V "Citizen 100" → `4100`.
+  - DLL = the machine's DLL name in the Site DB (`f_dllname`).
 - [ ] `melcfg.ini` has `[Machine01]`… one per CNC with `Device=TCP1`…, and `[HOSTS]` has `TCP1 = <IP>,683`….
 - [ ] Driver files renamed: `citizenm_CNC1.dll` → `citizenm_<DeviceNr>.dll` (and any matching `.ini`).
 

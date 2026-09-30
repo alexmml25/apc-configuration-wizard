@@ -34,10 +34,10 @@ function Get-Fixture { param([string]$RelativePath) Join-Path $Script:Fixtures $
 function New-HumState {
     param([int]$DocCount = 3, [string[]]$Assign = @('Humacao_L20X_1', 'Humacao_L20X_3', 'Humacao_L20X_8'))
     $machines = @(
-        @{ MachineName = 'Humacao_L20X_1'; IPAddress = '10.101.99.47'; Port = '683'; AssetFamily = 'CITIZEN_L20X_IV'; CNCType = 'CITIZEN_L20X_IV'; DLLName = 'CitizenM.dll' },
-        @{ MachineName = 'Humacao_L20X_2'; IPAddress = '10.101.99.50'; Port = '683'; AssetFamily = 'CITIZEN_L20X_IV'; CNCType = 'CITIZEN_L20X_IV'; DLLName = 'CitizenM.dll' },
-        @{ MachineName = 'Humacao_L20X_3'; IPAddress = '10.101.99.48'; Port = '683'; AssetFamily = 'CITIZEN_L20X_IV'; CNCType = 'CITIZEN_L20X_IV'; DLLName = 'CitizenM.dll' },
-        @{ MachineName = 'Humacao_L20X_8'; IPAddress = '10.101.99.63'; Port = '683'; AssetFamily = 'CITIZEN_L20X_IV'; CNCType = 'CITIZEN_L20X_IV'; DLLName = 'CitizenM.dll' }
+        @{ MachineName = 'Humacao_L20X_1'; IPAddress = '10.101.99.47'; Port = '683'; AssetFamily = 'CITIZEN_L20X_IV'; CNCType = 'CITIZEN_L20X_IV'; DLLName = 'citizenm.dll' },
+        @{ MachineName = 'Humacao_L20X_2'; IPAddress = '10.101.99.50'; Port = '683'; AssetFamily = 'CITIZEN_L20X_IV'; CNCType = 'CITIZEN_L20X_IV'; DLLName = 'citizenm.dll' },
+        @{ MachineName = 'Humacao_L20X_3'; IPAddress = '10.101.99.48'; Port = '683'; AssetFamily = 'CITIZEN_L20X_IV'; CNCType = 'CITIZEN_L20X_IV'; DLLName = 'citizenm.dll' },
+        @{ MachineName = 'Humacao_L20X_8'; IPAddress = '10.101.99.63'; Port = '683'; AssetFamily = 'CITIZEN_L20X_IV'; CNCType = 'CITIZEN_L20X_IV'; DLLName = 'citizenm.dll' }
     )
     @{ SiteCode = 'MPR'; CNCMachines = $machines; DOCCount = $DocCount; DOCMachineAssignments = @($Assign | Select-Object -First $DocCount) }
 }

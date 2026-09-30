@@ -182,8 +182,7 @@ ORDER  BY $($cols.MachineName)
         }
 
         if (-not $machine.DLLName) {
-            Add-Result -Phase SiteDB -Check "$name DLL name" -Status WARN -Detail "DLL name empty  -  defaulting to CitizenM.dll"
-            $machine['DLLName'] = 'CitizenM.dll'
+            Add-Result -Phase SiteDB -Check "$name DLL name" -Status WARN -Detail "DLL name empty in Site DB (f_dllname) - required if this machine is assigned to a DOC instance"
         } else {
             Add-Result -Phase SiteDB -Check "$name DLL name" -Status PASS -Detail $machine.DLLName
         }

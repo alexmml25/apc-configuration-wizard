@@ -3,12 +3,13 @@
 .SYNOPSIS
     Step 8 - Configure CNCnetPDM machine entries, license, and INI files.
 .DESCRIPTION
-    Machines are the DOC-assigned CNCs (CNC n = DOC instance n). DeviceNr and driver DLL
-    come from Get-CNCDeviceInfo (Common.ps1): e.g. CITIZEN_L20X_IV + Humacao_L20X_8 -> 1008 / citizenm.dll.
+    Machines are the DOC-assigned CNCs (CNC n = DOC instance n). DeviceNr comes from Get-CNCDeviceInfo
+    (Common.ps1): family digit + 3-digit machine number, e.g. CITIZEN_L20X_IV + 'Citizen 08' -> 1008;
+    the driver DLL is the machine's DLL name from the Site DB.
 
     - License key (wizard input, else manifest DefaultLicense) -> CNCnetPDM.ini [GENERAL] License
     - CNCnetPDM.ini [RS232]: one active entry per CNC (existing active entries replaced)
-        {n} = {DeviceNr};19200;8;N;1;{MachineName};{IP};{Port};0;localhost;{n};0;none;none;0;{citizenm|mitsubishim}.dll
+        {n} = {DeviceNr};19200;8;N;1;{MachineName};{IP};{Port};0;localhost;{n};0;none;none;0;{Site DB DLL}
     - melcfg.ini: one [Machine{nn}] section per CNC (Device=TCP{n}) and TCP{n} = {IP},{Port} in [HOSTS]
     - Driver files: {dll}_CNC{n}.dll / .ini renamed to {dll}_{DeviceNr}.dll / .ini
     - Restarts the CNCnetPDM service and verifies it starts cleanly

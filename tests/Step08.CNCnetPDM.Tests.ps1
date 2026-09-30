@@ -64,29 +64,29 @@ Describe 'Step 8 - CNCnetPDM (Humacao example)' {
 Describe 'Step 8 - CNCnetPDM rules' {
     BeforeEach { Reset-StepResults }
 
-    It 'uses mitsubishim.dll and renames .dll and .ini for a _V machine' {
+    It 'uses the Site DB DLL and family digit, and renames .dll and .ini for a _V machine' {
         $dir = New-PdmInstall -Drivers @('mitsubishim.dll', 'mitsubishim_CNC1.dll', 'mitsubishim_CNC1.ini', 'citizenm.dll', 'citizenm_CNC2.dll')
         $state = @{
             SiteCode = 'MCR'; DOCCount = 2; DOCMachineAssignments = @('MCR-CNC-0004', 'MCR-CNC-0011')
             CNCMachines = @(
-                @{ MachineName = 'MCR-CNC-0004'; IPAddress = '10.1.1.4';  Port = '683'; AssetFamily = 'CITIZEN_L20E_V' },
-                @{ MachineName = 'MCR-CNC-0011'; IPAddress = '10.1.1.11'; Port = '683'; AssetFamily = 'CITIZEN L20E_IV' })
+                @{ MachineName = 'MCR-CNC-0004'; IPAddress = '10.1.1.4';  Port = '683'; AssetFamily = 'CITIZEN_L20E_V';  DLLName = 'mitsubishim.dll' },
+                @{ MachineName = 'MCR-CNC-0011'; IPAddress = '10.1.1.11'; Port = '683'; AssetFamily = 'CITIZEN L20E_IV'; DLLName = 'citizenm.dll' })
         }
         Invoke-CNCnetPDM -Manifest (New-PdmManifest $dir) -State $state
         $lines = Get-Content (Join-Path $dir 'CNCnetPDM.ini') | Where-Object { $_ -match '^\d+ = ' }
         $lines | Should -Be @(
-            '1 = 1104;19200;8;N;1;MCR-CNC-0004;10.1.1.4;683;0;localhost;1;0;none;none;0;mitsubishim.dll',
-            '2 = 1011;19200;8;N;1;MCR-CNC-0011;10.1.1.11;683;0;localhost;2;0;none;none;0;citizenm.dll')
-        'mitsubishim_1104.dll', 'mitsubishim_1104.ini', 'citizenm_1011.dll' | ForEach-Object { Join-Path $dir $_ | Should -Exist }
+            '1 = 4004;19200;8;N;1;MCR-CNC-0004;10.1.1.4;683;0;localhost;1;0;none;none;0;mitsubishim.dll',
+            '2 = 2011;19200;8;N;1;MCR-CNC-0011;10.1.1.11;683;0;localhost;2;0;none;none;0;citizenm.dll')
+        'mitsubishim_4004.dll', 'mitsubishim_4004.ini', 'citizenm_2011.dll' | ForEach-Object { Join-Path $dir $_ | Should -Exist }
         # driver ini content is only renamed, never changed
-        Get-Content (Join-Path $dir 'mitsubishim_1104.ini') -Raw | Should -Be (Get-Content (Get-Fixture 'CNCnetPDM/mitsubishim_CNC1.ini') -Raw)
+        Get-Content (Join-Path $dir 'mitsubishim_4004.ini') -Raw | Should -Be (Get-Content (Get-Fixture 'CNCnetPDM/mitsubishim_CNC1.ini') -Raw)
     }
 
     It 'stops before touching any file when a DeviceNr cannot be derived' {
         $dir = New-PdmInstall
         $before = Get-Content (Join-Path $dir 'CNCnetPDM.ini') -Raw
         $state = @{ DOCCount = 1; DOCMachineAssignments = @('Lathe-A')
-                    CNCMachines = @(@{ MachineName = 'Lathe-A'; IPAddress = '10.1.1.4'; AssetFamily = 'CITIZEN_M32_IV' }) }
+                    CNCMachines = @(@{ MachineName = 'Lathe-A'; IPAddress = '10.1.1.4'; AssetFamily = 'CITIZEN_M32_IV'; DLLName = 'citizenm.dll' }) }
         { Invoke-CNCnetPDM -Manifest (New-PdmManifest $dir) -State $state } | Should -Throw '*DeviceNr*'
         Get-Content (Join-Path $dir 'CNCnetPDM.ini') -Raw | Should -Be $before
         Get-StepResults -Status FAIL | Should -Not -BeNullOrEmpty
@@ -95,8 +95,8 @@ Describe 'Step 8 - CNCnetPDM rules' {
     It 'stops when two CNCs would get the same DeviceNr' {
         $dir = New-PdmInstall
         $state = @{ DOCCount = 2; DOCMachineAssignments = @('LineA_1', 'LineB_1')
-                    CNCMachines = @(@{ MachineName = 'LineA_1'; IPAddress = '1.1.1.1'; AssetFamily = 'CITIZEN_L20X_IV' },
-                                    @{ MachineName = 'LineB_1'; IPAddress = '1.1.1.2'; AssetFamily = 'CITIZEN_M32_IV' }) }
+                    CNCMachines = @(@{ MachineName = 'LineA_1'; IPAddress = '1.1.1.1'; AssetFamily = 'CITIZEN_L20X_IV'; DLLName = 'citizenm.dll' },
+                                    @{ MachineName = 'LineB_1'; IPAddress = '1.1.1.2'; AssetFamily = 'CITIZEN_L20X_IV'; DLLName = 'citizenm.dll' }) }
         { Invoke-CNCnetPDM -Manifest (New-PdmManifest $dir) -State $state } | Should -Throw
         (Get-StepResults -Status FAIL).Check | Should -Contain 'DeviceNr 1001 unique'
     }
