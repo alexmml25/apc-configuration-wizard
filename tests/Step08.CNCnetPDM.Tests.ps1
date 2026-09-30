@@ -161,6 +161,22 @@ Describe 'Step 8 - CNCnetPDM rules' {
         $cmd.Detail | Should -Match 'citizenm_1001\.ini'
     }
 
+    It 'counts an idle device (no log lines, port open) as connected' {
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+        $listener.Start()
+        try {
+            $dir   = New-PdmInstall
+            $state = New-HumState -DocCount 1
+            $state.CNCMachines[0].IPAddress = '127.0.0.1'
+            $state.CNCMachines[0].Port      = "$($listener.LocalEndpoint.Port)"
+            Set-ServiceCreatesDriverDlls $dir -Connect None
+            Invoke-CNCnetPDM -Manifest (New-PdmManifest $dir) -State $state
+            $r = Get-StepResults | Where-Object Check -like 'CNC1 device 1001 connected*'
+            $r.Status | Should -Be 'PASS'
+            $r.Detail | Should -Match 'No errors logged'
+        } finally { $listener.Stop() }
+    }
+
     It 'ignores log lines written before the restart' {
         $dir = New-PdmInstall
         $logDir = Join-Path $dir 'log'

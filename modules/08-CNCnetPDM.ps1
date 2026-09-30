@@ -387,7 +387,13 @@ function Invoke-CNCnetPDM {
                 continue
             }
             $port   = Get-MachinePort $m
-            $reach  = if (Test-TcpPort $m.IPAddress $port ([int]$cncPdm.PortCheckTimeoutMs)) { "$($m.IPAddress):$port answers" } else { "$($m.IPAddress):$port does not answer (network/controller)" }
+            $open   = Test-TcpPort $m.IPAddress $port ([int]$cncPdm.PortCheckTimeoutMs)
+            # A connected but idle device logs nothing: no errors and an open port counts as connected
+            if (-not $conn[$m.DeviceNr] -and $open) {
+                Add-Result -Phase CNCnetPDM -Check $label -Status PASS -Detail "No errors logged in $($cncPdm.ConnectWaitSeconds) s; $($m.IPAddress):$port answers"
+                continue
+            }
+            $reach  = if ($open) { "$($m.IPAddress):$port answers" } else { "$($m.IPAddress):$port does not answer (network/controller)" }
             $reason = if ($conn[$m.DeviceNr]) { "Last log line: $($conn[$m.DeviceNr].Trim())" } else { "No connection result in $(Split-Path $logInfo[$m.DeviceNr].Path -Leaf) within $($cncPdm.ConnectWaitSeconds) s" }
             Add-Result -Phase CNCnetPDM -Check $label -Status WARN -Detail "$reason; $reach"
         }

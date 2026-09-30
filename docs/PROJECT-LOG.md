@@ -16,7 +16,7 @@ Add a dated entry to the **Log** whenever something is changed or tested, and up
 | Area | State |
 |---|---|
 | Steps 1-13 | All written. Steps 3, 8, 9 and 10 rebuilt against the real config files (Sept 2026). |
-| Automated tests | 143 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
+| Automated tests | 144 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
 | Test mode (sandbox) | VM re-run 2026-09-30 after the fixes: Steps 1, 3, 8, 9 and 10 complete with no FAIL. The only warnings are driver `.dll` files not found and instrument shares not reachable from the test VM. |
 | Real run on a VM | First real run on the test VM 2026-09-30 (Reviewed steps only): Steps 1, 3, 8, 9 and 10 wrote the real files, and CNCnetPDM created the `.dll` files. The device connection check needs follow-up (see Open items). |
 | deviceWise (Steps 4-7, 12 export) | **Cannot work as written.** The gateway has no HTTP/REST API; the modules call endpoints that don't exist. Proposed: guided manual steps (see Open items). |
@@ -145,14 +145,21 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - [ ] Check the manifest Site DB host: `SiteServers.MPR/MCR.Host` is `sjum1cappd0017`, which is also the APC VM the deviceWise scans ran on. Confirm this is intended.
 - [ ] Finish Part 3 of the test checklist after the first reviewed-steps run: restart File Manager, Data Collector and Data Analyzer, check the DOC indicators, and test file routing.
 - [ ] Device 1001 (Citizen 01) **is connected**: its log shows `Parts_Machined Command incorrect, deactivated / Part_Required …`, so the controller answers but rejects those two counter commands. Check the counter commands (ParameterNumber 8300/8304) in `citizenm_1001.ini` for this controller.
-- [ ] Device 4010 (L320EA 10): no connection result in 60 s, although port 683 answers. Is it green in CNCnetControl?
-- [ ] `\\sjum1bfile05` is not reachable from the test VM (the CTSCAN share). Confirm whether the test VM should reach it.
+- [ ] `\\sjum1bfile05` **is** reachable (File Manager reads the CTSCAN share with the UNC path), but the wizard could not see it. The wizard runs as administrator, so the share may need to be tested in an elevated session. Diagnose and fix the check.
+- [ ] CNCnetControl shows 4010 as "Citizen L320EA". Check whether the name is truncated or the column is just narrow; `log_admin` shows the full name in `200/4010/1;<name>`.
+- [ ] Folder permissions: the folders the wizard creates inherit their parent's permissions; nothing extra is granted. Decide which account the apps run as and whether the wizard should grant it Modify, as the SOP asks for read/write access.
 - [ ] Device 4001 (L320EA 1, `_V`): `INIT Error(-2113798123)` although port 683 answers. Is the `melcfg.ini` `Controller=M7NX` (copied to every MachineNN) right for V-series machines, or does it depend on the family?
 - [ ] Merge `config-files-rework` into `main` once the VM tests pass.
 
 ---
 
 ## Log
+
+### 2026-09-30 - Applications open after the real run; idle device counts as connected
+- **The applications open with the wizard's config:** File Manager (all sources found, CTSCAN via the UNC path), Data Collector, Data Analyzer and DOC.
+- **CNCnetControl:** 4010 (L320EA 10) and 1001 (Citizen 01) Connected, 2068 Disconnected (network).
+- **Step 8:** 4010 was a false WARN; a connected idle device logs nothing. No error lines plus port 683 answering now counts as connected (PASS).
+- **Tests:** 144 passing.
 
 ### 2026-09-30 - Second real run: connection check and share timeouts refined
 - **Step 8, Citizen 01 (1001):** the log line `Parts_Machined Command incorrect, deactivated` was counted as not connected. That line means the controller answered, so it is now **PASS**, with a separate **WARN** listing the deactivated commands and the driver `.ini` to check. Only `Not connected`, `initialization failed` and `INIT Error` count as not connected.
