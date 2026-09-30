@@ -13,9 +13,14 @@
     3. Functional Structure: locate CNC OPC object -> rename to "OPC" if needed
     4. Operator confirms completion
 
-    TODO (2026-09-30): some CHMI general property configs still have to be updated by this step.
-    Details to be supplied when Step 11 is reviewed - see docs/PROJECT-LOG.md, Open items.
+    800xA General Properties (first, config-driven): each entry of Manifest.ABB800xA.Properties is read,
+    written and read back through the proven kit in kits\800xA (32-bit cscript), with before/after values
+    logged to C:\APC_Config\Logs\800xA_changes_<ts>.log. The step stops at the first failed read/write.
+    The list of properties to write is still to be supplied (see docs/PROJECT-LOG.md, Open items).
 #>
+
+. (Join-Path $PSScriptRoot 'Common.ps1')
+. (Join-Path $PSScriptRoot 'ABB800xA.ps1')
 
 function Invoke-CHMI {
     [CmdletBinding()]
@@ -26,6 +31,12 @@ function Invoke-CHMI {
     )
 
     Write-Log STEP "CHMI / APC UI OPC UA Configuration"
+
+    #region -- 800xA General Properties (Manifest.ABB800xA.Properties) --------
+
+    Invoke-800xAPropertyStep -Manifest $Manifest -State $State -Phase CHMI
+
+    #endregion
 
     $chmiCfg    = $Manifest.CHMI
     $computerName = $env:COMPUTERNAME

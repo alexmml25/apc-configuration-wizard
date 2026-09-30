@@ -270,6 +270,22 @@
     "SkipSteps":   [ 2, 4, 5, 6, 7, 11, 12 ]
   },
 
+  "ABB800xA": {
+    "KitDir":       "kits\\800xA",
+    "PowerShell32": "%WINDIR%\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "Cscript32":    "%WINDIR%\\SysWOW64\\cscript.exe",
+    "OpcServer":    "ABB.AfwOpcDaSurrogate.1",
+    "Backup": {
+      "Enabled":    true,
+      "DefPath":    "[Maintenance Structure]Backup Definitions/Full backup",
+      "MinFreeMB":  2048,
+      "TimeoutMin": 90,
+      "PollSec":    15
+    },
+    "PropertiesHelp": "Written by Step 11. Each entry: ItemId (from GPExplore.vbs, Access must be RW), Value, Type (String, Bool, Int16/32/64, UInt16/32/64, Int8, Byte, Float, Double), Description. Tokens: {COMPUTERNAME} {SITE} {CNC1}-{CNC3} {DEVICENR1}-{DEVICENR3}.",
+    "Properties": []
+  },
+
   "CHMI": {
     "OpcUaConnectRegPath":  "HKLM:\\SOFTWARE\\WOW6432Node\\ABB\\AFW\\OpcUaConnect",
     "DataPath":             "C:\\OperateITData111",

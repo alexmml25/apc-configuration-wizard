@@ -16,7 +16,7 @@ Add a dated entry to the **Log** whenever something is changed or tested, and up
 | Area | State |
 |---|---|
 | Steps 1-13 | All written. Steps 3, 8, 9 and 10 rebuilt against the real config files (Sept 2026). |
-| Automated tests | 151 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
+| Automated tests | 174 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
 | Test mode (sandbox) | VM re-run 2026-09-30 after the fixes: Steps 1, 3, 8, 9 and 10 complete with no FAIL. The only warnings are driver `.dll` files not found and instrument shares not reachable from the test VM. |
 | Real run on a VM | First real run on the test VM 2026-09-30 (Reviewed steps only): Steps 1, 3, 8, 9 and 10 wrote the real files, and CNCnetPDM created the `.dll` files. The device connection check needs follow-up (see Open items). |
 | deviceWise (Steps 4-7, 12 export) | **Cannot work as written.** The gateway has no HTTP/REST API; the modules call endpoints that don't exist. Proposed: guided manual steps (see Open items). |
@@ -107,6 +107,14 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - **Data Analyzer:**
   - the site code in the `Opc_*Process` patterns.
   - `Opc_CNCAssets`, `Opc_DOCCHMIs` and `Opc_DataAnalyzers` sized to the CNC count.
+- **800xA (2026-09-30, from `kits/800xA/HANDOFF.md`):**
+  - The proven kit (`Backup-800xA.ps1`, `GPWrite3.vbs`, `Invoke-800xAGP.ps1`, `GPExplore.vbs`) ships **unchanged** in `kits/800xA`.
+  - Git never converts its line endings (`.gitattributes`), and the wizard checks it against `SHA256SUMS.txt` before every use.
+  - Everything runs 32-bit through the SysWOW64 `powershell.exe` / `cscript.exe` (manifest `ABB800xA`) and is gated on exit codes.
+  - **Step 11** writes `ABB800xA.Properties` first: read, skip if already set, write, read back.
+    - Before/after values go to `800xA_changes_<ts>.log`. It stops at the first failure.
+    - It refuses quotes, `SourceCode`, `TriggerText` and `ActionTrig_*`. Tokens: `{COMPUTERNAME} {SITE} {CNCn} {DEVICENRn}`.
+  - **Step 12** runs the 800xA Full backup first (`-Start -Confirmed`) and logs the backup name. The user decided there is no separate pre-change backup step; the backup is part of Step 12.
 - **App account (2026-09-30):** the applications run as the site service account `ENT\SVC-APC-<site>` (manifest `AppAccount`), one per site.
   - Step 3 grants it **Modify** on each `SINC\CNC{n}`, where DOC writes its CSVs.
   - Step 10 grants it Modify on every local folder it creates or configures. Grants use `icacls (OI)(CI)M`, so subfolders inherit them.
@@ -145,9 +153,12 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - [x] ~~Verify the deviceWise REST API paths used by Steps 4-7 against the installed version.~~ Done 2026-09-30: there is no REST API (see Log).
 - [ ] **Decide the deviceWise approach.** Proposed: Steps 4-7 become a guided pause like Step 11. The wizard shows a checklist with this VM's values filled in (CNCAsset/CNCType, EMAIL_TO, CNC_ASSET_Management and CNC_Settings rows, CNCnetPDM path and CNC path mapping, import file paths, License Manager host, OPC UA endpoint settings), waits for Continue, then checks what it can without the API (dwcore/dwts running, port 48020 listening, SINC folders, CNCnetPDM). The rest becomes manual sign-off items in the Step 13 report. The fake REST calls are removed. About 1 day.
 - [ ] Move Step 7 (deviceWise CNCnetPDM integration) after Step 8 (CNCnetPDM), as in the SOP. Today "Connected" cannot pass on the first run.
-- [ ] Step 12 backup reads `$Manifest.BackupShare`, but the manifest key is `APC.BackupShare`. Strict mode makes this an error. The deviceWise project export in Step 12 also uses the non-existent API.
+- [x] ~~Step 12 backup reads `$Manifest.BackupShare`~~: fixed 2026-09-30, it now reads `APC.BackupShare`.
+- [ ] The deviceWise project export in Step 12 still uses the non-existent API.
 - [ ] Ask Telit support (support-devicewise@telit.com) whether Gateway 23.04 has a supported way to script configuration (CLI, full-config import, local API).
-- [ ] **Step 11 (CHMI):** some CHMI **general property configs** still need to be updated by the wizard. Details are to come from the user when Step 11 is reviewed. Noted 2026-09-30; a TODO is also in `modules/11-CHMI.ps1`.
+- [ ] **Step 11 (CHMI): fill in `ABB800xA.Properties`** in the manifest with the real General Properties. Find each ItemID with `kits\800xA\GPExplore.vbs`; Access must be `RW`. The write mechanism is in place, but the list is empty.
+- [ ] Test Steps 11 and 12 (800xA) on a non-production node, then do one real run and review `800xA_changes_*.log` and `Backup800xA_*.log`. Bool writes are not yet verified on 800xA.
+- [ ] 800xA backups are never purged (`PurgeCount = -1`): `C:\BACKUP` grows by about 110 MB per run of Step 12.
 - [ ] Check the manifest Site DB host: `SiteServers.MPR/MCR.Host` is `sjum1cappd0017`, which is also the APC VM the deviceWise scans ran on. Confirm this is intended.
 - [ ] Finish Part 3 of the test checklist after the first reviewed-steps run: restart File Manager, Data Collector and Data Analyzer, check the DOC indicators, and test file routing.
 - [ ] Device 1001 (Citizen 01) **is connected**: its log shows `Parts_Machined Command incorrect, deactivated / Part_Required …`, so the controller answers but rejects those two counter commands. Check the counter commands (ParameterNumber 8300/8304) in `citizenm_1001.ini` for this controller.
@@ -158,6 +169,12 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 ---
 
 ## Log
+
+### 2026-09-30 - 800xA property writes (Step 11) and Full backup (Step 12)
+- Built from the handoff package `ClaudeCode-800xA-Handoff.zip` (HANDOFF.md). The kit is copied unchanged to `kits/800xA` and its hashes match `SHA256SUMS.txt`.
+- **Step 12:** the made-up `ABB.AfwAsynchBackup` COM backup is replaced by `Backup-800xA.ps1 -Start -Confirmed` in 32-bit PowerShell. It runs first in the step and records the exit code, backup name and folder (`State.Backup800xA`). The `APC.BackupShare` key bug is fixed.
+- **Step 11:** `Invoke-800xAPropertyStep` writes the manifest property list through `Invoke-800xAGP` (32-bit cscript), logs before/after values, and stops at the first failure. The list is empty until the real properties are known.
+- **Tests:** 174 passing. They use a fake kit with the same interface, plus a checksum check of the real kit.
 
 ### 2026-09-30 - App account permissions; share checks as administrator
 - **Findings:**

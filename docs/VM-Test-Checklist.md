@@ -127,6 +127,17 @@ When the sandbox looks right, delete it or keep it for comparison.
    - Data apps: `C:\Medtronic\File Manager\`, `C:\Medtronic\Data Collector\`, `C:\Medtronic\Data Analyzer\`
 5. [ ] Each edited file has a `.<date-time>.bak` copy next to it.
 
+### 3.0 800xA (Steps 11 and 12, full run only)
+
+Run these on a **non-production** node first. Steps 11 and 12 are not part of *Reviewed steps only* yet.
+
+- [ ] **Step 11:** for each entry in manifest `ABB800xA.Properties`, the log shows `800xA property <ItemID>` with `'before' -> 'after'`, or `Already '<value>' - not written`.
+  - Every change is also recorded in `C:\APC_Config\Logs\800xA_changes_<date-time>.log`.
+  - With no properties configured, the log says so and nothing is written.
+- [ ] **Step 12:** `800xA Full backup` PASS shows the backup name, e.g. `Full backup; 2026-09-30; 16-05`, with its folder under `C:\BACKUP`, file count, size, errors 0 and warnings 0.
+  - The kit's full output is in `C:\APC_Config\Logs\Backup800xA_<date-time>.log`.
+- [ ] If the log shows `800xA kit … SHA256 mismatch`, a file in `kits\800xA` was changed or damaged in the copy. Copy the kit again; do not edit it.
+
 ### 3.1 Application checks (manual)
 
 - [ ] **CNCnetPDM Workbench:** the service is running, the license is accepted, and Machine Status is green for each CNC once the network is connected.

@@ -6,9 +6,13 @@
     - deviceWise: REST API backup export -> save to backup share
     - Medtronic folder: robocopy C:\Medtronic\ -> backup share
     - CNCnetPDM: robocopy CNCnetPDM dir -> backup share
-    - CHMI/800xA: ABB COM AfwAsynchBackup (32-bit runspace) with guided fallback
+    - 800xA: Full backup through kits\800xA\Backup-800xA.ps1 (32-bit PowerShell), run first and gated
+      on its exit code; backup name, folder, size and errors/warnings are logged
     - Logs all backup destination paths for the verification report
 #>
+
+. (Join-Path $PSScriptRoot 'Common.ps1')
+. (Join-Path $PSScriptRoot 'ABB800xA.ps1')
 
 function Invoke-Backup {
     [CmdletBinding()]
@@ -20,11 +24,35 @@ function Invoke-Backup {
 
     Write-Log STEP "Application Backup"
 
+    #region -- 800xA Full backup (kits\800xA\Backup-800xA.ps1) -----------------
+
+    if ($Manifest.ABB800xA.Backup.Enabled -eq $false) {
+        Write-Log INFO "800xA backup disabled in the manifest (ABB800xA.Backup.Enabled)."
+    } else {
+        $kit = Get-800xAKit -Manifest $Manifest
+        foreach ($problem in $kit.Problems) { Add-Result -Phase Backup -Check "800xA kit" -Status FAIL -Detail $problem }
+        if ($kit.Problems.Count -eq 0) {
+            Write-Log INFO "Starting 800xA Full backup ($($Manifest.ABB800xA.Backup.DefPath)) - usually about 1.5 minutes..."
+            $bk = Invoke-800xABackup -Manifest $Manifest -Kit $kit
+            if ($bk.Ok) {
+                Add-Result -Phase Backup -Check "800xA Full backup" -Status PASS `
+                    -Detail "$($bk.Name)  ($($bk.Folder), $($bk.Files) files, $($bk.SizeMB) MB, errors $($bk.Errors), warnings $($bk.Warnings))"
+            } else {
+                Add-Result -Phase Backup -Check "800xA Full backup" -Status FAIL `
+                    -Detail "Exit $($bk.ExitCode): $($bk.Message)$(if ($bk.Name) { " - backup $($bk.Name)" }). Log: $($bk.LogFile)"
+            }
+            $State['Backup800xA']    = @{ Ok = $bk.Ok; ExitCode = $bk.ExitCode; Name = $bk.Name; Folder = $bk.Folder; LogFile = $bk.LogFile }
+            $State['BackupCHMIPath'] = $bk.Folder
+        }
+    }
+
+    #endregion
+
     $dwPort   = $State['DeviceWisePort']
     $dwToken  = $State['DeviceWiseToken']
     $dw       = $Manifest.DeviceWise
     $cncPdm   = $Manifest.CNCnetPDM
-    $share    = $Manifest.BackupShare
+    $share    = $Manifest.APC.BackupShare
     $vmName   = $env:COMPUTERNAME
     $ts       = Get-Date -Format 'yyyyMMdd-HHmmss'
     $destRoot = Join-Path $share "$vmName\$ts"
@@ -145,70 +173,11 @@ function Invoke-Backup {
 
     #endregion
 
-    #region -- CHMI / 800xA backup -------------------------------------------
-
-    Write-Log INFO "Attempting CHMI backup via ABB COM object (requires 32-bit process)..."
-    $chmiBackupDir = Join-Path $destRoot 'CHMI'
-    New-Item -ItemType Directory -Path $chmiBackupDir -Force | Out-Null
-
-    $comSuccess = $false
-    try {
-        # 800xA COM must run in a 32-bit process  -  invoke via 32-bit powershell
-        $ps32 = 'C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
-        if (Test-Path $ps32) {
-            $backupScript = @"
-try {
-    `$backup = New-Object -ComObject ABB.AfwAsynchBackup -ErrorAction Stop
-    `$backup.StartBackup('$chmiBackupDir\\CHMI_backup.afw')
-    `$waited = 0
-    do { Start-Sleep -Seconds 5; `$waited += 5
-    } while (`$backup.Status -notin @('Complete','Finished','Done','Error') -and `$waited -lt 300)
-    Write-Host "STATUS:`$(`$backup.Status)"
-    Write-Host "MSG:`$(`$backup.InfoMessage)"
-} catch {
-    Write-Host "FAILED:`$_"
-}
-"@
-            $tmpScript = [System.IO.Path]::GetTempFileName() + '.ps1'
-            [System.IO.File]::WriteAllText($tmpScript, $backupScript)
-            $proc = Start-Process -FilePath $ps32 -ArgumentList "-NonInteractive -File `"$tmpScript`"" `
-                -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$destRoot\chmi_backup.log" -ErrorAction Stop
-            Remove-Item $tmpScript -Force -ErrorAction SilentlyContinue
-
-            $logContent = if (Test-Path "$destRoot\chmi_backup.log") {
-                [System.IO.File]::ReadAllText("$destRoot\chmi_backup.log")
-            } else { '' }
-
-            if ($logContent -match 'STATUS:(Complete|Finished|Done)') {
-                $comSuccess = $true
-                Add-Result -Phase Backup -Check "CHMI backup (COM)" -Status PASS -Detail $chmiBackupDir
-            } else {
-                Write-Log WARN "COM backup output: $logContent"
-            }
-        }
-    } catch {
-        Write-Log WARN "CHMI COM backup failed: $_"
-    }
-
-    if (-not $comSuccess) {
-        Add-Result -Phase Backup -Check "CHMI backup (COM)" -Status WARN `
-            -Detail "Automated backup unavailable  -  use guided fallback below"
-        Write-Log MANUAL ""
-        Write-Log MANUAL "== CHMI MANUAL BACKUP =="
-        Write-Log MANUAL "1. Open ABB Engineering Workplace"
-        Write-Log MANUAL "2. Tools -> Backup -> Full Backup"
-        Write-Log MANUAL "3. Save to: $chmiBackupDir"
-        Write-Log MANUAL "4. Verify .afw file appears in that folder"
-    }
-
-    $State['BackupCHMIPath'] = $chmiBackupDir
-
-    #endregion
 
     Write-Log PASS "Backup step complete."
     Write-Log INFO "All backup paths recorded for the verification report:"
     Write-Log INFO "  deviceWise  : $($State['BackupDeviceWisePath'])"
     Write-Log INFO "  Medtronic   : $($State['BackupMedtronicPath'])"
     Write-Log INFO "  CNCnetPDM   : $(Join-Path $destRoot 'CNCnetPDM')"
-    Write-Log INFO "  CHMI        : $($State['BackupCHMIPath'])"
+    Write-Log INFO "  800xA       : $(if ($State['Backup800xA']) { "$($State['Backup800xA'].Name)  $($State['Backup800xA'].Folder)" } else { '(not run)' })"
 }

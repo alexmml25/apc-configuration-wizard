@@ -1,3 +1,6 @@
 # Windows batch files need CRLF line endings
 *.cmd text eol=crlf
 *.bat text eol=crlf
+
+# 800xA kit: ship byte-for-byte (SHA256SUMS.txt must match on the VM)
+kits/800xA/** -text
