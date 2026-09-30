@@ -17,7 +17,7 @@ Add a dated entry to the **Log** whenever something is changed or tested, and up
 |---|---|
 | Steps 1-13 | All written. Steps 3, 8, 9 and 10 rebuilt against the real config files (Sept 2026). |
 | Automated tests | 120 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
-| Test mode (sandbox) | First VM run 2026-09-30: sandbox, skipped steps and Step 3 worked. Steps 8, 9 and 10 surfaced path issues, now fixed. Re-test pending. |
+| Test mode (sandbox) | VM re-run 2026-09-30 after the fixes: Steps 1, 3, 8, 9 and 10 complete with no FAIL. The only warnings are driver `.dll` files not found and instrument shares not reachable from the test VM. |
 | Real run on a VM | Not done yet. |
 | Sites | MPR (Humacao) has instrument defaults. MCR, MFW and MWR use generic defaults. MFW and MWR have no Site DB server set. |
 
@@ -111,9 +111,8 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 
 ## Open items
 
-- [ ] Re-run test mode on the VM after the 2026-09-30 fixes: `git pull`, then the tests, then test mode.
 - [ ] Run the Pester tests on the VM (Windows PowerShell 5.1) for the first time.
-- [ ] Check the CNCnetPDM driver files on the VM. `citizenm_1001/1003.dll` already exist from an earlier setup, and there is no `citizenm_CNC3.dll`.
+- [ ] CNCnetPDM driver files: the VM has `citizenm_CNC{n}.ini` / `mitsubishim_CNC{n}.ini` but no matching `_CNC{n}.dll`. Confirm what per-device `.dll` files should exist. Also decide whether an `.ini` should be renamed when its `.dll` is missing.
 - [ ] Decide whether Step 10 should create an **Error path** that is on a share (today it creates it if the drive exists).
 - [ ] MFW and MWR: Site DB host and credentials are missing in the manifest `SiteServers`.
 - [ ] MCR, MFW and MWR instrument defaults (source shares) are not known yet. Add them to the manifest `DataApps.SiteDefaults` when available.
@@ -124,6 +123,17 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 ---
 
 ## Log
+
+### 2026-09-30 - Second VM test-mode run: clean
+- Mixed families assigned: CNC1 Citizen 08 (L20X_IV), CNC2 Citizen L320EA 12 (L20E_V), CNC3 Citizen 68 (L20E_IV).
+- **Results:**
+  - Device Nrs were 1008, 4012 and 2068; the DLLs came from the Site DB.
+  - Step 1 now numbers every machine, including Citizen 100-300 (4100-4300).
+  - The sandbox copied 28 files with none missing. Steps 3, 8, 9 and 10 finished with no FAIL.
+- **Warnings to follow up:**
+  - There are no `citizenm_CNC{n}.dll` / `mitsubishim_CNC{n}.dll` files to rename, but the matching `.ini` files exist and were renamed.
+  - The instrument shares (D:, Z:) are not reachable from the test VM. This is expected.
+- Step 13: the deviceWise and TSDB checks fail as expected, because those steps are skipped in test mode.
 
 ### 2026-09-30 - First VM test-mode run and fixes
 - **Getting it running:** the branch was cloned to the VM (`D:\APC_Config\Wizard`). The window crashed on **Configure**.
