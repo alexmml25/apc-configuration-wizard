@@ -70,7 +70,8 @@ Open `C:\APC_Config\Sandbox\<date-time>\` and check each folder.
     L20E_V `4`, M32_V `5`, L12 `6`. Example: CITIZEN_L20E_V "Citizen 100" → `4100`.
   - DLL = the machine's DLL name in the Site DB (`f_dllname`).
 - [ ] `melcfg.ini` has `[Machine01]`… one per CNC with `Device=TCP1`…, and `[HOSTS]` has `TCP1 = <IP>,683`….
-- [ ] Driver files renamed: `citizenm_CNC1.dll` → `citizenm_<DeviceNr>.dll` (and any matching `.ini`).
+- [ ] Driver ini files renamed: `citizenm_CNC1.ini` → `citizenm_<DeviceNr>.ini` (same for `mitsubishim_`).
+  The per-device `.dll` is created by CNCnetPDM when the service starts. It is not created in test mode.
 
 **DOC-n\DOC_II** (Step 9)
 - [ ] `DOC_II.xml` `CSVFileOutputPath` =
@@ -116,6 +117,7 @@ When the sandbox looks right, delete it or keep it for comparison.
 ### 3.1 Application checks (manual)
 
 - [ ] **CNCnetPDM Workbench:** the service is running, the license is accepted, and Machine Status is green for each CNC once the network is connected.
+- [ ] `C:\Medtronic\CNCNetPDM\` has `<dll>_<DeviceNr>.dll` next to each `<dll>_<DeviceNr>.ini`; Step 8 also checks this.
 - [ ] **deviceWise:** the CNCnetPDM instance shows Connected, and `CNC1_Path`… are mapped to the right machines.
 - [ ] **DOC (each instance):** DOC DB, SPC and OPC indicators are green.
 - [ ] **File Manager, Data Collector, Data Analyzer:** each starts without errors.

@@ -18,10 +18,25 @@ function global:Add-Result {
     param([string]$Phase, [string]$Check, [string]$Status, [string]$Detail = '')
     $global:StepResults.Add([pscustomobject]@{ Phase = $Phase; Check = $Check; Status = $Status; Detail = $Detail })
 }
-function global:Restart-Service { param($Name, [switch]$Force, $ErrorAction) $global:ServiceActions.Add("restart $Name") }
+$global:OnServiceRestart = $null
+function global:Restart-Service {
+    param($Name, [switch]$Force, $ErrorAction)
+    $global:ServiceActions.Add("restart $Name")
+    if ($global:OnServiceRestart) { & $global:OnServiceRestart }
+}
+function global:Start-Sleep { param($Seconds, $Milliseconds) }   # no waiting in tests
+
+# Make the service stub behave like CNCnetPDM: on start it creates <dll>_<DeviceNr>.dll for each <dll>_<DeviceNr>.ini
+function Set-ServiceCreatesDriverDlls {
+    param([string]$Dir)
+    $global:OnServiceRestart = {
+        Get-ChildItem $Dir -Filter '*_*.ini' | Where-Object { $_.BaseName -match '_\d{4}$' } |
+            ForEach-Object { Set-Content (Join-Path $Dir "$($_.BaseName).dll") 'created by service' }
+    }.GetNewClosure()
+}
 function global:Get-Service     { param($Name, $ErrorAction) [pscustomobject]@{ Name = $Name; Status = 'Running' } }
 
-function Reset-StepResults { $global:StepResults.Clear(); $global:ServiceActions.Clear() }
+function Reset-StepResults { $global:StepResults.Clear(); $global:ServiceActions.Clear(); $global:OnServiceRestart = $null }
 function Get-StepResults   { param([string]$Status) @($global:StepResults | Where-Object { -not $Status -or $_.Status -eq $Status }) }
 
 function Get-TestManifest {

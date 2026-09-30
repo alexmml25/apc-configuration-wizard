@@ -53,7 +53,9 @@ Describe 'Step 13 T6 - CNCnetPDM checks' {
         $dir = Join-Path $TestDrive 'CNCnetPDM'
         New-Item -ItemType Directory -Path $dir | Out-Null
         Copy-Item (Get-Fixture 'CNCnetPDM/CNCnetPDM.ini'), (Get-Fixture 'CNCnetPDM/melcfg.ini') $dir
-        'citizenm.dll', 'citizenm_CNC1.dll', 'citizenm_CNC2.dll', 'citizenm_CNC3.dll' | ForEach-Object { Set-Content (Join-Path $dir $_) 'x' }
+        'citizenm.dll', 'citizenm_CNC1.ini', 'citizenm_CNC2.ini', 'citizenm_CNC3.ini' | ForEach-Object { Set-Content (Join-Path $dir $_) 'x' }
+        Reset-StepResults
+        Set-ServiceCreatesDriverDlls $dir
         $m = Get-TestManifest
         $m.CNCnetPDM.InstallDir = $dir; $m.CNCnetPDM.FallbackDir = $dir
         $state = New-HumState

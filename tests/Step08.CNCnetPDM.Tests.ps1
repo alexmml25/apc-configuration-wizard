@@ -4,7 +4,7 @@ BeforeAll {
 
     # Fake CNCnetPDM install folder from the default fixture files plus dummy driver files
     function New-PdmInstall {
-        param([string[]]$Drivers = @('citizenm.dll', 'citizenm_CNC1.dll', 'citizenm_CNC2.dll', 'citizenm_CNC3.dll'))
+        param([string[]]$Drivers = @('citizenm.dll', 'citizenm_CNC1.ini', 'citizenm_CNC2.ini', 'citizenm_CNC3.ini'))
         $dir = Join-Path $TestDrive "CNCnetPDM-$([guid]::NewGuid().ToString('N').Substring(0,6))"
         New-Item -ItemType Directory -Path $dir | Out-Null
         Copy-Item (Get-Fixture 'CNCnetPDM/CNCnetPDM.ini') $dir
@@ -19,6 +19,7 @@ BeforeAll {
         param([string]$Dir)
         $m = Get-TestManifest
         $m.CNCnetPDM.InstallDir = $Dir; $m.CNCnetPDM.FallbackDir = $Dir
+        $m.CNCnetPDM.DriverDllWaitSeconds = 0   # the service stub creates the .dll files immediately or never
         $m
     }
 }
@@ -27,6 +28,7 @@ Describe 'Step 8 - CNCnetPDM (Humacao example)' {
     BeforeAll {
         Reset-StepResults
         $dir = New-PdmInstall
+        Set-ServiceCreatesDriverDlls $dir
         Invoke-CNCnetPDM -Manifest (New-PdmManifest $dir) -State (New-HumState)
     }
 
@@ -38,9 +40,15 @@ Describe 'Step 8 - CNCnetPDM (Humacao example)' {
         Get-NormalizedIni (Join-Path $dir 'melcfg.ini') | Should -Be (Get-NormalizedIni (Get-Fixture 'CNCnetPDM/melcfgHUM.ini'))
     }
 
-    It 'renames citizenm_CNC{n}.dll to citizenm_<DeviceNr>.dll' {
-        'citizenm_1001.dll', 'citizenm_1003.dll', 'citizenm_1008.dll', 'citizenm.dll' | ForEach-Object { Join-Path $dir $_ | Should -Exist }
-        Get-ChildItem $dir -Filter '*_CNC*.dll' | Should -BeNullOrEmpty
+    It 'renames citizenm_CNC{n}.ini to citizenm_<DeviceNr>.ini' {
+        'citizenm_1001.ini', 'citizenm_1003.ini', 'citizenm_1008.ini', 'citizenm.dll' | ForEach-Object { Join-Path $dir $_ | Should -Exist }
+        Get-ChildItem $dir -Filter '*_CNC*' | Should -BeNullOrEmpty
+    }
+
+    It 'checks that the service created citizenm_<DeviceNr>.dll after the restart' {
+        foreach ($n in '1001', '1003', '1008') {
+            (Get-StepResults | Where-Object Check -eq "Driver citizenm_$n.dll created").Status | Should -Be 'PASS'
+        }
     }
 
     It 'backs up both ini files and reports no failures' {
@@ -65,7 +73,7 @@ Describe 'Step 8 - CNCnetPDM rules' {
     BeforeEach { Reset-StepResults }
 
     It 'uses the Site DB DLL and family digit, and renames .dll and .ini for a _V machine' {
-        $dir = New-PdmInstall -Drivers @('mitsubishim.dll', 'mitsubishim_CNC1.dll', 'mitsubishim_CNC1.ini', 'citizenm.dll', 'citizenm_CNC2.dll')
+        $dir = New-PdmInstall -Drivers @('mitsubishim.dll', 'mitsubishim_CNC1.ini', 'citizenm.dll', 'citizenm_CNC2.ini')
         $state = @{
             SiteCode = 'MCR'; DOCCount = 2; DOCMachineAssignments = @('MCR-CNC-0004', 'MCR-CNC-0011')
             CNCMachines = @(
@@ -77,7 +85,7 @@ Describe 'Step 8 - CNCnetPDM rules' {
         $lines | Should -Be @(
             '1 = 4004;19200;8;N;1;MCR-CNC-0004;10.1.1.4;683;0;localhost;1;0;none;none;0;mitsubishim.dll',
             '2 = 2011;19200;8;N;1;MCR-CNC-0011;10.1.1.11;683;0;localhost;2;0;none;none;0;citizenm.dll')
-        'mitsubishim_4004.dll', 'mitsubishim_4004.ini', 'citizenm_2011.dll' | ForEach-Object { Join-Path $dir $_ | Should -Exist }
+        'mitsubishim_4004.ini', 'citizenm_2011.ini' | ForEach-Object { Join-Path $dir $_ | Should -Exist }
         # driver ini content is only renamed, never changed
         Get-Content (Join-Path $dir 'mitsubishim_4004.ini') -Raw | Should -Be (Get-Content (Get-Fixture 'CNCnetPDM/mitsubishim_CNC1.ini') -Raw)
     }
@@ -115,6 +123,18 @@ Describe 'Step 8 - CNCnetPDM rules' {
         $state.CNCnetPDMLicense = 'CUSTOMKEY0002'
         Invoke-CNCnetPDM -Manifest (New-PdmManifest $dir) -State $state
         @(Get-Content (Join-Path $dir 'CNCnetPDM.ini') | Where-Object { $_ -match '^License\s*=' }) | Should -Be @('License = CUSTOMKEY0002')
+    }
+
+    It 'warns when the service does not create a driver .dll' {
+        $dir = New-PdmInstall
+        Invoke-CNCnetPDM -Manifest (New-PdmManifest $dir) -State (New-HumState -DocCount 1)
+        (Get-StepResults | Where-Object Check -eq 'Driver citizenm_1001.dll created').Status | Should -Be 'WARN'
+    }
+
+    It 'warns when a CNC has no driver ini to rename' {
+        $dir = New-PdmInstall -Drivers @('citizenm.dll')
+        Invoke-CNCnetPDM -Manifest (New-PdmManifest $dir) -State (New-HumState -DocCount 1)
+        (Get-StepResults | Where-Object Check -eq 'Driver ini citizenm_1001.ini').Status | Should -Be 'WARN'
     }
 
     It 'does not restart the service in test mode' {

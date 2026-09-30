@@ -11,8 +11,8 @@
     - CNCnetPDM.ini [RS232]: one active entry per CNC (existing active entries replaced)
         {n} = {DeviceNr};19200;8;N;1;{MachineName};{IP};{Port};0;localhost;{n};0;none;none;0;{Site DB DLL}
     - melcfg.ini: one [Machine{nn}] section per CNC (Device=TCP{n}) and TCP{n} = {IP},{Port} in [HOSTS]
-    - Driver files: {dll}_CNC{n}.dll / .ini renamed to {dll}_{DeviceNr}.dll / .ini
-    - Restarts the CNCnetPDM service and verifies it starts cleanly
+    - Driver ini: {dll}_CNC{n}.ini renamed to {dll}_{DeviceNr}.ini
+    - Restarts the CNCnetPDM service, then checks it created {dll}_{DeviceNr}.dll for each CNC
 #>
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
@@ -253,28 +253,26 @@ function Invoke-CNCnetPDM {
             }
         }
 
+        # Per-device driver ini: <dll>_CNC{n}.ini -> <dll>_<DeviceNr>.ini
+        # (the per-device <dll>_<DeviceNr>.dll is created by CNCnetPDM when the service starts)
         foreach ($m in $machines) {
-            $base = [System.IO.Path]::GetFileNameWithoutExtension($m.DriverDll)
-            foreach ($ext in 'dll', 'ini') {
-                $srcName = "${base}_CNC$($m.CNCIndex).$ext"
-                $dstName = "${base}_$($m.DeviceNr).$ext"
-                $srcPath = Join-Path $driverDir $srcName
-                $dstPath = Join-Path $driverDir $dstName
-                if (Test-Path $dstPath) {
-                    Add-Result -Phase CNCnetPDM -Check "Driver file $dstName" -Status PASS -Detail "Present"
-                } elseif (Test-Path $srcPath) {
-                    try {
-                        Rename-Item $srcPath $dstName -ErrorAction Stop
-                        Add-Result -Phase CNCnetPDM -Check "Driver file $srcName -> $dstName" -Status PASS
-                    } catch {
-                        Add-Result -Phase CNCnetPDM -Check "Driver file $srcName" -Status FAIL -Detail "Rename failed: $_"
-                    }
-                } elseif ($ext -eq 'dll') {
-                    Add-Result -Phase CNCnetPDM -Check "Driver file $dstName" -Status WARN `
-                        -Detail "Neither $srcName nor $dstName found in $driverDir - place/rename manually"
-                } else {
-                    Write-Log INFO "No $srcName / $dstName in $driverDir (driver ini optional)"
+            $base    = [System.IO.Path]::GetFileNameWithoutExtension($m.DriverDll)
+            $srcName = "${base}_CNC$($m.CNCIndex).ini"
+            $dstName = "${base}_$($m.DeviceNr).ini"
+            $srcPath = Join-Path $driverDir $srcName
+            $dstPath = Join-Path $driverDir $dstName
+            if (Test-Path $dstPath) {
+                Add-Result -Phase CNCnetPDM -Check "Driver ini $dstName" -Status PASS -Detail "Present"
+            } elseif (Test-Path $srcPath) {
+                try {
+                    Rename-Item $srcPath $dstName -ErrorAction Stop
+                    Add-Result -Phase CNCnetPDM -Check "Driver ini $srcName -> $dstName" -Status PASS
+                } catch {
+                    Add-Result -Phase CNCnetPDM -Check "Driver ini $srcName" -Status FAIL -Detail "Rename failed: $_"
                 }
+            } else {
+                Add-Result -Phase CNCnetPDM -Check "Driver ini $dstName" -Status WARN `
+                    -Detail "Neither $srcName nor $dstName found in $driverDir - place/rename manually"
             }
         }
     }
@@ -285,7 +283,7 @@ function Invoke-CNCnetPDM {
 
     $svcName = $Manifest.Services.CNCnetPDM
     if ($State['SandboxRoot']) {
-        Add-Result -Phase CNCnetPDM -Check "CNCnetPDM service restart" -Status PASS -Detail "Skipped in test mode"
+        Add-Result -Phase CNCnetPDM -Check "CNCnetPDM service restart" -Status PASS -Detail "Skipped in test mode (per-device driver .dll files are created on service start)"
     } else { try {
         Write-Log INFO "Restarting CNCnetPDM service ($svcName)..."
         Restart-Service -Name $svcName -Force -ErrorAction Stop
@@ -296,6 +294,23 @@ function Invoke-CNCnetPDM {
             Add-Result -Phase CNCnetPDM -Check "CNCnetPDM service" -Status PASS -Detail "Running"
         } else {
             Add-Result -Phase CNCnetPDM -Check "CNCnetPDM service" -Status WARN -Detail "Status: $($svc.Status)"
+        }
+
+        # CNCnetPDM creates <dll>_<DeviceNr>.dll for each device on start - wait for them
+        $expected = @($machines | ForEach-Object { "$([System.IO.Path]::GetFileNameWithoutExtension($_.DriverDll))_$($_.DeviceNr).dll" })
+        $deadline = (Get-Date).AddSeconds([int]$cncPdm.DriverDllWaitSeconds)
+        do {
+            $missing = @($expected | Where-Object { -not (Test-Path (Join-Path $driverDir $_)) })
+            if ($missing.Count -eq 0 -or (Get-Date) -ge $deadline) { break }
+            Start-Sleep -Seconds 2
+        } while ($true)
+        foreach ($dll in $expected) {
+            if ($dll -in $missing) {
+                Add-Result -Phase CNCnetPDM -Check "Driver $dll created" -Status WARN `
+                    -Detail "Not created by CNCnetPDM within $($cncPdm.DriverDllWaitSeconds) s - check the CNCnetPDM log and the matching .ini"
+            } else {
+                Add-Result -Phase CNCnetPDM -Check "Driver $dll created" -Status PASS
+            }
         }
     } catch {
         Add-Result -Phase CNCnetPDM -Check "CNCnetPDM service restart" -Status WARN -Detail "$_"

@@ -16,7 +16,7 @@ Describe 'Test mode (sandbox)' {
                   (Get-Fixture 'DataApps/DataAnalyzer.exe.config') $daDir
         $pdmDir = Join-Path $installed 'CNCnetPDM'; New-Item -ItemType Directory -Path $pdmDir | Out-Null
         Copy-Item (Get-Fixture 'CNCnetPDM/CNCnetPDM.ini'), (Get-Fixture 'CNCnetPDM/melcfg.ini') $pdmDir
-        'citizenm.dll', 'citizenm_CNC1.dll', 'citizenm_CNC2.dll', 'citizenm_CNC3.dll', 'unrelated.dll' | ForEach-Object { Set-Content (Join-Path $pdmDir $_) 'x' }
+        'citizenm.dll', 'citizenm_CNC1.ini', 'citizenm_CNC2.ini', 'citizenm_CNC3.ini', 'unrelated.dll' | ForEach-Object { Set-Content (Join-Path $pdmDir $_) 'x' }
         New-DocInstall -Root $installed
 
         $m = Get-TestManifest
@@ -67,7 +67,7 @@ Describe 'Test mode (sandbox)' {
     }
 
     It 'edits the sandbox copies' {
-        Join-Path $sandboxRoot 'CNCnetPDM/citizenm_1008.dll' | Should -Exist
+        Join-Path $sandboxRoot 'CNCnetPDM/citizenm_1008.ini' | Should -Exist
         Join-Path $sandboxRoot 'SINC/CNC3/DoneError'         | Should -Exist
         (Get-Content (Join-Path $sandboxRoot 'CNCnetPDM/CNCnetPDM.ini') -Raw) | Should -Match '3 = 1008;'
     }

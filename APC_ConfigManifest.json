@@ -199,6 +199,7 @@
       "MaxMachineNumber": 999
     },
     "DriverDlls": [ "citizenm.dll", "mitsubishim.dll" ],
+    "DriverDllWaitSeconds": 30,
     "DefaultLicense":   "ENPQRSLNTZNOLLNVRUPTIRPQKLLXEFMLGTQJRQMSLFNLLNOS",
     "Defaults": {
       "Baud":        19200,

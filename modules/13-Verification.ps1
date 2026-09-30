@@ -563,14 +563,16 @@ function Invoke-Verification {
         }
     }
 
-    # Item 6 - Driver DLL files renamed to DeviceNr
+    # Item 6 - per-device driver files: <dll>_<DeviceNr>.ini (renamed by Step 8) and .dll (created by CNCnetPDM)
     Check 'CNCnetPDM' 'Driver DLL files renamed correctly' {
         if (-not $driverDir) { throw "Directory unknown" }
-        $missing = @($pdmCNCs | ForEach-Object {
-            "$([System.IO.Path]::GetFileNameWithoutExtension($_.DriverDll))_$($_.DeviceNr).dll"
-        } | Where-Object { -not (Test-Path (Join-Path $driverDir $_)) })
-        if ($missing) { throw "Missing DLLs: $($missing -join ', ')" }
-        "Driver DLLs present: $(($pdmCNCs | ForEach-Object { "$([System.IO.Path]::GetFileNameWithoutExtension($_.DriverDll))_$($_.DeviceNr).dll" }) -join ', ')"
+        $files = @($pdmCNCs | ForEach-Object {
+            $b = "$([System.IO.Path]::GetFileNameWithoutExtension($_.DriverDll))_$($_.DeviceNr)"
+            "$b.ini"; "$b.dll"
+        })
+        $missing = @($files | Where-Object { -not (Test-Path (Join-Path $driverDir $_)) })
+        if ($missing) { throw "Missing: $($missing -join ', ') (.dll files are created when the CNCnetPDM service starts)" }
+        "Present: $($files -join ', ')"
     } '' 6 6
 
     # Item 7 - melcfg.ini machine sections and TCP mappings

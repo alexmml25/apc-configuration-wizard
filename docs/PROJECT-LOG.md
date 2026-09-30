@@ -16,7 +16,7 @@ Add a dated entry to the **Log** whenever something is changed or tested, and up
 | Area | State |
 |---|---|
 | Steps 1-13 | All written. Steps 3, 8, 9 and 10 rebuilt against the real config files (Sept 2026). |
-| Automated tests | 120 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
+| Automated tests | 123 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
 | Test mode (sandbox) | VM re-run 2026-09-30 after the fixes: Steps 1, 3, 8, 9 and 10 complete with no FAIL. The only warnings are driver `.dll` files not found and instrument shares not reachable from the test VM. |
 | Real run on a VM | Not done yet. |
 | Sites | MPR (Humacao) has instrument defaults. MCR, MFW and MWR use generic defaults. MFW and MWR have no Site DB server set. |
@@ -55,7 +55,11 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
   - Device Nr only has to be unique among the 3 CNCs on one VM. The rule is standardised in case instances are merged later.
   - This replaces the earlier `10`/`11` + 2-digit rule. Existing `11xx` numbers change; accepted.
 - **DLL** in the `[RS232]` line is always the Site DB `f_dllname`. There is no default.
-- **Driver files:** `<dll>_CNC{n}.dll` and a matching `.ini` are renamed to `<dll>_<DeviceNr>`. The driver `.ini` contents are never changed.
+- **Driver files:**
+  - Only the per-device `.ini` is renamed: `<dll>_CNC{n}.ini` → `<dll>_<DeviceNr>.ini`. Its contents are never changed.
+  - CNCnetPDM **creates** `<dll>_<DeviceNr>.dll` itself when the service starts.
+  - Step 8 restarts the service and checks each `.dll` was created, waiting up to `DriverDllWaitSeconds`, 30 s.
+  - In test mode there is no restart, so no `.dll` is created.
 - **License:** `[GENERAL] License = ...`. The wizard uses the default perpetual key from the manifest,
   unless "Use default perpetual license" is unticked and another key is entered. *(manifest `CNCnetPDM.DefaultLicense`)*
 - **`[RS232]` line format:**
@@ -112,7 +116,6 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 ## Open items
 
 - [ ] Run the Pester tests on the VM (Windows PowerShell 5.1) for the first time.
-- [ ] CNCnetPDM driver files: the VM has `citizenm_CNC{n}.ini` / `mitsubishim_CNC{n}.ini` but no matching `_CNC{n}.dll`. Confirm what per-device `.dll` files should exist. Also decide whether an `.ini` should be renamed when its `.dll` is missing.
 - [ ] Decide whether Step 10 should create an **Error path** that is on a share (today it creates it if the drive exists).
 - [ ] MFW and MWR: Site DB host and credentials are missing in the manifest `SiteServers`.
 - [ ] MCR, MFW and MWR instrument defaults (source shares) are not known yet. Add them to the manifest `DataApps.SiteDefaults` when available.
@@ -123,6 +126,12 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 ---
 
 ## Log
+
+### 2026-09-30 - Driver files: rename .ini only, check the service creates the .dll
+- The VM has `citizenm.dll`, `mitsubishim.dll` and `<dll>_CNC1-3.ini` only. The user confirmed CNCnetPDM creates `<dll>_<DeviceNr>.dll` when the service starts after the `.ini` rename.
+- **Step 8:** renames only the `.ini`, and warns if it is missing. After the restart it checks each `<dll>_<DeviceNr>.dll` appears.
+- **Step 13 item 6:** checks that both the `.ini` and the `.dll` exist for each CNC.
+- **Tests:** 123 passing. The service stub now creates the `.dll` the way CNCnetPDM does.
 
 ### 2026-09-30 - Second VM test-mode run: clean
 - Mixed families assigned: CNC1 Citizen 08 (L20X_IV), CNC2 Citizen L320EA 12 (L20E_V), CNC3 Citizen 68 (L20E_IV).
