@@ -200,6 +200,8 @@
     },
     "DriverDlls": [ "citizenm.dll", "mitsubishim.dll" ],
     "DriverDllWaitSeconds": 30,
+    "ConnectWaitSeconds":   60,
+    "PortCheckTimeoutMs":   2000,
     "DefaultLicense":   "ENPQRSLNTZNOLLNVRUPTIRPQKLLXEFMLGTQJRQMSLFNLLNOS",
     "Defaults": {
       "Baud":        19200,

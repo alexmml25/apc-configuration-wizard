@@ -13,6 +13,7 @@
     - melcfg.ini: one [Machine{nn}] section per CNC (Device=TCP{n}) and TCP{n} = {IP},{Port} in [HOSTS]
     - Driver ini: {dll}_CNC{n}.ini renamed to {dll}_{DeviceNr}.ini
     - Restarts the CNCnetPDM service, then checks it created {dll}_{DeviceNr}.dll for each CNC
+      and that each device connected (per-device log log_{DeviceNr}_{yyMMdd}.txt)
 #>
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
@@ -131,6 +132,28 @@ function Invoke-CNCnetPDM {
             if ($Lines[$i] -match "^\s*$([regex]::Escape($Key))\s*=") { $Lines[$i] = "$Key = $Value"; return }
         }
         $Lines.Insert($sec.Header + 1, "$Key = $Value")
+    }
+
+    # Lines appended to a (possibly locked) log file after byte $Offset
+    function Read-NewLogLines {
+        param([string]$Path, [long]$Offset)
+        if (-not (Test-Path $Path)) { return @() }
+        $fs = [System.IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
+        try {
+            if ($Offset -gt $fs.Length) { $Offset = 0 }
+            [void]$fs.Seek($Offset, 'Begin')
+            $sr = New-Object System.IO.StreamReader($fs)
+            return @($sr.ReadToEnd() -split "`r?`n" | Where-Object { $_ })
+        } finally { $fs.Close() }
+    }
+
+    function Test-TcpPort {
+        param([string]$Address, [int]$Port, [int]$TimeoutMs = 2000)
+        $client = New-Object System.Net.Sockets.TcpClient
+        try {
+            $ar = $client.BeginConnect($Address, $Port, $null, $null)
+            return ($ar.AsyncWaitHandle.WaitOne($TimeoutMs) -and $client.Connected)
+        } catch { return $false } finally { $client.Close() }
     }
 
     function Get-MachinePort {
@@ -285,6 +308,21 @@ function Invoke-CNCnetPDM {
     if ($State['SandboxRoot']) {
         Add-Result -Phase CNCnetPDM -Check "CNCnetPDM service restart" -Status PASS -Detail "Skipped in test mode (per-device driver .dll files are created on service start)"
     } else { try {
+        # Per-device logs: note their size now so only lines written after the restart are read
+        $logDir = $null
+        $sec = Find-Section $ini 'Protokoll'
+        if ($sec) {
+            $pfad = $ini.GetRange($sec.Header + 1, $sec.End - $sec.Header - 1) | Where-Object { $_ -match '^\s*PFAD\s*=\s*(.+?)\s*$' } | ForEach-Object { $Matches[1] } | Select-Object -First 1
+            if ($pfad -and (Test-Path $pfad)) { $logDir = $pfad }
+        }
+        if (-not $logDir) { $logDir = Join-Path $cncPdmDir 'log' }
+        $logDay  = Get-Date -Format 'yyMMdd'
+        $logInfo = @{}
+        foreach ($m in $machines) {
+            $f = Join-Path $logDir "log_$($m.DeviceNr)_$logDay.txt"
+            $logInfo[$m.DeviceNr] = @{ Path = $f; Offset = $(if (Test-Path $f) { (Get-Item $f).Length } else { 0 }) }
+        }
+
         Write-Log INFO "Restarting CNCnetPDM service ($svcName)..."
         Restart-Service -Name $svcName -Force -ErrorAction Stop
         Start-Sleep -Seconds 5
@@ -311,6 +349,38 @@ function Invoke-CNCnetPDM {
             } else {
                 Add-Result -Phase CNCnetPDM -Check "Driver $dll created" -Status PASS
             }
+        }
+
+        # Device connection, from each device's own log: the latest of
+        #   "Success writing/reading ... controller"                    -> connected
+        #   "Not connected" / "initialization failed" / "Error(s) reported" -> not (yet) connected
+        Write-Log INFO "Waiting up to $($cncPdm.ConnectWaitSeconds) s for devices to connect (logs in $logDir)..."
+        $okPattern  = '\bSuccess\b.*controller'
+        $errPattern = 'Not connected|initialization failed|Error\(s\) reported'
+        $conn = @{}
+        $deadline = (Get-Date).AddSeconds([int]$cncPdm.ConnectWaitSeconds)
+        do {
+            foreach ($m in $machines) {
+                if ($conn[$m.DeviceNr] -eq 'OK') { continue }
+                $last = Read-NewLogLines $logInfo[$m.DeviceNr].Path $logInfo[$m.DeviceNr].Offset |
+                        Where-Object { $_ -match $okPattern -or $_ -match $errPattern } | Select-Object -Last 1
+                $conn[$m.DeviceNr] = if (-not $last) { '' } elseif ($last -match $okPattern) { 'OK' } else { $last }
+            }
+            $waiting = @($machines | Where-Object { $conn[$_.DeviceNr] -ne 'OK' })
+            if ($waiting.Count -eq 0 -or (Get-Date) -ge $deadline) { break }
+            Start-Sleep -Seconds 3
+        } while ($true)
+
+        foreach ($m in $machines) {
+            $label = "CNC$($m.CNCIndex) device $($m.DeviceNr) connected ($($m.MachineName))"
+            if ($conn[$m.DeviceNr] -eq 'OK') {
+                Add-Result -Phase CNCnetPDM -Check $label -Status PASS
+                continue
+            }
+            $port   = Get-MachinePort $m
+            $reach  = if (Test-TcpPort $m.IPAddress $port ([int]$cncPdm.PortCheckTimeoutMs)) { "$($m.IPAddress):$port answers" } else { "$($m.IPAddress):$port does not answer (network/controller)" }
+            $reason = if ($conn[$m.DeviceNr]) { "Last log line: $($conn[$m.DeviceNr].Trim())" } else { "No connection result in $(Split-Path $logInfo[$m.DeviceNr].Path -Leaf) within $($cncPdm.ConnectWaitSeconds) s" }
+            Add-Result -Phase CNCnetPDM -Check $label -Status WARN -Detail "$reason; $reach"
         }
     } catch {
         Add-Result -Phase CNCnetPDM -Check "CNCnetPDM service restart" -Status WARN -Detail "$_"

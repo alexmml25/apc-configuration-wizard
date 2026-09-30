@@ -16,7 +16,7 @@ Add a dated entry to the **Log** whenever something is changed or tested, and up
 | Area | State |
 |---|---|
 | Steps 1-13 | All written. Steps 3, 8, 9 and 10 rebuilt against the real config files (Sept 2026). |
-| Automated tests | 123 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
+| Automated tests | 126 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
 | Test mode (sandbox) | VM re-run 2026-09-30 after the fixes: Steps 1, 3, 8, 9 and 10 complete with no FAIL. The only warnings are driver `.dll` files not found and instrument shares not reachable from the test VM. |
 | Real run on a VM | Not done yet. |
 | Sites | MPR (Humacao) has instrument defaults. MCR, MFW and MWR use generic defaults. MFW and MWR have no Site DB server set. |
@@ -59,6 +59,10 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
   - Only the per-device `.ini` is renamed: `<dll>_CNC{n}.ini` → `<dll>_<DeviceNr>.ini`. Its contents are never changed.
   - CNCnetPDM **creates** `<dll>_<DeviceNr>.dll` itself when the service starts.
   - Step 8 restarts the service and checks each `.dll` was created, waiting up to `DriverDllWaitSeconds`, 30 s.
+- **Connection check after the restart:**
+  - Step 8 reads each device's own log, `log_<DeviceNr>_<yyMMdd>.txt`, in the `[Protokoll] PFAD` folder. It reads only lines written after the restart, for up to `ConnectWaitSeconds` (60 s).
+  - The latest `Success … controller` line counts as connected (PASS).
+  - The latest `Not connected` / `initialization failed` / `Error(s) reported` line, or no result at all, is a WARN. The WARN includes that log line and whether `IP:683` answers.
   - In test mode there is no restart, so no `.dll` is created.
 - **License:** `[GENERAL] License = ...`. The wizard uses the default perpetual key from the manifest,
   unless "Use default perpetual license" is unticked and another key is entered. *(manifest `CNCnetPDM.DefaultLicense`)*
@@ -126,6 +130,19 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 ---
 
 ## Log
+
+### 2026-09-30 - Step 8 checks each device connects after the service restart
+- **Log format** from the production Humacao VM (SJUM7AAPPS0066):
+  - There is one log per device per day: `log_<DeviceNr>_<yyMMdd>.txt`.
+  - Success lines read `Success writing command: <…> to controller`.
+  - Failure lines read `Error(s) reported by device N: … Not connected(-2113798134)` or `Device N initialization failed: <dll>`.
+  - The admin log (`200/<DeviceNr>/1;<name>`) is only written while CNCnetControl is open, so it is not used.
+- **Step 8 now:**
+  - notes the size of each device log before the restart.
+  - polls the new lines for up to 60 s.
+  - reports PASS/WARN per CNC, with the last error line and a port-683 check.
+  - skips all of this in test mode.
+- **Tests:** 126 passing. The service stub writes success or not-connected log lines, and test copies of CNCnetPDM.ini point PFAD at the test folder, so real logs are never read.
 
 ### 2026-09-30 - Driver files: rename .ini only, check the service creates the .dll
 - The VM has `citizenm.dll`, `mitsubishim.dll` and `<dll>_CNC1-3.ini` only. The user confirmed CNCnetPDM creates `<dll>_<DeviceNr>.dll` when the service starts after the `.ini` rename.

@@ -9,6 +9,7 @@ BeforeAll {
         New-Item -ItemType Directory -Path $dir | Out-Null
         Copy-Item (Get-Fixture 'CNCnetPDM/CNCnetPDM.ini') $dir
         Copy-Item (Get-Fixture 'CNCnetPDM/melcfg.ini') $dir
+        Set-TestLogDir (Join-Path $dir 'CNCnetPDM.ini')
         foreach ($d in $Drivers) {
             if ($d -eq 'mitsubishim_CNC1.ini') { Copy-Item (Get-Fixture 'CNCnetPDM/mitsubishim_CNC1.ini') $dir }
             else { Set-Content (Join-Path $dir $d) 'driver' }
@@ -19,7 +20,9 @@ BeforeAll {
         param([string]$Dir)
         $m = Get-TestManifest
         $m.CNCnetPDM.InstallDir = $Dir; $m.CNCnetPDM.FallbackDir = $Dir
-        $m.CNCnetPDM.DriverDllWaitSeconds = 0   # the service stub creates the .dll files immediately or never
+        $m.CNCnetPDM.DriverDllWaitSeconds = 0   # the service stub creates the .dll files and log lines immediately or never
+        $m.CNCnetPDM.ConnectWaitSeconds   = 0
+        $m.CNCnetPDM.PortCheckTimeoutMs   = 100
         $m
     }
 }
@@ -40,12 +43,18 @@ Describe 'Step 8 - CNCnetPDM (Humacao example)' {
         Get-NormalizedIni (Join-Path $dir 'melcfg.ini') | Should -Be (Get-NormalizedIni (Get-Fixture 'CNCnetPDM/melcfgHUM.ini'))
     }
 
-    It 'renames citizenm_CNC{n}.ini to citizenm_<DeviceNr>.ini' {
+    It 'renames citizenm_CNC{n}.ini to citizenm_{DeviceNr}.ini' {
         'citizenm_1001.ini', 'citizenm_1003.ini', 'citizenm_1008.ini', 'citizenm.dll' | ForEach-Object { Join-Path $dir $_ | Should -Exist }
         Get-ChildItem $dir -Filter '*_CNC*' | Should -BeNullOrEmpty
     }
 
-    It 'checks that the service created citizenm_<DeviceNr>.dll after the restart' {
+    It 'reports each device connected from its CNCnetPDM log' {
+        foreach ($n in '1001', '1003', '1008') {
+            (Get-StepResults | Where-Object Check -like "CNC* device $n connected*").Status | Should -Be 'PASS'
+        }
+    }
+
+    It 'checks that the service created citizenm_{DeviceNr}.dll after the restart' {
         foreach ($n in '1001', '1003', '1008') {
             (Get-StepResults | Where-Object Check -eq "Driver citizenm_$n.dll created").Status | Should -Be 'PASS'
         }
@@ -131,6 +140,27 @@ Describe 'Step 8 - CNCnetPDM rules' {
         (Get-StepResults | Where-Object Check -eq 'Driver citizenm_1001.dll created').Status | Should -Be 'WARN'
     }
 
+    It 'warns with the log line when a device is not connected' {
+        $dir = New-PdmInstall
+        Set-ServiceCreatesDriverDlls $dir -Connect NotConnected
+        Invoke-CNCnetPDM -Manifest (New-PdmManifest $dir) -State (New-HumState -DocCount 1)
+        $r = Get-StepResults | Where-Object Check -like 'CNC1 device 1001 connected*'
+        $r.Status | Should -Be 'WARN'
+        $r.Detail | Should -Match 'Not connected'
+        $r.Detail | Should -Match '10\.101\.99\.47:683'
+    }
+
+    It 'ignores log lines written before the restart' {
+        $dir = New-PdmInstall
+        $logDir = Join-Path $dir 'log'
+        Set-Content (Join-Path $logDir "log_1001_$(Get-Date -Format 'yyMMdd').txt") '2026-09-30 08:00:00.000 Success writing command: <1|1|0|1> to controller'
+        Set-ServiceCreatesDriverDlls $dir -Connect None
+        Invoke-CNCnetPDM -Manifest (New-PdmManifest $dir) -State (New-HumState -DocCount 1)
+        $r = Get-StepResults | Where-Object Check -like 'CNC1 device 1001 connected*'
+        $r.Status | Should -Be 'WARN'
+        $r.Detail | Should -Match 'No connection result'
+    }
+
     It 'warns when a CNC has no driver ini to rename' {
         $dir = New-PdmInstall -Drivers @('citizenm.dll')
         Invoke-CNCnetPDM -Manifest (New-PdmManifest $dir) -State (New-HumState -DocCount 1)
@@ -143,5 +173,6 @@ Describe 'Step 8 - CNCnetPDM rules' {
         $state.SandboxRoot = $TestDrive
         Invoke-CNCnetPDM -Manifest (New-PdmManifest $dir) -State $state
         $global:ServiceActions | Should -BeNullOrEmpty
+        Get-StepResults | Where-Object Check -like '*connected*' | Should -BeNullOrEmpty
     }
 }

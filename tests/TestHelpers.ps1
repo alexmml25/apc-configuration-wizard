@@ -27,12 +27,32 @@ function global:Restart-Service {
 function global:Start-Sleep { param($Seconds, $Milliseconds) }   # no waiting in tests
 
 # Make the service stub behave like CNCnetPDM: on start it creates <dll>_<DeviceNr>.dll for each <dll>_<DeviceNr>.ini
+# and, unless -Connect None, writes a connection result to each device log (<Dir>\log\log_<DeviceNr>_<yyMMdd>.txt)
 function Set-ServiceCreatesDriverDlls {
-    param([string]$Dir)
+    param([string]$Dir, [ValidateSet('Success', 'NotConnected', 'None')] [string]$Connect = 'Success')
     $global:OnServiceRestart = {
-        Get-ChildItem $Dir -Filter '*_*.ini' | Where-Object { $_.BaseName -match '_\d{4}$' } |
-            ForEach-Object { Set-Content (Join-Path $Dir "$($_.BaseName).dll") 'created by service' }
+        $logDir = Join-Path $Dir 'log'
+        New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+        Get-ChildItem $Dir -Filter '*_*.ini' | Where-Object { $_.BaseName -match '_(\d{4})$' } | ForEach-Object {
+            $nr = $Matches[1]
+            Set-Content (Join-Path $Dir "$($_.BaseName).dll") 'created by service'
+            $line = switch ($Connect) {
+                'Success'      { "2026-09-30 12:24:33.509 Success writing command: <169|2|0|598> to controller" }
+                'NotConnected' { "2026-09-30 12:24:33.509 Error(s) reported by device ${nr}: INIT Not connected(-2113798134)" }
+                default        { $null }
+            }
+            if ($line) { Add-Content (Join-Path $logDir "log_${nr}_$(Get-Date -Format 'yyMMdd').txt") $line }
+        }
     }.GetNewClosure()
+}
+
+# Point a CNCnetPDM.ini copy's log folder ([Protokoll] PFAD) at <folder>\log so tests never read real CNCnetPDM logs
+function Set-TestLogDir {
+    param([string]$IniPath)
+    $logDir = Join-Path (Split-Path $IniPath -Parent) 'log'
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    $text = [System.IO.File]::ReadAllText($IniPath) -replace '(?m)^PFAD\s*=.*$', "PFAD = $logDir"
+    [System.IO.File]::WriteAllText($IniPath, $text)
 }
 function global:Get-Service     { param($Name, $ErrorAction) [pscustomobject]@{ Name = $Name; Status = 'Running' } }
 
@@ -57,10 +77,11 @@ function New-HumState {
     @{ SiteCode = 'MPR'; CNCMachines = $machines; DOCCount = $DocCount; DOCMachineAssignments = @($Assign | Select-Object -First $DocCount) }
 }
 
-# Text of an ini file without blank lines and with "; x" / ";x" comments normalised
+# Text of an ini file without blank lines, with "; x" / ";x" comments normalised, and without the
+# log folder line (tests point PFAD at their own folder)
 function Get-NormalizedIni {
     param([string]$Path)
-    @([System.IO.File]::ReadAllLines($Path) | Where-Object { $_.Trim() } | ForEach-Object { $_.TrimEnd() -replace '^;\s*', ';' })
+    @([System.IO.File]::ReadAllLines($Path) | Where-Object { $_.Trim() -and $_ -notmatch '^PFAD\s*=' } | ForEach-Object { $_.TrimEnd() -replace '^;\s*', ';' })
 }
 
 # Fake installed layout as on the APC VM: DOC-{n}\DOC_II, \Plugins (PartLookup), \Plugins\IQS (SpcDb, Iqs)

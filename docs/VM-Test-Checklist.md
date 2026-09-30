@@ -118,6 +118,7 @@ When the sandbox looks right, delete it or keep it for comparison.
 
 - [ ] **CNCnetPDM Workbench:** the service is running, the license is accepted, and Machine Status is green for each CNC once the network is connected.
 - [ ] `C:\Medtronic\CNCNetPDM\` has `<dll>_<DeviceNr>.dll` next to each `<dll>_<DeviceNr>.ini`; Step 8 also checks this.
+- [ ] Step 8 log shows `CNCn device <DeviceNr> connected` = PASS for each CNC. A WARN shows the last line of `log\log_<DeviceNr>_<yyMMdd>.txt` and whether the machine answers on port 683.
 - [ ] **deviceWise:** the CNCnetPDM instance shows Connected, and `CNC1_Path`… are mapped to the right machines.
 - [ ] **DOC (each instance):** DOC DB, SPC and OPC indicators are green.
 - [ ] **File Manager, Data Collector, Data Analyzer:** each starts without errors.
