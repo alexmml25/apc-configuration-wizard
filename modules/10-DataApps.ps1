@@ -208,13 +208,14 @@ function Invoke-DataApps {
                     $paths.AppendChild($blk) | Out-Null
                 }
 
+                # create local folders first: a source can be one of them (e.g. BENCH uses its local folder)
+                Ensure-Dir $newPath "$($ins.Type) NewPath"
+                Ensure-Dir $errPath "$($ins.Type) ErrorPath"
                 if (-not $ins.SourcePath) {
                     Add-Result -Phase DataApps -Check "File Manager: $($ins.Type) source" -Status WARN -Detail "No source share entered - template path kept, update <Path> manually"
                 } elseif (-not (Test-Path $ins.SourcePath)) {
                     Add-Result -Phase DataApps -Check "File Manager: $($ins.Type) source" -Status WARN -Detail "Source not reachable from VM: $($ins.SourcePath)"
                 }
-                Ensure-Dir $newPath "$($ins.Type) NewPath"
-                Ensure-Dir $errPath "$($ins.Type) ErrorPath"
                 Add-Result -Phase DataApps -Check "File Manager: $($ins.Type)" -Status PASS -Detail "$($ins.Names -join ', ') -> $newPath"
             }
 

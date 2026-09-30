@@ -151,3 +151,15 @@ Describe 'Step 10 - installed config missing an instrument block' {
         @(([xml](Get-Content $dcPath -Raw)).configuration.DataTypeSettings.ChildNodes).Count | Should -Be 15
     }
 }
+
+Describe 'Step 10 - source folder that Step 10 itself creates' {
+    It 'does not warn about a BENCH source that is its local data folder' {
+        Reset-StepResults
+        $inst  = New-DataAppsInstall
+        $state = New-DataAppsState $inst.Dir
+        $state.DataAppsInstruments = @(@{ Type = 'BENCH'; Count = 1; CNCs = @(1, 2, 3)
+            SourcePath = (Join-Path $state.DataAppsLocalRoot 'BENCH'); ErrorPath = ''; BroadcastPath = '' })
+        Invoke-DataApps -Manifest $inst.Manifest -State $state
+        @(Get-StepResults -Status WARN | Where-Object Check -eq 'File Manager: BENCH source') | Should -BeNullOrEmpty
+    }
+}

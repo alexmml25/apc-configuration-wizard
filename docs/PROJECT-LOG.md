@@ -16,9 +16,11 @@ Add a dated entry to the **Log** whenever something is changed or tested, and up
 | Area | State |
 |---|---|
 | Steps 1-13 | All written. Steps 3, 8, 9 and 10 rebuilt against the real config files (Sept 2026). |
-| Automated tests | 133 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
+| Automated tests | 134 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
 | Test mode (sandbox) | VM re-run 2026-09-30 after the fixes: Steps 1, 3, 8, 9 and 10 complete with no FAIL. The only warnings are driver `.dll` files not found and instrument shares not reachable from the test VM. |
-| Real run on a VM | Not done yet. |
+| Real run on a VM | First real run on the test VM 2026-09-30 (Reviewed steps only): Steps 1, 3, 8, 9 and 10 wrote the real files, and CNCnetPDM created the `.dll` files. The device connection check needs follow-up (see Open items). |
+| deviceWise (Steps 4-7, 12 export) | **Cannot work as written.** The gateway has no HTTP/REST API; the modules call endpoints that don't exist. Proposed: guided manual steps (see Open items). |
+| Remote run | Not supported. Every step assumes it runs on the target VM (localhost DB/deviceWise, `C:\` paths, HKLM, local services). Run it on the VM itself, e.g. over RDP. |
 | Sites | **MCR and MPR only** (MFW and MWR dropped 2026-09-30). MPR (Humacao) has instrument defaults; MCR uses generic defaults. |
 
 ---
@@ -132,13 +134,55 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - [ ] Run the Pester tests on the VM (Windows PowerShell 5.1) for the first time.
 - [ ] Decide whether Step 10 should create an **Error path** that is on a share (today it creates it if the drive exists).
 - [ ] MCR instrument defaults (source shares) are not known yet. Add them to the manifest `DataApps.SiteDefaults` when available.
-- [ ] Verify the deviceWise REST API paths used by Steps 4-7 against the installed version (`/api-docs`).
-- [ ] Real run on the **test** VM with **Reviewed steps only**, then Part 3 of the test checklist. Do not use the production Humacao VM.
+- [x] ~~Verify the deviceWise REST API paths used by Steps 4-7 against the installed version.~~ Done 2026-09-30: there is no REST API (see Log).
+- [ ] **Decide the deviceWise approach.** Proposed: Steps 4-7 become a guided pause like Step 11. The wizard shows a checklist with this VM's values filled in (CNCAsset/CNCType, EMAIL_TO, CNC_ASSET_Management and CNC_Settings rows, CNCnetPDM path and CNC path mapping, import file paths, License Manager host, OPC UA endpoint settings), waits for Continue, then checks what it can without the API (dwcore/dwts running, port 48020 listening, SINC folders, CNCnetPDM). The rest becomes manual sign-off items in the Step 13 report. The fake REST calls are removed. About 1 day.
+- [ ] Move Step 7 (deviceWise CNCnetPDM integration) after Step 8 (CNCnetPDM), as in the SOP. Today "Connected" cannot pass on the first run.
+- [ ] Step 12 backup reads `$Manifest.BackupShare`, but the manifest key is `APC.BackupShare`. Strict mode makes this an error. The deviceWise project export in Step 12 also uses the non-existent API.
+- [ ] Ask Telit support (support-devicewise@telit.com) whether Gateway 23.04 has a supported way to script configuration (CLI, full-config import, local API).
+- [ ] Check the manifest Site DB host: `SiteServers.MPR/MCR.Host` is `sjum1cappd0017`, which is also the APC VM the deviceWise scans ran on. Confirm this is intended.
+- [ ] Finish Part 3 of the test checklist after the first reviewed-steps run: restart File Manager, Data Collector and Data Analyzer, check the DOC indicators, and test file routing.
+- [ ] Device 1001 (Citizen 01): no connection result in 60 s, although port 683 answers. Check what its log shows when it is connected but idle, so the check does not WARN falsely.
+- [ ] Device 4001 (L320EA 1, `_V`): `INIT Error(-2113798123)` although port 683 answers. Is the `melcfg.ini` `Controller=M7NX` (copied to every MachineNN) right for V-series machines, or does it depend on the family?
 - [ ] Merge `config-files-rework` into `main` once the VM tests pass.
 
 ---
 
 ## Log
+
+### 2026-09-30 - First real run (Reviewed steps only) on the test VM
+- **Machines:** CNC1 Citizen 01 (1001), CNC2 Citizen L320EA 1 (4001), CNC3 Citizen 68 (2068).
+- **Step 3:** the 9 SINC folders already existed.
+- **Step 8:**
+  - wrote the ini, license, RS232 and melcfg entries and renamed the `.ini` files.
+  - restarted the service, and **all three `.dll` files were created**.
+  - connection check: 1001 had no log result (port answers), 4001 had `INIT Error` (port answers), and 2068 was `Not connected` (port does not answer, so the network).
+- **Steps 9 and 10:** all PASS on the real files.
+- **Side effects:** Step 10 created `D:\CMM_Measurement_Reports\CSVCLCError` and `D:\Contracer_Measurement_Reports\CSVCLCError` on this VM, because the MPR default Error paths point at D:.
+- **Fixed:** Step 10 checked a source folder before creating it, so BENCH, whose source is its local folder, warned wrongly. It now creates the local folders first.
+
+### 2026-09-30 - deviceWise investigation: no API for Steps 4-7
+- **Question:** can the deviceWise steps (4-7) actually run, and can the wizard be run from another VM?
+- **Remote run:** not as written. See Status. Running the wizard on the VM over RDP needs no changes.
+- **Code review of Steps 4-7 and 12** (local copy of the repo) found problems independent of the API:
+  - `System.Web` and `System.Net.Http` are never loaded, so the URL encoding and file uploads fail on Windows PowerShell 5.1.
+  - `$token` is never set in Step 4 (strict mode error), so every tag import fails.
+  - Step 7 sends one request per machine to the same `CNCX_Paths` object, so each overwrites the last.
+  - Some checks record PASS without checking the response (e.g. "OPC UA endpoint started").
+- **deviceWise on SJUM1CAPPD0017** (Workbench 23.04 / 23.04.08, desktop app):
+  - Services: `dwcore` (`Gateway\dwcore\dwcore.exe`) and `dwts` (`Gateway\dwjava\dwts.exe`).
+  - `dwcore` listens only on **4011** (127.0.0.1), **4012** (0.0.0.0, secure) and **48020** (OPC UA). From `dwcore.properties`: `listener.1=Local/127.0.0.1:4011`, `listener.2=Private/0.0.0.0:4012/SECURE`.
+  - Nothing answers HTTP/HTTPS on 8080/8090/8100/8001/443. The `/api/v2/...` paths the modules use do not exist.
+  - Packages installed on the gateway: CNCnetPDM, FileWatcher, Lua, OPC UA client, OPC UA server v3, Simulation, TR50.
+- **Workbench jars examined** with read-only scripts, to find how Workbench talks to the gateway:
+  - `Workbench\wbench\jars\dwjavaapi.jar` is the CloudLINK tunnel and M2M Portal (cloud) client. It has no gateway administration.
+  - `Workbench\wbench\jars\dwtr50.jar` is the TR50 client for Telit's cloud portal (`session.*`, `thing.*`, `trigger.*`). It reaches a gateway only through the cloud, which needs a portal account and a cloud-connected gateway.
+  - `Workbench\wbench\dwWorkbench.jar` (4.9 MB, 2133 classes) is Workbench itself. It is **obfuscated** (packages named `if`, `int`, `OoOO…`). Its readable strings have portal commands, status counters, UI and permission names, and trigger action names. There are **no** named commands for variables, triggers, projects, local DB, packages or users. So the 4011/4012 protocol is binary and hidden in the obfuscated code.
+- **Conclusion:** rebuilding that protocol would be fragile across upgrades and would probably break the licence terms. Steps 4-7 can't be automated with what is installed. Next step: the guided mode in Open items, pending a decision.
+- **New read-only tools** in `tools/`, kept in case a later deviceWise version adds an API:
+  - `Discover-DeviceWiseApi.ps1`: services, ports, HTTP probes and config.
+  - `Export-DwJavaApi.ps1`: classes, methods and strings of a jar.
+  - `Find-DwGatewayClient.ps1`: jar and package scan.
+  - All three write to `C:\APC_Config\Logs`. On the VM they are in `D:\APC_Config\tools`.
 
 ### 2026-09-30 - Run modes, one-click launcher, MFW/MWR dropped
 - **Run mode selector** replaces the Test mode checkbox. The modes are Reviewed steps only (the default), Full run and Test mode. Real runs ask for confirmation.
