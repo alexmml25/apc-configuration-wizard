@@ -180,7 +180,8 @@
         "CITIZEN_L12":     6,
         "CITIZEN_L12_IV":  6
       },
-      "MaxMachineNumber": 999
+      "MaxMachineNumber": 999,
+      "MaxMachineNameLength": 15
     },
     "DriverDlls": [ "citizenm.dll", "mitsubishim.dll" ],
     "DriverDllWaitSeconds": 30,

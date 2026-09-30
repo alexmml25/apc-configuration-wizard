@@ -12,7 +12,7 @@ Describe 'Get-CNCDeviceInfo (CNCnetPDM DeviceNr rules)' {
         @{ Name = 'Citizen 68';        Family = 'CITIZEN_L20E_IV'; DeviceNr = '2068' }
         @{ Name = 'MCR-CNC-0004';      Family = 'CITIZEN_L20E_IV'; DeviceNr = '2004' }
         @{ Name = 'Citizen 28';        Family = 'CITIZEN_M32_IV';  DeviceNr = '3028' }
-        @{ Name = 'Citizen L320EA 1';  Family = 'CITIZEN_L20E_V';  DeviceNr = '4001' }
+        @{ Name = 'Citizen L320 1';    Family = 'CITIZEN_L20E_V';  DeviceNr = '4001' }
         @{ Name = 'Citizen 100';       Family = 'CITIZEN_L20E_V';  DeviceNr = '4100' }
         @{ Name = 'Citizen 300';       Family = 'CITIZEN_L20E_V';  DeviceNr = '4300' }
         @{ Name = 'Citizen M325 1';    Family = 'CITIZEN_M32_V';   DeviceNr = '5001' }
@@ -41,11 +41,16 @@ Describe 'Get-CNCDeviceInfo (CNCnetPDM DeviceNr rules)' {
         @($nrs | Group-Object | Where-Object Count -gt 1).Count | Should -Be 0
     }
 
+    It 'accepts a name of exactly 15 characters (Humacao_L20X_13)' {
+        (Get-CNCDeviceInfo -Machine @{ MachineName = 'Humacao_L20X_13'; AssetFamily = 'CITIZEN_L20X_IV'; DLLName = 'citizenm.dll' } -Manifest $manifest).DeviceNr | Should -Be '1013'
+    }
+
     It 'reports an error for <Case>' -ForEach @(
         @{ Case = 'no trailing number';      Name = 'Lathe-A';     Family = 'CITIZEN_L20X_IV'; Dll = 'citizenm.dll' }
         @{ Case = 'number above 999';        Name = 'CNC 1000';    Family = 'CITIZEN_L20X_IV'; Dll = 'citizenm.dll' }
         @{ Case = 'unknown family';          Name = 'CNC_1';       Family = 'CITIZEN M32';     Dll = 'citizenm.dll' }
         @{ Case = 'no DLL in the Site DB';   Name = 'CNC_1';       Family = 'CITIZEN_L20X_IV'; Dll = '' }
+        @{ Case = 'name longer than 15 characters (CNCnetPDM cuts it)'; Name = 'Citizen L320EA 10'; Family = 'CITIZEN_L20E_V'; Dll = 'mitsubishim.dll' }
     ) {
         $info = Get-CNCDeviceInfo -Machine @{ MachineName = $Name; AssetFamily = $Family; DLLName = $Dll } -Manifest $manifest
         $info.Error    | Should -Not -BeNullOrEmpty

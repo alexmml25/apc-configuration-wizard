@@ -26,6 +26,13 @@ function Get-CNCDeviceInfo {
         $info.Error = "Asset family '$family' has no Device Nr digit (known: $(($rules.FamilyDigits.PSObject.Properties.Name) -join ', '))"
         return $info
     }
+    # CNCnetPDM keeps only the first 15 characters of a device name; a cut name no longer matches
+    # deviceWise / DOC and can collide with another machine (Citizen L320EA 1 / 12 -> Citizen L320EA)
+    $maxLen = [int]$rules.MaxMachineNameLength
+    if ($maxLen -gt 0 -and ([string]$Machine.MachineName).Length -gt $maxLen) {
+        $info.Error = "Machine name '$($Machine.MachineName)' is $(([string]$Machine.MachineName).Length) characters; CNCnetPDM keeps only $maxLen - shorten it in the Site DB / ACW"
+        return $info
+    }
     if ([string]$Machine.MachineName -notmatch '(\d+)\s*$') {
         $info.Error = "Machine name '$($Machine.MachineName)' does not end in a machine number"
         return $info
