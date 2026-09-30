@@ -68,7 +68,8 @@ Describe 'Step 10 - Humacao site defaults rebuilt from the default configs' {
     It 'writes the HUM File Manager source and error paths' {
         $rows = $fm.configuration.Paths.ChildNodes | ForEach-Object { "$($_.Name)|$($_.Path)|$($_.ErrorPath -replace '/', '\')" }
         $rows | Should -Contain 'CMM1|D:\CMM_Measurement_Reports\CSVCLC|D:\CMM_Measurement_Reports\CSVCLCError'
-        $rows | Should -Contain 'CTSCAN1|Z:\CTScan_Inspection\CSVCLC|Z:\CTScan_Inspection\CSVCLCError'
+        # HUM example uses Z:\CTScan_Inspection; at Humacao Z: = \\sjum1bfile05\CMMprograms\REPORTS, so the default is the UNC form
+        $rows | Should -Contain 'CTSCAN1|\\sjum1bfile05\CMMprograms\REPORTS\CTScan_Inspection\CSVCLC|\\sjum1bfile05\CMMprograms\REPORTS\CTScan_Inspection\CSVCLCError'
         ($rows | Where-Object { $_ -like 'CONTRACER*' }).Count | Should -Be 3
     }
 
@@ -86,8 +87,9 @@ Describe 'Step 10 - Humacao site defaults rebuilt from the default configs' {
 
     It 'creates local data folders but nothing outside the sandbox' {
         Join-Path $state.DataAppsLocalRoot 'CMM/Backup' | Should -Exist
-        # only 'drive not available' warnings are expected (e.g. no D:/Z: on the test machine); nothing is created outside the sandbox
-        @(Get-StepResults -Status WARN | Where-Object { $_.Check -like 'Directory*' -and $_.Detail -notmatch 'not available' }) | Should -BeNullOrEmpty
+        # only 'drive not available' / 'network share' warnings are expected (no D: or share access on the test machine);
+        # nothing is created outside the sandbox
+        @(Get-StepResults -Status WARN | Where-Object { $_.Check -like 'Directory*' -and $_.Detail -notmatch 'not available|network share' }) | Should -BeNullOrEmpty
         Test-Path 'D:\CMM_Measurement_Reports\CSVCLCError' | Should -BeFalse
     }
 

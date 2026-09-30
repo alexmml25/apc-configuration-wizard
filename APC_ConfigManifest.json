@@ -250,7 +250,7 @@
       },
       "MPR": {
         "CMM":       { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "D:\\CMM_Measurement_Reports\\CSVCLC",        "ErrorPath": "D:\\CMM_Measurement_Reports\\CSVCLCError",        "BroadcastPath": "C:\\Medtronic\\DataCollector_Data\\CMM\\Broadcast" },
-        "CTSCAN":    { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "Z:\\CTScan_Inspection\\CSVCLC",             "ErrorPath": "Z:\\CTScan_Inspection\\CSVCLCError",             "BroadcastPath": "C:\\Medtronic\\DataCollector_Data\\CTSCAN\\Broadcast" },
+        "CTSCAN":    { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "\\\\sjum1bfile05\\CMMprograms\\REPORTS\\CTScan_Inspection\\CSVCLC", "ErrorPath": "\\\\sjum1bfile05\\CMMprograms\\REPORTS\\CTScan_Inspection\\CSVCLCError",             "BroadcastPath": "C:\\Medtronic\\DataCollector_Data\\CTSCAN\\Broadcast" },
         "BENCH":     { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "C:\\Medtronic\\DataCollector_Data\\BENCH",  "ErrorPath": "",                                               "BroadcastPath": "" },
         "CONTRACER": { "Count": 3, "CNCs": [1, 2, 3], "SourcePath": "D:\\Contracer_Measurement_Reports\\CSVCLC", "ErrorPath": "D:\\Contracer_Measurement_Reports\\CSVCLCError", "BroadcastPath": "" }
       }

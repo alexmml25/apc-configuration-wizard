@@ -136,7 +136,6 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 
 - [ ] Run the Pester tests on the VM (Windows PowerShell 5.1) for the first time.
 - [ ] MCR instrument defaults (source shares) are not known yet. Add them to the manifest `DataApps.SiteDefaults` when available.
-- [ ] MPR CTSCAN default: change `Z:\CTScan_Inspection\CSVCLC` to the UNC path. On the test VM, Z: = `\\sjum1bfile05\CMMprograms` and the folder is `Z:\REPORTS\CTScan_Inspection\CSVCLC`. Confirm the exact path used at Humacao.
 - [x] ~~Verify the deviceWise REST API paths used by Steps 4-7 against the installed version.~~ Done 2026-09-30: there is no REST API (see Log).
 - [ ] **Decide the deviceWise approach.** Proposed: Steps 4-7 become a guided pause like Step 11. The wizard shows a checklist with this VM's values filled in (CNCAsset/CNCType, EMAIL_TO, CNC_ASSET_Management and CNC_Settings rows, CNCnetPDM path and CNC path mapping, import file paths, License Manager host, OPC UA endpoint settings), waits for Continue, then checks what it can without the API (dwcore/dwts running, port 48020 listening, SINC folders, CNCnetPDM). The rest becomes manual sign-off items in the Step 13 report. The fake REST calls are removed. About 1 day.
 - [ ] Move Step 7 (deviceWise CNCnetPDM integration) after Step 8 (CNCnetPDM), as in the SOP. Today "Connected" cannot pass on the first run.
@@ -151,6 +150,10 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 ---
 
 ## Log
+
+### 2026-09-30 - MPR CTSCAN default is now the UNC path
+- At Humacao, Z: is mapped one level deeper: `\\sjum1bfile05\CMMprograms\REPORTS`, so `Z:\CTScan_Inspection\CSVCLC` is the same folder as the UNC path. The user confirmed this.
+- The MPR CTSCAN defaults are now `\\sjum1bfile05\CMMprograms\REPORTS\CTScan_Inspection\CSVCLC` and `…\CSVCLCError`. They work regardless of drive mapping.
 
 ### 2026-09-30 - File Manager test: source folders; local vs network
 - **What happened:** File Manager started, but reported that the CMM and CONTRACER sources `D:\…\CSVCLC` and the CTSCAN source `Z:\CTScan_Inspection\CSVCLC` do not exist on the test VM. BENCH worked.
