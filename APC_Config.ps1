@@ -190,7 +190,7 @@ function Get-OperatorInfo {
     $info['OperatorName'] = Read-Host 'Operator full name'
     $info['OperatorRole'] = Read-Host 'Operator role (e.g., Manufacturing Engineer)'
 
-    Write-Host "`nAvailable sites: MCR, MFW, MPR, MWR"
+    Write-Host "`nAvailable sites: MCR, MPR"
     $info['SiteCode']   = (Read-Host 'Site code').ToUpper()
     $info['SiteDBHost'] = Read-Host 'Site DB hostname'
     $info['SiteDBUser'] = Read-Host 'Site DB username'

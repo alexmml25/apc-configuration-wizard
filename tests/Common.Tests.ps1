@@ -84,6 +84,23 @@ Describe 'Get-AssignedCNCs (CNC n = DOC instance n)' {
     }
 }
 
+Describe 'Get-RunModeSkipSteps' {
+    It 'skips nothing in a full run' {
+        Get-RunModeSkipSteps -Manifest $manifest -Mode Full | Should -BeNullOrEmpty
+    }
+    It 'skips every step not reviewed yet' {
+        Get-RunModeSkipSteps -Manifest $manifest -Mode Reviewed | Should -Be @(2, 4, 5, 6, 7, 11, 12)
+    }
+    It 'skips the system steps in test mode' {
+        Get-RunModeSkipSteps -Manifest $manifest -Mode Test | Should -Be @(2, 4, 5, 6, 7, 11, 12)
+    }
+    It 'follows the reviewed list in the manifest' {
+        $m = $manifest | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        $m.RunModes.ReviewedSteps = @(1, 2, 3)
+        (Get-RunModeSkipSteps -Manifest $m -Mode Reviewed) | Should -Be @(4..13)
+    }
+}
+
 Describe 'DOC helpers' {
     It 'builds the SINC CSV output path with the SOP pattern' {
         Get-DOCCsvOutputPath -Manifest $manifest -N 2 |

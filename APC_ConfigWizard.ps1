@@ -34,6 +34,8 @@ $manifest = Get-Manifest
 . (Join-Path $Script:ModulesDir 'Common.ps1')
 $Script:RunManifest = $manifest   # replaced by the sandbox copy in test mode
 $Script:TestMode    = $false
+$Script:SkipSteps   = @()
+$Script:RunModeName = 'full run'
 
 $xamlText = @'
 <Window
@@ -364,9 +366,15 @@ $xamlText = @'
                        FontSize="11" VerticalAlignment="Center" Margin="8,0,0,0"/>
           </StackPanel>
 
-          <!-- Test mode -->
-          <CheckBox x:Name="ChkTestMode" Margin="0,0,0,14"
-                    Content="Test mode - work on sandbox copies under C:\APC_Config\Sandbox; skip DB, deviceWise, CHMI, backup and service steps"/>
+          <!-- Run mode (item texts for Reviewed/Test are filled in from the manifest) -->
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+            <TextBlock Text="Run mode" Style="{StaticResource Label}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <ComboBox x:Name="CmbRunMode" Padding="6,5" BorderBrush="#E2E8F0" MinWidth="460">
+              <ComboBoxItem Tag="Full"     Content="Full run - all 13 steps on the real system"/>
+              <ComboBoxItem Tag="Reviewed" Content="Reviewed steps only"/>
+              <ComboBoxItem Tag="Test"     Content="Test mode"/>
+            </ComboBox>
+          </StackPanel>
 
           <!-- Configure button -->
           <Button x:Name="BtnConfigure" HorizontalAlignment="Left"
@@ -836,6 +844,15 @@ $controls['CmbDOCCount'].Add_SelectionChanged({
 foreach ($n in 1,2,3) {
     $controls["CmbDOCMachine$n"].Add_SelectionChanged({ Update-DOCMachineChoices })
 }
+# Run mode items: describe the steps from the manifest, and select the manifest default
+foreach ($item in $controls['CmbRunMode'].Items) {
+    switch ($item.Tag) {
+        'Reviewed' { $item.Content = "Reviewed steps only - real run of steps $(@(1..13 | Where-Object { $_ -notin (Get-RunModeSkipSteps -Manifest $manifest -Mode Reviewed) }) -join ', ')" }
+        'Test'     { $item.Content = "Test mode - sandbox copies under $($manifest.TestMode.SandboxRoot), steps $(@(1..13 | Where-Object { $_ -notin (Get-RunModeSkipSteps -Manifest $manifest -Mode Test) }) -join ', ')" }
+    }
+    if ($item.Tag -eq $manifest.RunModes.Default) { $item.IsSelected = $true }
+}
+
 # CNCnetPDM license: default from manifest, editable when the checkbox is cleared
 $controls['TxtLicense'].Text = $manifest.CNCnetPDM.DefaultLicense
 $controls['ChkDefaultLicense'].Add_Checked({
@@ -1033,9 +1050,9 @@ function Run-NextAutoModule {
     }
 
     $mod = $Script:StepDefs[$Script:AutoIndex]
-    if ($Script:TestMode -and $mod.Index -in @($manifest.TestMode.SkipSteps)) {
+    if ($mod.Index -in $Script:SkipSteps) {
         Set-StepState -Index $mod.Index -State 'Skipped'
-        $controls['LogAll'].AppendText("-- Step $($mod.Index) $($mod.Name): skipped in test mode --`r`n")
+        $controls['LogAll'].AppendText("-- Step $($mod.Index) $($mod.Name): skipped ($Script:RunModeName) --`r`n")
         $Script:AutoIndex++
         Run-NextAutoModule
         return
@@ -1309,10 +1326,25 @@ $controls['BtnConfigure'].Add_Click({
     $Script:AutoState['APCUserPassword']     = $apcPwd
     $Script:AutoState['MedtronicSUPassword'] = $suPwd
     $Script:AutoState['SiteDBPassword']      = $sdbPwd
-    # Test mode: copy installed configs into a sandbox and point the steps at the copies
-    $Script:TestMode    = $controls['ChkTestMode'].IsChecked -eq $true
+    # Run mode: which steps run, and whether against the real system or sandbox copies
+    $runMode = if ($controls['CmbRunMode'].SelectedItem) { [string]$controls['CmbRunMode'].SelectedItem.Tag } else { 'Full' }
+    $Script:SkipSteps   = @(Get-RunModeSkipSteps -Manifest $manifest -Mode $runMode)
+    $Script:TestMode    = $runMode -eq 'Test'
+    $Script:RunModeName = @{ Full = 'full run'; Reviewed = 'reviewed steps only'; Test = 'test mode' }[$runMode]
     $Script:RunManifest = $manifest
+    $runSteps = @(1..13 | Where-Object { $_ -notin $Script:SkipSteps })
+    if (-not $Script:TestMode) {
+        $answer = [System.Windows.MessageBox]::Show(
+            "This $($Script:RunModeName) changes the REAL configuration on this VM (steps $($runSteps -join ', ')).`n`nEach file is backed up (.bak) before it is changed. Continue?",
+            "Confirm real run", "YesNo", "Warning")
+        if ($answer -ne 'Yes') { return }
+    }
     $sandboxLog = @()
+    if ($runMode -eq 'Reviewed') {
+        $sandboxLog += "REVIEWED STEPS ONLY - real run of steps $($runSteps -join ', ')"
+        $sandboxLog += "  Skipped steps: $($Script:SkipSteps -join ', ')"
+        $window.Title = 'APC Configuration Deployment Wizard  [REVIEWED STEPS ONLY]'
+    }
     if ($Script:TestMode) {
         $sandboxRoot = Join-Path $manifest.TestMode.SandboxRoot (Get-Date -Format 'yyyyMMdd-HHmmss')
         try {
@@ -1326,9 +1358,9 @@ $controls['BtnConfigure'].Add_Click({
         $sandboxLog += "TEST MODE - sandbox: $sandboxRoot"
         $sandboxLog += "  Copied $($sb.Copied.Count) installed file(s) into the sandbox"
         foreach ($miss in $sb.Missing) { $sandboxLog += "  Not found (step will report it): $miss" }
-        $sandboxLog += "  Skipped steps: $(@($manifest.TestMode.SkipSteps) -join ', ')"
+        $sandboxLog += "  Skipped steps: $($Script:SkipSteps -join ', ')"
         $window.Title = 'APC Configuration Deployment Wizard  [TEST MODE]'
-    } else {
+    } elseif ($runMode -eq 'Full') {
         $window.Title = 'APC Configuration Deployment Wizard'
     }
     Save-State -State $Script:AutoState

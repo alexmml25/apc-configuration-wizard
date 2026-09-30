@@ -1074,7 +1074,7 @@ function Invoke-FillD01555624 {
     $sysIdTable = $tables[2]
     if ($sysIdTable) {
         $sysRows = $sysIdTable.SelectNodes('w:tr', $ns)
-        $siteNames = @{ MCR='Medtronic Costa Rica'; MPR='Medtronic Puerto Rico'; MFW='Medtronic Fort Worth'; MWR='Medtronic Warsaw' }
+        $siteNames = @{ MCR='Medtronic Costa Rica'; MPR='Medtronic Puerto Rico' }
         $siteFull  = $siteNames[$State['SiteCode']]
         if (-not $siteFull) { $siteFull = $State['SiteCode'] }
 

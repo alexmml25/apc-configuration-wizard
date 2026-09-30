@@ -16,10 +16,10 @@ Add a dated entry to the **Log** whenever something is changed or tested, and up
 | Area | State |
 |---|---|
 | Steps 1-13 | All written. Steps 3, 8, 9 and 10 rebuilt against the real config files (Sept 2026). |
-| Automated tests | 126 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
+| Automated tests | 133 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
 | Test mode (sandbox) | VM re-run 2026-09-30 after the fixes: Steps 1, 3, 8, 9 and 10 complete with no FAIL. The only warnings are driver `.dll` files not found and instrument shares not reachable from the test VM. |
 | Real run on a VM | Not done yet. |
-| Sites | MPR (Humacao) has instrument defaults. MCR, MFW and MWR use generic defaults. MFW and MWR have no Site DB server set. |
+| Sites | **MCR and MPR only** (MFW and MWR dropped 2026-09-30). MPR (Humacao) has instrument defaults; MCR uses generic defaults. |
 
 ---
 
@@ -107,9 +107,19 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - **Folders:** Step 10 creates local data folders, and any Error or Broadcast path entered. It never creates instrument source shares; it only checks them.
 
 ### Testing
-- **Pester tests** are in `tests/`. Run them with `.\tests\Run-Tests.ps1`. They are safe on the VM: they use a temp folder and never touch services.
+- **Launching:** double-click `Start-Wizard.cmd` to run the wizard, and `Run-Tests.cmd` to run the tests. The launcher elevates, unblocks the scripts and keeps its window open after an error.
+- **Run modes** (wizard **Run mode** selector; manifest `RunModes`):
+
+  | Mode | What runs |
+  |---|---|
+  | **Reviewed steps only** (default) | A real run of `RunModes.ReviewedSteps` (1, 3, 8, 9, 10, 13). The other steps are skipped. |
+  | **Full run** | All 13 steps. |
+  | **Test mode** | Sandbox copies only; skips `TestMode.SkipSteps`. |
+
+  Real runs ask for confirmation first. When a step is reviewed, add it to `ReviewedSteps`.
+- **Pester tests** are in `tests/`. Run them with `.\tests\Run-Tests.ps1` or `Run-Tests.cmd`. They are safe on the VM: they use a temp folder and never touch services.
   The sample config files live in `tests/fixtures/` as test data only. The root sample files are kept out of commits.
-- **Test mode** (wizard checkbox):
+- **Test mode:**
   - copies installed configs to `C:\APC_Config\Sandbox\<date-time>\` and edits only the copies.
   - skips Steps 2, 4-7, 11 and 12, and doesn't restart services.
   - creates no folders outside the sandbox.
@@ -121,15 +131,20 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 
 - [ ] Run the Pester tests on the VM (Windows PowerShell 5.1) for the first time.
 - [ ] Decide whether Step 10 should create an **Error path** that is on a share (today it creates it if the drive exists).
-- [ ] MFW and MWR: Site DB host and credentials are missing in the manifest `SiteServers`.
-- [ ] MCR, MFW and MWR instrument defaults (source shares) are not known yet. Add them to the manifest `DataApps.SiteDefaults` when available.
+- [ ] MCR instrument defaults (source shares) are not known yet. Add them to the manifest `DataApps.SiteDefaults` when available.
 - [ ] Verify the deviceWise REST API paths used by Steps 4-7 against the installed version (`/api-docs`).
-- [ ] Real run on a VM, then Part 3 of the test checklist.
+- [ ] Real run on the **test** VM with **Reviewed steps only**, then Part 3 of the test checklist. Do not use the production Humacao VM.
 - [ ] Merge `config-files-rework` into `main` once the VM tests pass.
 
 ---
 
 ## Log
+
+### 2026-09-30 - Run modes, one-click launcher, MFW/MWR dropped
+- **Run mode selector** replaces the Test mode checkbox. The modes are Reviewed steps only (the default), Full run and Test mode. Real runs ask for confirmation.
+- **`Start-Wizard.cmd`** is a one-click launcher: it elevates, unblocks the scripts and keeps its window open after an error. **`Run-Tests.cmd`** runs the tests.
+- **Sites:** MFW and MWR were removed from the manifest (`Sites`, `SiteServers`, `SiteOpcProcessCodes`), the headless runner prompt and Step 13 site names.
+- **Tests:** 133 passing.
 
 ### 2026-09-30 - Step 8 checks each device connects after the service restart
 - **Log format** from the production Humacao VM (SJUM7AAPPS0066):

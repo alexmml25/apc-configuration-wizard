@@ -29,6 +29,25 @@ Describe 'Scripts' {
         }
     }
 
+    It 'manifest has only the MCR and MPR sites' {
+        $m = Get-TestManifest
+        @($m.Sites) | Should -Be @('MCR', 'MPR')
+        @($m.SiteServers.PSObject.Properties.Name) | Sort-Object | Should -Be @('MCR', 'MPR')
+        @($m.SiteOpcProcessCodes.PSObject.Properties.Name) | Sort-Object | Should -Be @('MCR', 'MPR')
+    }
+
+    It '<Launcher> uses CRLF line endings and points at an existing script' -ForEach @(
+        @{ Launcher = 'Start-Wizard.cmd'; Target = 'APC_ConfigWizard.ps1' }
+        @{ Launcher = 'Run-Tests.cmd';    Target = 'tests\Run-Tests.ps1' }
+    ) {
+        $bytes = [System.IO.File]::ReadAllBytes((Join-Path $RepoRoot $Launcher))
+        $text  = [System.Text.Encoding]::ASCII.GetString($bytes)
+        ($text -split "`r`n").Count | Should -BeGreaterThan 5
+        $text -replace "`r`n", '' | Should -Not -Match "`n"
+        $text | Should -Match ([regex]::Escape("%~dp0$Target"))
+        Join-Path $RepoRoot ($Target -replace '\\', '/') | Should -Exist
+    }
+
     It 'the checklist template Step 13 fills is in templates\' {
         Join-Path $RepoRoot 'templates/D01555624_A_EN.docx' | Should -Exist
     }
@@ -55,7 +74,7 @@ Describe 'Wizard window (XAML)' {
     }
 
     It 'has the <Control> control the code uses' -ForEach @(
-        'ChkTestMode', 'ChkDefaultLicense', 'TxtLicense', 'TxtDataRoot', 'CmbDOCCount', 'CmbStartStep', 'BtnConfigure' | ForEach-Object { @{ Control = $_ } }
+        'CmbRunMode', 'ChkDefaultLicense', 'TxtLicense', 'TxtDataRoot', 'CmbDOCCount', 'CmbStartStep', 'BtnConfigure' | ForEach-Object { @{ Control = $_ } }
     ) {
         $names | Should -Contain $Control
     }

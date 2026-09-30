@@ -253,3 +253,18 @@ function Test-SandboxPath {
     $full = [System.IO.Path]::GetFullPath($Path)
     return $full.StartsWith([System.IO.Path]::GetFullPath($root), [System.StringComparison]::OrdinalIgnoreCase)
 }
+
+function Get-RunModeSkipSteps {
+    <#
+        Steps the wizard skips for a run mode:
+          Full      - none (all 13 steps, real system)
+          Reviewed  - every step not in Manifest.RunModes.ReviewedSteps (real system)
+          Test      - Manifest.TestMode.SkipSteps (sandbox copies)
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [ValidateSet('Full', 'Reviewed', 'Test')] [string]$Mode)
+    switch ($Mode) {
+        'Full'     { return }
+        'Reviewed' { return 1..13 | Where-Object { $_ -notin @($Manifest.RunModes.ReviewedSteps) } }
+        'Test'     { return $Manifest.TestMode.SkipSteps | ForEach-Object { [int]$_ } }
+    }
+}

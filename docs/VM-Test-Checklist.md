@@ -3,6 +3,12 @@
 Use this for the first runs of the wizard on an APC VM. Work through the parts in order:
 automated tests, then a **test mode** run (changes only sandbox copies), then the real run.
 
+**Launching:** double-click **`Start-Wizard.cmd`** to start the wizard, and **`Run-Tests.cmd`** to run the tests.
+Both sit in the wizard folder. The launcher asks for administrator rights and unblocks the scripts.
+If the wizard stops with an error, its window stays open so you can read the message.
+Run them from a local folder (e.g. `D:\APC_Config\Wizard`) rather than a network share, because
+Windows does not show mapped drives to programs running as administrator.
+
 Tick each box as you go. If a result differs from what is described, stop and note the step,
 the log line and the file involved.
 
@@ -14,10 +20,8 @@ These use the sample files in `tests\fixtures` and a temporary folder. They do n
 installed applications, services, the Site DB or deviceWise.
 
 1. [ ] Copy the wizard folder to the VM (e.g. `C:\APC_Config\Wizard`).
-2. [ ] Open PowerShell **as Administrator** in that folder and run:
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\tests\Run-Tests.ps1
-   ```
+2. [ ] Double-click **`Run-Tests.cmd`**. Alternatively, in PowerShell run
+   `powershell -ExecutionPolicy Bypass -File .\tests\Run-Tests.ps1`.
    The first run installs Pester 5 for your user, which needs access to the PowerShell Gallery.
    If the VM has no internet access, copy the Pester module folder from another machine into
    `Documents\WindowsPowerShell\Modules\Pester`.
@@ -33,7 +37,7 @@ deviceWise, CHMI, backup) are skipped, and the CNCnetPDM service is not restarte
 
 ### 2.1 Start
 
-1. [ ] Right-click `APC_ConfigWizard.ps1` → **Run with PowerShell** (as Administrator).
+1. [ ] Double-click **`Start-Wizard.cmd`** and allow the administrator prompt.
 2. [ ] Fill in Setup (site, Site DB, passwords) and click **Proceed to Configuration Options**.
    The Site DB machines load.
 3. [ ] **DOC Configuration:** set the DOC instance count and pick the machine for each DOC instance.
@@ -44,7 +48,7 @@ deviceWise, CHMI, backup) are skipped, and the CNCnetPDM service is not restarte
    - [ ] **Used by** is ticked only for the CNCs that use it.
    - [ ] **Source path** is the instrument's shared folder.
    - [ ] **Error path** (blank = local DoneError folder) and **Broadcast (MES)** (blank = NA) are correct.
-6. [ ] Tick **Test mode** and click **Configure**.
+6. [ ] Set **Run mode** to **Test mode** and click **Configure**.
 
 ### 2.2 What you should see
 
@@ -105,14 +109,18 @@ When the sandbox looks right, delete it or keep it for comparison.
 
 ## Part 3 - Real run
 
-1. [ ] Close the wizard, start it again, and fill in the same values. Leave **Test mode** unticked.
-2. [ ] Click **Configure** and let all 13 steps run. For Step 11 (CHMI), complete the manual steps when it pauses.
-3. [ ] Check the same items as in 2.3, now in the real locations:
+1. [ ] Close the wizard, start it again (`Start-Wizard.cmd`), and fill in the same values.
+2. [ ] Choose the **Run mode**:
+   - **Reviewed steps only** (the default): a real run of the steps reviewed so far (1, 3, 8, 9, 10, 13). The others show Skipped.
+   - **Full run**: all 13 steps. Use it only once every step has been reviewed.
+3. [ ] Click **Configure** and confirm the "Confirm real run" prompt. For Step 11 (CHMI), complete the manual steps when it pauses.
+   The title shows `[REVIEWED STEPS ONLY]` for a reviewed-steps run.
+4. [ ] Check the same items as in 2.3, now in the real locations:
    - SINC folders: `C:\Program Files\deviceWISE\Gateway\staging\SINC\`
    - CNCnetPDM: `C:\Medtronic\CNCNetPDM\`
    - DOC: `C:\Medtronic\DOC-<n>\DOC_II\`, `...\Plugins\` and `...\Plugins\IQS\`
    - Data apps: `C:\Medtronic\File Manager\`, `C:\Medtronic\Data Collector\`, `C:\Medtronic\Data Analyzer\`
-4. [ ] Each edited file has a `.<date-time>.bak` copy next to it.
+5. [ ] Each edited file has a `.<date-time>.bak` copy next to it.
 
 ### 3.1 Application checks (manual)
 
