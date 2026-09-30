@@ -16,7 +16,7 @@ Add a dated entry to the **Log** whenever something is changed or tested, and up
 | Area | State |
 |---|---|
 | Steps 1-13 | All written. Steps 3, 8, 9 and 10 rebuilt against the real config files (Sept 2026). |
-| Automated tests | 144 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
+| Automated tests | 146 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
 | Test mode (sandbox) | VM re-run 2026-09-30 after the fixes: Steps 1, 3, 8, 9 and 10 complete with no FAIL. The only warnings are driver `.dll` files not found and instrument shares not reachable from the test VM. |
 | Real run on a VM | First real run on the test VM 2026-09-30 (Reviewed steps only): Steps 1, 3, 8, 9 and 10 wrote the real files, and CNCnetPDM created the `.dll` files. The device connection check needs follow-up (see Open items). |
 | deviceWise (Steps 4-7, 12 export) | **Cannot work as written.** The gateway has no HTTP/REST API; the modules call endpoints that don't exist. Proposed: guided manual steps (see Open items). |
@@ -55,6 +55,7 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
   - The machine number is the trailing number of the machine name, 1-999.
   - A missing number, a number above 999, or an unknown family stops Step 8 before any file changes.
   - Device Nr only has to be unique among the 3 CNCs on one VM. The rule is standardised in case instances are merged later.
+- **Machine names:** at most **15 characters** (manifest `MaxMachineNameLength`). CNCnetPDM stores only the first 15. `log_admin` showed `200/4010/1;Citizen L320EA` for `Citizen L320EA 10`, while `Humacao_L20X_13` (15) is kept whole. A cut name no longer matches deviceWise / DOC and can collide with another machine, so Step 1 warns and Step 8 stops.
   - This replaces the earlier `10`/`11` + 2-digit rule. Existing `11xx` numbers change; accepted.
 - **DLL** in the `[RS232]` line is always the Site DB `f_dllname`. There is no default.
 - **Driver files:**
@@ -146,7 +147,7 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - [ ] Finish Part 3 of the test checklist after the first reviewed-steps run: restart File Manager, Data Collector and Data Analyzer, check the DOC indicators, and test file routing.
 - [ ] Device 1001 (Citizen 01) **is connected**: its log shows `Parts_Machined Command incorrect, deactivated / Part_Required …`, so the controller answers but rejects those two counter commands. Check the counter commands (ParameterNumber 8300/8304) in `citizenm_1001.ini` for this controller.
 - [ ] `\\sjum1bfile05` **is** reachable (File Manager reads the CTSCAN share with the UNC path), but the wizard could not see it. The wizard runs as administrator, so the share may need to be tested in an elevated session. Diagnose and fix the check.
-- [ ] CNCnetControl shows 4010 as "Citizen L320EA". Check whether the name is truncated or the column is just narrow; `log_admin` shows the full name in `200/4010/1;<name>`.
+- [ ] **Shorten machine names longer than 15 characters in the Site DB / ACW**, e.g. `Citizen L320EA 1`–`27` (16–17 characters) → `Citizen L320 1`–`27`. CNCnetPDM keeps only 15 characters, so the wizard now stops on longer names.
 - [ ] Folder permissions: the folders the wizard creates inherit their parent's permissions; nothing extra is granted. Decide which account the apps run as and whether the wizard should grant it Modify, as the SOP asks for read/write access.
 - [ ] Device 4001 (L320EA 1, `_V`): `INIT Error(-2113798123)` although port 683 answers. Is the `melcfg.ini` `Controller=M7NX` (copied to every MachineNN) right for V-series machines, or does it depend on the family?
 - [ ] Merge `config-files-rework` into `main` once the VM tests pass.
@@ -154,6 +155,12 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 ---
 
 ## Log
+
+### 2026-09-30 - CNCnetPDM cuts machine names to 15 characters
+- `log_admin` stored `Citizen L320EA` for device 4010 (`Citizen L320EA 10`).
+- Names longer than 15 characters are now an error in `Get-CNCDeviceInfo`: Step 1 warns and Step 8 stops before changing files (`4526a02`). The fix belongs in the Site DB / ACW.
+- **Share check:** `Test-NetConnection sjum1bfile05 -Port 445` succeeds and `Test-Path` on the UNC path is `True` in a normal session. The wizard's earlier "not reachable" still needs to be tested in an administrator session.
+- **Tests:** 146 passing.
 
 ### 2026-09-30 - Applications open after the real run; idle device counts as connected
 - **The applications open with the wizard's config:** File Manager (all sources found, CTSCAN via the UNC path), Data Collector, Data Analyzer and DOC.
