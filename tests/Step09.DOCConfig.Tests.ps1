@@ -51,7 +51,7 @@ Describe 'Step 9 - DOC XML configuration' {
     It 'changes only the intended fields in <File>' -ForEach @(
         @{ File = 'DocDb.xml';                  Sub = '';             Changed = @('/Name') }
         @{ File = 'DOC_II.xml';                 Sub = '';             Changed = @('/CSVFileOutputPath', '/Name') }
-        @{ File = 'PartLookup.xml';             Sub = '';             Changed = @('/Name') }
+        @{ File = 'PartLookup.xml';             Sub = 'Plugins/';     Changed = @('/Name') }
         @{ File = 'SpcDb.xml';                  Sub = 'Plugins/IQS/'; Changed = @('/Name') }
         @{ File = 'IqsDocSpcDataCollector.xml'; Sub = 'Plugins/IQS/'
            Changed = @('/Assets/AssetConfiguration/DBId', '/Assets/AssetConfiguration/Name', '/Name', '/SourceDataInclusionList/string') }
@@ -99,6 +99,15 @@ Describe 'Step 9 - missing and misplaced files' {
         Move-Item (Join-Path $root 'DOC-1/DOC_II/Plugins/IQS/SpcDb.xml') (Join-Path $root 'DOC-1/DOC_II/')
         Invoke-DOCConfig -Manifest (New-DocManifest $root) -State (New-HumState -DocCount 1)
         Get-StepResults -Status FAIL | Should -BeNullOrEmpty
+    }
+
+    It 'finds PartLookup.xml in DOC_II (SOP location) when it is not in Plugins' {
+        $root = Join-Path $TestDrive 'SopLayout'
+        New-DocInstall -Root $root -Count 1
+        Move-Item (Join-Path $root 'DOC-1/DOC_II/Plugins/PartLookup.xml') (Join-Path $root 'DOC-1/DOC_II/')
+        Invoke-DOCConfig -Manifest (New-DocManifest $root) -State (New-HumState -DocCount 1)
+        Get-StepResults -Status FAIL | Should -BeNullOrEmpty
+        ([xml](Get-Content (Join-Path $root 'DOC-1/DOC_II/PartLookup.xml') -Raw)).Configuration.Name | Should -Be 'DOC-1 Part Lookup'
     }
 
     It 'reports FAIL when a DOC instance folder is missing' {

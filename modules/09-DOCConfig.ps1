@@ -6,7 +6,7 @@
     For each DOC instance n (1..DOCCount), paired with CNC n (the DOC-assigned machine):
       DOC_II\DocDb.xml                     verify ConnectionString (localhost / TimescaleDB / apcuser)
       DOC_II\DOC_II.xml                    CSVFileOutputPath = <SINC staging>\CNC{n}\<CSVFileNamePattern>
-      DOC_II\PartLookup.xml                verify ConnectionString; LoadMatrixRevision = MAX
+      DOC_II\Plugins\PartLookup.xml        verify ConnectionString; LoadMatrixRevision = MAX
       DOC_II\Plugins\IQS\SpcDb.xml         verify ConnectionString
       DOC_II\Plugins\IQS\IqsDocSpcDataCollector.xml
           AssetConfiguration: DBId = machine, Name = Primary [machine], Family = asset family

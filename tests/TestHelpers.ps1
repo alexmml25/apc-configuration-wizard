@@ -48,14 +48,15 @@ function Get-NormalizedIni {
     @([System.IO.File]::ReadAllLines($Path) | Where-Object { $_.Trim() } | ForEach-Object { $_.TrimEnd() -replace '^;\s*', ';' })
 }
 
-# Fake installed layout: DOC-{n}\DOC_II (+ Plugins\IQS) with the fixture XMLs
+# Fake installed layout as on the APC VM: DOC-{n}\DOC_II, \Plugins (PartLookup), \Plugins\IQS (SpcDb, Iqs)
 function New-DocInstall {
     param([string]$Root, [int]$Count = 3)
     for ($n = 1; $n -le $Count; $n++) {
         $base = Join-Path $Root "DOC-$n/DOC_II"
         $iqs  = Join-Path $base 'Plugins/IQS'
         New-Item -ItemType Directory -Path $iqs -Force | Out-Null
-        'DocDb.xml', 'DOC_II.xml', 'PartLookup.xml' | ForEach-Object { Copy-Item (Get-Fixture "DOC/$_") $base }
+        'DocDb.xml', 'DOC_II.xml' | ForEach-Object { Copy-Item (Get-Fixture "DOC/$_") $base }
+        Copy-Item (Get-Fixture 'DOC/PartLookup.xml') (Join-Path $base 'Plugins')
         'SpcDb.xml', 'IqsDocSpcDataCollector.xml'   | ForEach-Object { Copy-Item (Get-Fixture "DOC/$_") $iqs }
     }
 }

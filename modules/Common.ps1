@@ -119,24 +119,27 @@ function Get-DataAppsInstrumentPlan {
 
 function Get-DOCFilePaths {
     <#
-        Paths of the five DOC XML files for DOC instance $N. DocDb, DOC_II and PartLookup live in
-        DOC_II\, SpcDb and IqsDocSpcDataCollector in DOC_II\Plugins\IQS\ (SOP); if a file is not in its
-        expected folder the other folder is used when the file exists there.
+        Paths of the five DOC XML files for DOC instance $N, as installed on the APC VM:
+          DOC_II\                DocDb.xml, DOC_II.xml
+          DOC_II\Plugins\        PartLookup.xml
+          DOC_II\Plugins\IQS\    SpcDb.xml, IqsDocSpcDataCollector.xml
+        A file not found in its expected folder is looked for in the other two; if it is nowhere,
+        the expected path is returned (the caller reports it as missing).
     #>
     param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [int]$N)
-    $doc  = $Manifest.DOC
-    $base = $doc.BasePath       -replace '\{N\}', $N
-    $iqs  = $doc.PluginsIQSPath -replace '\{N\}', $N
-    $paths = [ordered]@{ BaseDir = $base; IqsDir = $iqs }   # keys are case-insensitive: not 'Iqs'
+    $doc     = $Manifest.DOC
+    $base    = $doc.BasePath       -replace '\{N\}', $N
+    $plugins = Join-Path $base 'Plugins'
+    $iqs     = $doc.PluginsIQSPath -replace '\{N\}', $N
+    $paths = [ordered]@{ BaseDir = $base; PluginsDir = $plugins; IqsDir = $iqs }   # keys are case-insensitive: not 'Iqs'
     foreach ($f in @(
-        @{ Key = 'DocDb';      File = $doc.DocDBXml;        Dir = $base; Alt = $iqs  },
-        @{ Key = 'DocII';      File = $doc.DocIIXml;        Dir = $base; Alt = $iqs  },
-        @{ Key = 'PartLookup'; File = $doc.PartLookupXml;   Dir = $base; Alt = $iqs  },
-        @{ Key = 'SpcDb';      File = $doc.SpcDBXml;        Dir = $iqs;  Alt = $base },
-        @{ Key = 'Iqs';        File = $doc.IqsCollectorXml; Dir = $iqs;  Alt = $base })) {
-        $p   = Join-Path $f.Dir $f.File
-        $alt = Join-Path $f.Alt $f.File
-        $paths[$f.Key] = if (-not (Test-Path $p) -and (Test-Path $alt)) { $alt } else { $p }
+        @{ Key = 'DocDb';      File = $doc.DocDBXml;        Dirs = @($base, $plugins, $iqs) },
+        @{ Key = 'DocII';      File = $doc.DocIIXml;        Dirs = @($base, $plugins, $iqs) },
+        @{ Key = 'PartLookup'; File = $doc.PartLookupXml;   Dirs = @($plugins, $base, $iqs) },
+        @{ Key = 'SpcDb';      File = $doc.SpcDBXml;        Dirs = @($iqs, $plugins, $base) },
+        @{ Key = 'Iqs';        File = $doc.IqsCollectorXml; Dirs = @($iqs, $plugins, $base) })) {
+        $found = $f.Dirs | ForEach-Object { Join-Path $_ $f.File } | Where-Object { Test-Path $_ } | Select-Object -First 1
+        $paths[$f.Key] = if ($found) { $found } else { Join-Path $f.Dirs[0] $f.File }
     }
     return $paths
 }
@@ -171,7 +174,7 @@ function New-SandboxManifest {
         the manifest whose paths point there, so Steps 3, 8, 9 and 10 change only the copies.
           <Root>\DataApps\        File Manager / Data Collector / Data Analyzer configs
           <Root>\CNCnetPDM\       CNCnetPDM.ini, melcfg.ini, citizenm*/mitsubishim* driver .dll/.ini
-          <Root>\DOC-{n}\DOC_II\  DOC XMLs (SpcDb / Iqs under Plugins\IQS)
+          <Root>\DOC-{n}\DOC_II\  DOC XMLs (PartLookup under Plugins, SpcDb / Iqs under Plugins\IQS)
           <Root>\SINC\            SINC staging folders
           <Root>\DataCollector_Data\  local data root
         Returns @{ Manifest; Copied = [string[]]; Missing = [string[]] }.
@@ -226,8 +229,12 @@ function New-SandboxManifest {
         $src = Get-DOCFilePaths -Manifest $Manifest -N $n
         if (-not (Test-Path $src.BaseDir)) { continue }
         $dst = Get-DOCFilePaths -Manifest $m -N $n
-        foreach ($key in 'DocDb', 'DocII', 'PartLookup') { Copy-Into $src[$key] $dst.BaseDir }
-        foreach ($key in 'SpcDb', 'Iqs')                 { Copy-Into $src[$key] $dst.IqsDir }
+        foreach ($key in 'DocDb', 'DocII', 'PartLookup', 'SpcDb', 'Iqs') {
+            # keep each file in the same sub-folder it was found in
+            $from = Split-Path $src[$key] -Parent
+            $to   = if ($from -eq $src.IqsDir) { $dst.IqsDir } elseif ($from -eq $src.PluginsDir) { $dst.PluginsDir } else { $dst.BaseDir }
+            Copy-Into $src[$key] $to
+        }
     }
 
     # SINC staging

@@ -77,7 +77,7 @@ Open `C:\APC_Config\Sandbox\<date-time>\` and check each folder.
 - [ ] `Plugins\IQS\IqsDocSpcDataCollector.xml`:
   - [ ] `DBId` = machine name, `Name` = `Primary [<machine>]`, `Family` = asset family (e.g. `CITIZEN_L20X_IV`).
   - [ ] `SourceDataInclusionList` = `1ST_/SPC_/VER_<instrument>_<site> : <instrument>` for the instruments ticked for that CNC only.
-- [ ] `PartLookup.xml` `LoadMatrixRevision` = `MAX`.
+- [ ] `Plugins\PartLookup.xml` `LoadMatrixRevision` = `MAX`.
 - [ ] Connection strings in `DocDb.xml`, `SpcDb.xml`, `PartLookup.xml` are unchanged.
 
 **DataApps** (Step 10)
@@ -108,8 +108,8 @@ When the sandbox looks right, delete it or keep it for comparison.
 3. [ ] Check the same items as in 2.3, now in the real locations:
    - SINC folders: `C:\Program Files\deviceWISE\Gateway\staging\SINC\`
    - CNCnetPDM: `C:\Medtronic\CNCNetPDM\`
-   - DOC: `C:\Medtronic\DOC-<n>\DOC_II\` and `...\Plugins\IQS\`
-   - Data apps: `C:\Medtronic\Data Collector File Manager\`, `C:\Medtronic\Data Collector\`, `C:\Medtronic\Data Analyzer\`
+   - DOC: `C:\Medtronic\DOC-<n>\DOC_II\`, `...\Plugins\` and `...\Plugins\IQS\`
+   - Data apps: `C:\Medtronic\File Manager\`, `C:\Medtronic\Data Collector\`, `C:\Medtronic\Data Analyzer\`
 4. [ ] Each edited file has a `.<date-time>.bak` copy next to it.
 
 ### 3.1 Application checks (manual)
