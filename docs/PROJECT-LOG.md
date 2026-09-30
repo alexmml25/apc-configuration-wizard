@@ -141,6 +141,7 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - [ ] Move Step 7 (deviceWise CNCnetPDM integration) after Step 8 (CNCnetPDM), as in the SOP. Today "Connected" cannot pass on the first run.
 - [ ] Step 12 backup reads `$Manifest.BackupShare`, but the manifest key is `APC.BackupShare`. Strict mode makes this an error. The deviceWise project export in Step 12 also uses the non-existent API.
 - [ ] Ask Telit support (support-devicewise@telit.com) whether Gateway 23.04 has a supported way to script configuration (CLI, full-config import, local API).
+- [ ] **Step 11 (CHMI):** some CHMI **general property configs** still need to be updated by the wizard. Details are to come from the user when Step 11 is reviewed. Noted 2026-09-30; a TODO is also in `modules/11-CHMI.ps1`.
 - [ ] Check the manifest Site DB host: `SiteServers.MPR/MCR.Host` is `sjum1cappd0017`, which is also the APC VM the deviceWise scans ran on. Confirm this is intended.
 - [ ] Finish Part 3 of the test checklist after the first reviewed-steps run: restart File Manager, Data Collector and Data Analyzer, check the DOC indicators, and test file routing.
 - [ ] Device 1001 (Citizen 01): no connection result in 60 s, although port 683 answers. Check what its log shows when it is connected but idle, so the check does not WARN falsely.
