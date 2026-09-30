@@ -86,7 +86,8 @@ Describe 'Step 10 - Humacao site defaults rebuilt from the default configs' {
 
     It 'creates local data folders but nothing outside the sandbox' {
         Join-Path $state.DataAppsLocalRoot 'CMM/Backup' | Should -Exist
-        @(Get-StepResults -Status WARN | Where-Object { $_.Check -like 'Directory*' }) | Should -BeNullOrEmpty
+        # only 'drive not available' warnings are expected (e.g. no D:/Z: on the test machine); nothing is created outside the sandbox
+        @(Get-StepResults -Status WARN | Where-Object { $_.Check -like 'Directory*' -and $_.Detail -notmatch 'not available' }) | Should -BeNullOrEmpty
         Test-Path 'D:\CMM_Measurement_Reports\CSVCLCError' | Should -BeFalse
     }
 
@@ -161,5 +162,29 @@ Describe 'Step 10 - source folder that Step 10 itself creates' {
             SourcePath = (Join-Path $state.DataAppsLocalRoot 'BENCH'); ErrorPath = ''; BroadcastPath = '' })
         Invoke-DataApps -Manifest $inst.Manifest -State $state
         @(Get-StepResults -Status WARN | Where-Object Check -eq 'File Manager: BENCH source') | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Step 10 - local vs network folders' {
+    BeforeAll {
+        Reset-StepResults
+        $inst  = New-DataAppsInstall
+        $state = New-DataAppsState $inst.Dir
+        $localSource = Join-Path $inst.Dir 'D_Reports/CMM_Measurement_Reports/CSVCLC'
+        $state.DataAppsInstruments = @(
+            @{ Type = 'CMM'; Count = 1; CNCs = @(1); SourcePath = $localSource; ErrorPath = "$localSource`Error"; BroadcastPath = '' }
+            @{ Type = 'CTSCAN'; Count = 1; CNCs = @(1); SourcePath = '\\sjum1bfile05\CMMprograms\REPORTS\CTScan_Inspection\CSVCLC'
+               ErrorPath = '\\sjum1bfile05\CMMprograms\REPORTS\CTScan_Inspection\CSVCLCError_wizardtest'; BroadcastPath = '' })
+        Invoke-DataApps -Manifest $inst.Manifest -State $state
+    }
+
+    It 'creates a missing source and error folder on a local disk' {
+        $localSource          | Should -Exist
+        "$localSource`Error"  | Should -Exist
+        @(Get-StepResults -Status WARN | Where-Object Check -eq 'File Manager: CMM source') | Should -BeNullOrEmpty
+    }
+
+    It 'does not create folders on a network share, only warns' {
+        (Get-StepResults | Where-Object Check -eq 'Directory: CTSCAN ErrorPath').Detail | Should -Match 'network share'
     }
 }

@@ -101,6 +101,19 @@ Describe 'Get-RunModeSkipSteps' {
     }
 }
 
+Describe 'Test-LocalFixedPath' {
+    It 'treats UNC shares as network: <Path>' -ForEach @(@{ Path = '\\sjum1bfile05\CMMprograms\REPORTS' }, @{ Path = '//server/share/x' }) {
+        Test-LocalFixedPath $Path | Should -BeFalse
+    }
+    It 'treats a drive letter that does not exist as not local' {
+        $free = [char[]]'QRSTUVWXY' | Where-Object { -not (Test-Path "${_}:\") } | Select-Object -First 1
+        Test-LocalFixedPath "${free}:\Reports\CSVCLC" | Should -BeFalse
+    }
+    It 'treats the test folder as local' {
+        Test-LocalFixedPath (Join-Path $TestDrive 'x') | Should -BeTrue
+    }
+}
+
 Describe 'DOC helpers' {
     It 'builds the SINC CSV output path with the SOP pattern' {
         Get-DOCCsvOutputPath -Manifest $manifest -N 2 |

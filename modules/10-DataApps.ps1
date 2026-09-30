@@ -89,13 +89,16 @@ function Invoke-DataApps {
         param([string]$Path, [string]$Label)
         if (-not $Path -or $Path -eq 'NA') { return }
         if (Test-Path $Path) { return }
-        if (-not (Test-SandboxPath $State $Path)) {
-            Write-Log INFO "Test mode: not creating $Path (outside sandbox)"
+        # only folders on this VM's local disks are created; shares and mapped drives are only checked
+        if (-not (Test-LocalFixedPath $Path)) {
+            $qualifier = if ($Path -match '^([A-Za-z]:)') { $Matches[1] } else { '' }
+            $detail = if ($qualifier -and -not (Test-Path "$qualifier\")) { "Drive $qualifier not available - create $Path manually" }
+                      else { "$Path is on a network share and was not found - create it on the share or check access" }
+            Add-Result -Phase DataApps -Check "Directory: $Label" -Status WARN -Detail $detail
             return
         }
-        $qualifier = if ($Path -match '^([A-Za-z]:)') { $Matches[1] } else { '' }
-        if ($qualifier -and -not (Test-Path "$qualifier\")) {
-            Add-Result -Phase DataApps -Check "Directory: $Label" -Status WARN -Detail "Drive $qualifier not available - create $Path manually"
+        if (-not (Test-SandboxPath $State $Path)) {
+            Write-Log INFO "Test mode: not creating $Path (outside sandbox)"
             return
         }
         try {
@@ -208,13 +211,14 @@ function Invoke-DataApps {
                     $paths.AppendChild($blk) | Out-Null
                 }
 
-                # create local folders first: a source can be one of them (e.g. BENCH uses its local folder)
+                # create local folders first, including a source on this VM's own disks (e.g. D:\..._Measurement_Reports)
                 Ensure-Dir $newPath "$($ins.Type) NewPath"
                 Ensure-Dir $errPath "$($ins.Type) ErrorPath"
+                if ($ins.SourcePath -and (Test-LocalFixedPath $ins.SourcePath)) { Ensure-Dir $ins.SourcePath "$($ins.Type) source" }
                 if (-not $ins.SourcePath) {
                     Add-Result -Phase DataApps -Check "File Manager: $($ins.Type) source" -Status WARN -Detail "No source share entered - template path kept, update <Path> manually"
                 } elseif (-not (Test-Path $ins.SourcePath)) {
-                    Add-Result -Phase DataApps -Check "File Manager: $($ins.Type) source" -Status WARN -Detail "Source not reachable from VM: $($ins.SourcePath)"
+                    Add-Result -Phase DataApps -Check "File Manager: $($ins.Type) source" -Status WARN -Detail "Source not reachable from VM: $($ins.SourcePath) (network paths are not created - check the share and access)"
                 }
                 Add-Result -Phase DataApps -Check "File Manager: $($ins.Type)" -Status PASS -Detail "$($ins.Names -join ', ') -> $newPath"
             }

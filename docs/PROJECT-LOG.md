@@ -16,7 +16,7 @@ Add a dated entry to the **Log** whenever something is changed or tested, and up
 | Area | State |
 |---|---|
 | Steps 1-13 | All written. Steps 3, 8, 9 and 10 rebuilt against the real config files (Sept 2026). |
-| Automated tests | 134 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
+| Automated tests | 140 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
 | Test mode (sandbox) | VM re-run 2026-09-30 after the fixes: Steps 1, 3, 8, 9 and 10 complete with no FAIL. The only warnings are driver `.dll` files not found and instrument shares not reachable from the test VM. |
 | Real run on a VM | First real run on the test VM 2026-09-30 (Reviewed steps only): Steps 1, 3, 8, 9 and 10 wrote the real files, and CNCnetPDM created the `.dll` files. The device connection check needs follow-up (see Open items). |
 | deviceWise (Steps 4-7, 12 export) | **Cannot work as written.** The gateway has no HTTP/REST API; the modules call endpoints that don't exist. Proposed: guided manual steps (see Open items). |
@@ -106,7 +106,10 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - **Data Analyzer:**
   - the site code in the `Opc_*Process` patterns.
   - `Opc_CNCAssets`, `Opc_DOCCHMIs` and `Opc_DataAnalyzers` sized to the CNC count.
-- **Folders:** Step 10 creates local data folders, and any Error or Broadcast path entered. It never creates instrument source shares; it only checks them.
+- **Folders (revised 2026-09-30):**
+  - Folders on the VM's **local disks** (C:, D:) are created if missing. That includes instrument **source** and **Error** folders; for example, Humacao's `D:\…_Measurement_Reports\CSVCLC` are local folders on the APC VM.
+  - Folders on a **network share** (UNC `\\server\share` or a mapped drive) are never created, only checked, with a WARN.
+  - Use **UNC paths** for shares, not mapped drive letters. Mapped drives are per user, and File Manager does not see a drive mapped in the wizard's elevated session.
 
 ### Testing
 - **Launching:** double-click `Start-Wizard.cmd` to run the wizard, and `Run-Tests.cmd` to run the tests. The launcher elevates, unblocks the scripts and keeps its window open after an error.
@@ -132,8 +135,8 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 ## Open items
 
 - [ ] Run the Pester tests on the VM (Windows PowerShell 5.1) for the first time.
-- [ ] Decide whether Step 10 should create an **Error path** that is on a share (today it creates it if the drive exists).
 - [ ] MCR instrument defaults (source shares) are not known yet. Add them to the manifest `DataApps.SiteDefaults` when available.
+- [ ] MPR CTSCAN default: change `Z:\CTScan_Inspection\CSVCLC` to the UNC path. On the test VM, Z: = `\\sjum1bfile05\CMMprograms` and the folder is `Z:\REPORTS\CTScan_Inspection\CSVCLC`. Confirm the exact path used at Humacao.
 - [x] ~~Verify the deviceWise REST API paths used by Steps 4-7 against the installed version.~~ Done 2026-09-30: there is no REST API (see Log).
 - [ ] **Decide the deviceWise approach.** Proposed: Steps 4-7 become a guided pause like Step 11. The wizard shows a checklist with this VM's values filled in (CNCAsset/CNCType, EMAIL_TO, CNC_ASSET_Management and CNC_Settings rows, CNCnetPDM path and CNC path mapping, import file paths, License Manager host, OPC UA endpoint settings), waits for Continue, then checks what it can without the API (dwcore/dwts running, port 48020 listening, SINC folders, CNCnetPDM). The rest becomes manual sign-off items in the Step 13 report. The fake REST calls are removed. About 1 day.
 - [ ] Move Step 7 (deviceWise CNCnetPDM integration) after Step 8 (CNCnetPDM), as in the SOP. Today "Connected" cannot pass on the first run.
@@ -148,6 +151,12 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 ---
 
 ## Log
+
+### 2026-09-30 - File Manager test: source folders; local vs network
+- **What happened:** File Manager started, but reported that the CMM and CONTRACER sources `D:\…\CSVCLC` and the CTSCAN source `Z:\CTScan_Inspection\CSVCLC` do not exist on the test VM. BENCH worked.
+- **The user confirmed** the `D:` report folders are local on the APC VM. Step 10 now creates missing folders on local fixed disks, and only checks network paths (`Test-LocalFixedPath`).
+- **Z:** is `\\sjum1bfile05\CMMprograms` on the test VM, and the folder there is `REPORTS\CTScan_Inspection`. Mapping a drive from the wizard is not recommended: the wizard runs elevated, so the mapping is invisible to File Manager. Use UNC paths instead.
+- **Tests:** 140 passing.
 
 ### 2026-09-30 - First real run (Reviewed steps only) on the test VM
 - **Machines:** CNC1 Citizen 01 (1001), CNC2 Citizen L320EA 1 (4001), CNC3 Citizen 68 (2068).

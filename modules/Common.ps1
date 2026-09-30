@@ -268,3 +268,17 @@ function Get-RunModeSkipSteps {
         'Test'     { return $Manifest.TestMode.SkipSteps | ForEach-Object { [int]$_ } }
     }
 }
+
+function Test-LocalFixedPath {
+    <#
+        True when $Path is on a local fixed disk of this machine (C:, D:, ...), so the wizard may create it.
+        False for UNC shares (\\server\share), mapped network drives, removable/CD drives and drive letters
+        that do not exist - those are only checked, never created.
+    #>
+    param([string]$Path)
+    if ($Path -match '^[\\/]{2}') { return $false }
+    if ($Path -match '^([A-Za-z]):') {
+        try { return ([System.IO.DriveInfo]::new($Matches[1])).DriveType -eq [System.IO.DriveType]::Fixed } catch { return $false }
+    }
+    return $true   # a path without a drive letter (relative, or a non-Windows test path)
+}
