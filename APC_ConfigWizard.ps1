@@ -1425,4 +1425,20 @@ $controls['BtnOpenReport'].Add_Click({
     if ($latest) { Start-Process $latest.FullName }
 })
 
-$window.ShowDialog() | Out-Null
+try {
+    $window.ShowDialog() | Out-Null
+} catch {
+    # Errors thrown inside WPF event handlers surface here wrapped; report where they really happened
+    $rec = $null; $e = $_.Exception
+    while ($e) {
+        if ($e -is [System.Management.Automation.IContainsErrorRecord] -and $e.ErrorRecord.InvocationInfo -and
+            $e.ErrorRecord.InvocationInfo.ScriptLineNumber -gt 0) { $rec = $e.ErrorRecord }
+        $e = $e.InnerException
+    }
+    Write-Host "Wizard error: $($_.Exception.Message)" -ForegroundColor Red
+    if ($rec) {
+        Write-Host $rec.InvocationInfo.PositionMessage -ForegroundColor Yellow
+        Write-Host $rec.ScriptStackTrace -ForegroundColor Yellow
+    }
+    throw
+}
