@@ -1335,7 +1335,7 @@ $controls['BtnConfigure'].Add_Click({
 
     $startStep = if ($controls['CmbStartStep'].SelectedItem) { [int]$controls['CmbStartStep'].SelectedItem.Content } else { 1 }
     $Script:AutoIndex = $startStep - 1
-    1..($startStep - 1) | ForEach-Object { Set-StepState -Index $_ -State 'Skipped' }
+    if ($startStep -gt 1) { 1..($startStep - 1) | ForEach-Object { Set-StepState -Index $_ -State 'Skipped' } }   # 1..0 would count down to 0
     ($startStep)..13   | ForEach-Object { Set-StepState -Index $_ -State 'Pending' }
     $controls['LogAll'].Text                      = if ($sandboxLog) { ($sandboxLog -join "`r`n") + "`r`n`r`n" } else { '' }
     $controls['BarOverall'].Value                 = 0
