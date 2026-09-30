@@ -130,6 +130,20 @@ Describe 'Test-ShareServerReachable' {
     }
 }
 
+Describe 'App account and network path helpers' {
+    It 'builds the site service account from the manifest' {
+        Get-AppAccount -Manifest $manifest -State @{ SiteCode = 'MPR' } | Should -Be 'ENT\SVC-APC-MPR'
+        Get-AppAccount -Manifest $manifest -State @{ SiteCode = 'MCR' } | Should -Be 'ENT\SVC-APC-MCR'
+    }
+    It 'keeps only top-level folders for the grant' {
+        Get-TopFolders @('C:\Data\CMM', 'C:\Data\CMM\Backup', 'C:\Data\CMM\', 'D:\Reports\CSVCLC', 'C:\DataX') |
+            Should -Be @('C:\Data\CMM', 'D:\Reports\CSVCLC', 'C:\DataX')
+    }
+    It 'reports an unreachable share server' {
+        (Get-NetworkPathStatus '\\apc-wizard-test.invalid\share\x').Status | Should -Be 'Unreachable'
+    }
+}
+
 Describe 'DOC helpers' {
     It 'builds the SINC CSV output path with the SOP pattern' {
         Get-DOCCsvOutputPath -Manifest $manifest -N 2 |

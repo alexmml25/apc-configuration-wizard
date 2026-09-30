@@ -16,7 +16,7 @@ Add a dated entry to the **Log** whenever something is changed or tested, and up
 | Area | State |
 |---|---|
 | Steps 1-13 | All written. Steps 3, 8, 9 and 10 rebuilt against the real config files (Sept 2026). |
-| Automated tests | 146 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
+| Automated tests | 151 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
 | Test mode (sandbox) | VM re-run 2026-09-30 after the fixes: Steps 1, 3, 8, 9 and 10 complete with no FAIL. The only warnings are driver `.dll` files not found and instrument shares not reachable from the test VM. |
 | Real run on a VM | First real run on the test VM 2026-09-30 (Reviewed steps only): Steps 1, 3, 8, 9 and 10 wrote the real files, and CNCnetPDM created the `.dll` files. The device connection check needs follow-up (see Open items). |
 | deviceWise (Steps 4-7, 12 export) | **Cannot work as written.** The gateway has no HTTP/REST API; the modules call endpoints that don't exist. Proposed: guided manual steps (see Open items). |
@@ -107,6 +107,11 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - **Data Analyzer:**
   - the site code in the `Opc_*Process` patterns.
   - `Opc_CNCAssets`, `Opc_DOCCHMIs` and `Opc_DataAnalyzers` sized to the CNC count.
+- **App account (2026-09-30):** the applications run as the site service account `ENT\SVC-APC-<site>` (manifest `AppAccount`), one per site.
+  - Step 3 grants it **Modify** on each `SINC\CNC{n}`, where DOC writes its CSVs.
+  - Step 10 grants it Modify on every local folder it creates or configures. Grants use `icacls (OI)(CI)M`, so subfolders inherit them.
+  - Test mode grants nothing. Step 13 checks the account has Modify on those folders.
+- **Network paths as administrator:** the wizard runs elevated, and on the APC VM an elevated session cannot see into the shares the apps use (`Test-Path` is `False` as admin and `True` as `SVC-APC-MPR`). So for UNC paths the wizard only checks that the server answers on port 445, reports the folder as not verifiable from the wizard, and asks you to confirm in File Manager.
 - **Folders (revised 2026-09-30):**
   - Folders on the VM's **local disks** (C:, D:) are created if missing. That includes instrument **source** and **Error** folders; for example, Humacao's `D:\…_Measurement_Reports\CSVCLC` are local folders on the APC VM.
   - Folders on a **network share** (UNC `\\server\share` or a mapped drive) are never created, only checked, with a WARN.
@@ -146,15 +151,21 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - [ ] Check the manifest Site DB host: `SiteServers.MPR/MCR.Host` is `sjum1cappd0017`, which is also the APC VM the deviceWise scans ran on. Confirm this is intended.
 - [ ] Finish Part 3 of the test checklist after the first reviewed-steps run: restart File Manager, Data Collector and Data Analyzer, check the DOC indicators, and test file routing.
 - [ ] Device 1001 (Citizen 01) **is connected**: its log shows `Parts_Machined Command incorrect, deactivated / Part_Required …`, so the controller answers but rejects those two counter commands. Check the counter commands (ParameterNumber 8300/8304) in `citizenm_1001.ini` for this controller.
-- [ ] `\\sjum1bfile05` **is** reachable (File Manager reads the CTSCAN share with the UNC path), but the wizard could not see it. The wizard runs as administrator, so the share may need to be tested in an elevated session. Diagnose and fix the check.
 - [ ] **Shorten machine names longer than 15 characters in the Site DB / ACW**, e.g. `Citizen L320EA 1`–`27` (16–17 characters) → `Citizen L320 1`–`27`. CNCnetPDM keeps only 15 characters, so the wizard now stops on longer names.
-- [ ] Folder permissions: the folders the wizard creates inherit their parent's permissions; nothing extra is granted. Decide which account the apps run as and whether the wizard should grant it Modify, as the SOP asks for read/write access.
 - [ ] Device 4001 (L320EA 1, `_V`): `INIT Error(-2113798123)` although port 683 answers. Is the `melcfg.ini` `Controller=M7NX` (copied to every MachineNN) right for V-series machines, or does it depend on the family?
 - [ ] Merge `config-files-rework` into `main` once the VM tests pass.
 
 ---
 
 ## Log
+
+### 2026-09-30 - App account permissions; share checks as administrator
+- **Findings:**
+  - `Test-Path` on `\\sjum1bfile05\…\CSVCLC` is `False` in an administrator session and `True` in the normal `SVC-APC-MPR` session.
+  - The apps run as `ENT\SVC-APC-MPR`, one account per site.
+- **Share checks:** UNC paths are now checked by server reachability only, and reported as "cannot be checked as administrator – confirm in File Manager" rather than as missing. This also removes the 2-minute wait.
+- **Permissions:** Steps 3 and 10 grant `ENT\SVC-APC-<site>` Modify on the folders they create or configure, except in test mode. Step 13 checks it.
+- **Tests:** 151 passing.
 
 ### 2026-09-30 - CNCnetPDM cuts machine names to 15 characters
 - `log_admin` stored `Citizen L320EA` for device 4010 (`Citizen L320EA 10`).

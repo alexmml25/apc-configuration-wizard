@@ -65,6 +65,7 @@ Open `C:\APC_Config\Sandbox\<date-time>\` and check each folder.
 **SINC** (Step 3)
 - [ ] `SINC\CNC1`, `CNC2`, `CNC3` (one per DOC instance), each with `Processing`, `DoneSuccess`, `DoneError`.
 - [ ] No folders named after machines.
+- [ ] Real run: `Access: CNC1` … PASS; `ENT\SVC-APC-<site>` has Modify on each `SINC\CNC{n}`.
 
 **CNCnetPDM** (Step 8)
 - [ ] `CNCnetPDM.ini` `[GENERAL]` has `License = <expected key>`.
@@ -97,6 +98,10 @@ Open `C:\APC_Config\Sandbox\<date-time>\` and check each folder.
 - [ ] `DataAnalyzer.exe.config`:
   - [ ] `Opc_FirstRunProcess` / `Opc_VerificationProcess` / `Opc_ProductionProcess` end in `_<site>$`.
   - [ ] `Opc_CNCAssets` = `CNC1|CNC2|…` for the DOC count.
+
+**Permissions (real run only)**
+- [ ] Step 10 shows `Access: <folder>` PASS for the local data folders and sources. In folder Properties → Security, `SVC-APC-<site>` has Modify.
+- [ ] Network sources show "cannot be checked from the wizard (runs as administrator)". Confirm in File Manager's log that they are found.
 
 **Installed files untouched**
 - [ ] The real files still have their old "Date modified" and contents:

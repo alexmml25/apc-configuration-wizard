@@ -304,3 +304,66 @@ function Test-ShareServerReachable {
         return ($ar.AsyncWaitHandle.WaitOne($TimeoutMs) -and $client.Connected)
     } catch { return $false } finally { $client.Close() }
 }
+
+function Test-IsElevated {
+    # True when running as administrator (the wizard always does). Administrator sessions may not see
+    # network shares that the normal session can.
+    try {
+        $p = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+        return $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch { return $false }
+}
+
+function Get-NetworkPathStatus {
+    <#
+        Status of a UNC path as far as the wizard can tell:
+          OK          - server reachable and the folder exists
+          Unverified  - server reachable, but the folder cannot be checked from an administrator session
+                        (on the APC VM the elevated session cannot see into the shares the apps use)
+          NotFound    - server reachable, folder not found (non-elevated session only)
+          Unreachable - server does not answer on SMB (445)
+    #>
+    param([string]$Path)
+    if (-not (Test-ShareServerReachable $Path)) {
+        return @{ Status = 'Unreachable'; Detail = "Server for $Path not reachable (SMB port 445) - check network/VPN" }
+    }
+    if (Test-IsElevated) {
+        return @{ Status = 'Unverified'; Detail = "Server reachable; $Path cannot be checked from the wizard (runs as administrator) - confirm in File Manager that it is found" }
+    }
+    if (Test-Path -LiteralPath $Path) { return @{ Status = 'OK'; Detail = '' } }
+    return @{ Status = 'NotFound'; Detail = "$Path not found on the share, or no access" }
+}
+
+function Get-AppAccount {
+    # Account the APC applications run as, from Manifest.AppAccount with {SITE} replaced, e.g. ENT\SVC-APC-MPR
+    param([object]$Manifest, [hashtable]$State)
+    $template = [string]$Manifest.AppAccount
+    if (-not $template -or -not $State['SiteCode']) { return '' }
+    return $template -replace '\{SITE\}', $State['SiteCode']
+}
+
+function Get-TopFolders {
+    # The paths that are not inside another path of the list (a grant on those covers the rest by inheritance)
+    param([string[]]$Paths)
+    $norm = @($Paths | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\', '/') } | Select-Object -Unique)
+    return @($norm | Where-Object { $p = $_; -not ($norm | Where-Object { $_ -ne $p -and ($p.StartsWith("$_\", 'OrdinalIgnoreCase') -or $p.StartsWith("$_/", 'OrdinalIgnoreCase')) }) })
+}
+
+function Grant-AppAccountModify {
+    # Gives $Account Modify on $Path, inherited by everything below it. Returns @{ Ok; Detail }.
+    param([string]$Path, [string]$Account)
+    if (-not (Get-Command icacls.exe -ErrorAction SilentlyContinue)) { return @{ Ok = $false; Detail = 'icacls.exe not available on this machine' } }
+    $out = & icacls.exe $Path /grant "${Account}:(OI)(CI)M" /C 2>&1
+    if ($LASTEXITCODE -eq 0) { return @{ Ok = $true; Detail = "$Account : Modify" } }
+    return @{ Ok = $false; Detail = (($out | Out-String).Trim() -replace '\s+', ' ') }
+}
+
+function Test-AppAccountModify {
+    # True when $Account has an Allow ACE including Modify on $Path
+    param([string]$Path, [string]$Account)
+    try { $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop } catch { return $false }
+    $modify = [System.Security.AccessControl.FileSystemRights]::Modify
+    return [bool]($acl.Access | Where-Object {
+        $_.AccessControlType -eq 'Allow' -and $_.IdentityReference.Value -ieq $Account -and (($_.FileSystemRights -band $modify) -eq $modify)
+    })
+}

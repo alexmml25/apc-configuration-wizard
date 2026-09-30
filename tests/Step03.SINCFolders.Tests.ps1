@@ -24,6 +24,21 @@ Describe 'Step 3 - SINC staging folders' {
         (Get-ChildItem $staging -Directory).Name | Should -Be @('CNC1', 'CNC2')
     }
 
+    It 'reports giving the site service account access to each CNC folder' {
+        Invoke-SINCFolders -Manifest $manifest -State (New-HumState)
+        $access = @(Get-StepResults | Where-Object Check -like 'Access: CNC*')
+        $access.Count | Should -Be 3
+        # PASS where icacls exists (Windows), WARN elsewhere
+        $access.Status | ForEach-Object { $_ | Should -BeIn @('PASS', 'WARN') }
+    }
+
+    It 'does not change permissions in test mode' {
+        $state = New-HumState
+        $state.SandboxRoot = $TestDrive
+        Invoke-SINCFolders -Manifest $manifest -State $state
+        Get-StepResults | Where-Object Check -like 'Access:*' | Should -BeNullOrEmpty
+    }
+
     It 'leaves existing folders alone on a re-run' {
         Invoke-SINCFolders -Manifest $manifest -State (New-HumState)
         Set-Content (Join-Path $staging 'CNC1/Processing/keep.csv') 'x'

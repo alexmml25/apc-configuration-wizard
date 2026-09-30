@@ -8,6 +8,8 @@
 
   "Sites": [ "MCR", "MPR" ],
 
+  "AppAccount": "ENT\\SVC-APC-{SITE}",
+
   "SiteOpcProcessCodes": {
     "MCR": "_MCR$",
     "MPR": "_MPR$"

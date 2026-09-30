@@ -88,11 +88,14 @@ function Invoke-DataApps {
     function Ensure-Dir {
         param([string]$Path, [string]$Label)
         if (-not $Path -or $Path -eq 'NA') { return }
-        if (-not (Test-ShareServerReachable $Path)) {
-            Add-Result -Phase DataApps -Check "Directory: $Label" -Status WARN -Detail "Server for $Path not reachable (SMB port 445) - check network/VPN and access"
+        if ($Path -match '^[\\/]{2}') {
+            # network share: never created; checked as far as an administrator session can
+            $st = Get-NetworkPathStatus $Path
+            if ($st.Status -eq 'Unverified') { Write-Log INFO "$Label - $($st.Detail)" }
+            elseif ($st.Status -ne 'OK') { Add-Result -Phase DataApps -Check "Directory: $Label" -Status WARN -Detail $st.Detail }
             return
         }
-        if (Test-Path $Path) { return }
+        if (Test-Path $Path) { if (Test-LocalFixedPath $Path) { $localDirs.Add($Path) }; return }
         # only folders on this VM's local disks are created; shares and mapped drives are only checked
         if (-not (Test-LocalFixedPath $Path)) {
             $qualifier = if ($Path -match '^([A-Za-z]:)') { $Matches[1] } else { '' }
@@ -107,11 +110,14 @@ function Invoke-DataApps {
         }
         try {
             New-Item -ItemType Directory -Path $Path -Force | Out-Null
+            $localDirs.Add($Path)
             Write-Log INFO "Created directory $Path"
         } catch {
             Add-Result -Phase DataApps -Check "Directory: $Label" -Status WARN -Detail "Could not create ${Path}: $($_.Exception.Message)"
         }
     }
+
+    $localDirs = [System.Collections.Generic.List[string]]::new()   # local folders created or configured (for the app account grant)
 
     function Set-ChildText {
         param([System.Xml.XmlElement]$Parent, [string]$Name, [string]$Value)
@@ -221,8 +227,12 @@ function Invoke-DataApps {
                 if ($ins.SourcePath -and (Test-LocalFixedPath $ins.SourcePath)) { Ensure-Dir $ins.SourcePath "$($ins.Type) source" }
                 if (-not $ins.SourcePath) {
                     Add-Result -Phase DataApps -Check "File Manager: $($ins.Type) source" -Status WARN -Detail "No source share entered - template path kept, update <Path> manually"
-                } elseif (-not (Test-ShareServerReachable $ins.SourcePath) -or -not (Test-Path $ins.SourcePath)) {
-                    Add-Result -Phase DataApps -Check "File Manager: $($ins.Type) source" -Status WARN -Detail "Source not reachable from VM: $($ins.SourcePath) (network paths are not created - check the share and access)"
+                } elseif ($ins.SourcePath -match '^[\\/]{2}') {
+                    $st = Get-NetworkPathStatus $ins.SourcePath
+                    if ($st.Status -eq 'Unverified') { Add-Result -Phase DataApps -Check "File Manager: $($ins.Type) source" -Status PASS -Detail $st.Detail }
+                    elseif ($st.Status -ne 'OK') { Add-Result -Phase DataApps -Check "File Manager: $($ins.Type) source" -Status WARN -Detail $st.Detail }
+                } elseif (-not (Test-Path $ins.SourcePath)) {
+                    Add-Result -Phase DataApps -Check "File Manager: $($ins.Type) source" -Status WARN -Detail "Source not found: $($ins.SourcePath)"
                 }
                 Add-Result -Phase DataApps -Check "File Manager: $($ins.Type)" -Status PASS -Detail "$($ins.Names -join ', ') -> $newPath"
             }
@@ -369,6 +379,21 @@ function Invoke-DataApps {
 
         Save-Xml -Xml $daXml -Path $daPath
         Write-Log INFO "Data Analyzer config saved"
+    }
+
+    #endregion
+
+    #region -- App account access ---------------------------------------------
+
+    # The applications run as the site service account (e.g. ENT\SVC-APC-MPR); it needs Modify on the local folders
+    $account = Get-AppAccount -Manifest $Manifest -State $State
+    if ($State['SandboxRoot']) {
+        Write-Log INFO "Test mode: folder permissions not changed"
+    } elseif ($account) {
+        foreach ($dir in (Get-TopFolders $localDirs)) {
+            $g = Grant-AppAccountModify -Path $dir -Account $account
+            Add-Result -Phase DataApps -Check "Access: $dir" -Status $(if ($g.Ok) { 'PASS' } else { 'WARN' }) -Detail $g.Detail
+        }
     }
 
     #endregion

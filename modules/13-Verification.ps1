@@ -263,6 +263,14 @@ function Invoke-Verification {
             if (-not (Test-Path $p)) { $sincOk = $false; $sincMiss += "CNC$($m.CNCIndex)\$sub" }
         }
     }
+    $appAccount = Get-AppAccount -Manifest $Manifest -State $State
+    $aclCheck   = $appAccount -and ($IsWindows -ne $false) -and (Get-Command Get-Acl -ErrorAction SilentlyContinue)
+    if ($aclCheck) {
+        foreach ($m in $machines) {
+            $p = Join-Path $sincRoot "CNC$($m.CNCIndex)"
+            if ((Test-Path $p) -and -not (Test-AppAccountModify $p $appAccount)) { $sincOk = $false; $sincMiss += "CNC$($m.CNCIndex) ($appAccount has no Modify)" }
+        }
+    }
     if ($sincOk) {
         $checks.Add(@{ Cat='deviceWise'; Name='SINC staging folder structure'; Status='PASS';
             Detail="$($machines.Count * 3) folders present"; Note=''; T=3; I=16 })
@@ -667,8 +675,10 @@ function Invoke-Verification {
         if (-not $fmXml) { throw "Config not found" }
         $empty = @($fmPaths | Where-Object { -not (FmChild $_ 'Path') } | ForEach-Object { FmChild $_ 'Name' })
         if ($empty) { throw "Source path empty for: $($empty -join ', ')" }
-        $unreach = @($fmPaths | ForEach-Object { FmChild $_ 'Path' } | Select-Object -Unique |
-                     Where-Object { -not (Test-ShareServerReachable $_) -or -not (Test-Path $_) })
+        # shares: an administrator session can only confirm the server answers (Unverified counts as OK)
+        $unreach = @($fmPaths | ForEach-Object { FmChild $_ 'Path' } | Select-Object -Unique | Where-Object {
+            if ($_ -match '^[\\/]{2}') { (Get-NetworkPathStatus $_).Status -notin 'OK', 'Unverified' } else { -not (Test-Path $_) }
+        })
         if ($unreach) { throw "Source not reachable: $($unreach -join ', ')" }
         "Source paths set and reachable for $($fmPaths.Count) entries"
     } '' 7 2
@@ -687,6 +697,12 @@ function Invoke-Verification {
         $missing = @($fmPaths | ForEach-Object { FmChild $_ 'NewPath'; FmChild $_ 'ErrorPath' } |
                      Select-Object -Unique | Where-Object { $_ -and $_ -ne 'NA' -and -not (Test-Path $_) })
         if ($missing) { throw "Missing dirs: $($missing -join ', ')" }
+        $account = Get-AppAccount -Manifest $Manifest -State $State
+        if ($account -and ($IsWindows -ne $false) -and (Get-Command Get-Acl -ErrorAction SilentlyContinue)) {
+            $noAccess = @($fmPaths | ForEach-Object { FmChild $_ 'NewPath'; FmChild $_ 'ErrorPath' } | Select-Object -Unique |
+                          Where-Object { $_ -and $_ -ne 'NA' -and (Test-LocalFixedPath $_) -and -not (Test-AppAccountModify $_ $account) })
+            if ($noAccess) { throw "$account has no Modify on: $($noAccess -join ', ')" }
+        }
         "All destination and error directories present"
     } '' 7 4
 
@@ -756,6 +772,11 @@ function Invoke-Verification {
                   Select-Object -Unique | Where-Object { $_ -and $_ -ne 'NA' })
         $missing = @($dirs | Where-Object { -not (Test-Path $_) })
         if ($missing) { throw "Missing: $($missing -join ', ')" }
+        $account = Get-AppAccount -Manifest $Manifest -State $State
+        if ($account -and ($IsWindows -ne $false) -and (Get-Command Get-Acl -ErrorAction SilentlyContinue)) {
+            $noAccess = @($dirs | Where-Object { (Test-LocalFixedPath $_) -and -not (Test-AppAccountModify $_ $account) })
+            if ($noAccess) { throw "$account has no Modify on: $($noAccess -join ', ')" }
+        }
         $newPaths = @($fmPaths | ForEach-Object { FmChild $_ 'NewPath' })
         $orphans  = @($dcBlocks | ForEach-Object { FmChild $_ 'CheckPath' } | Select-Object -Unique | Where-Object { $_ -notin $newPaths })
         if ($fmXml -and $orphans) { throw "CheckPath not fed by any File Manager NewPath: $($orphans -join ', ')" }

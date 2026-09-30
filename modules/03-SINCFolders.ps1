@@ -62,6 +62,18 @@ function Invoke-SINCFolders {
         }
     }
 
+    # DOC writes its CSV files into SINC\CNC{n} as the site service account: give it Modify
+    $account = Get-AppAccount -Manifest $Manifest -State $State
+    if ($State['SandboxRoot']) {
+        Write-Log INFO "Test mode: folder permissions not changed"
+    } elseif ($account) {
+        foreach ($machine in $machines) {
+            $cncRoot = Join-Path $stagingRoot "CNC$($machine.CNCIndex)"
+            $g = Grant-AppAccountModify -Path $cncRoot -Account $account
+            Add-Result -Phase SINC -Check "Access: CNC$($machine.CNCIndex)" -Status $(if ($g.Ok) { 'PASS' } else { 'WARN' }) -Detail $g.Detail
+        }
+    }
+
     # Also create root SINC directory entry for reference
     if (Test-Path $stagingRoot) {
         Add-Result -Phase SINC -Check "SINC staging root" -Status PASS -Detail $stagingRoot
