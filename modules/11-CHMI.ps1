@@ -12,6 +12,9 @@
     2. Engineering Workplace: OPC UA Server Node -> update URL -> Upload to 800xA
     3. Functional Structure: locate CNC OPC object -> rename to "OPC" if needed
     4. Operator confirms completion
+
+    TODO (2026-09-30): some CHMI general property configs still have to be updated by this step.
+    Details to be supplied when Step 11 is reviewed - see docs/PROJECT-LOG.md, Open items.
 #>
 
 function Invoke-CHMI {
