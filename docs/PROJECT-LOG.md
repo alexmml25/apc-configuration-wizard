@@ -16,11 +16,12 @@ Add a dated entry to the **Log** whenever something is changed or tested, and up
 | Area | State |
 |---|---|
 | Steps 1-13 | All written. Steps 3, 8, 9 and 10 rebuilt against the real config files (Sept 2026). |
-| Automated tests | 174 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
+| Automated tests | 205 Pester tests, all passing on macOS (PowerShell 7). Not yet run on the VM (Windows PowerShell 5.1). |
 | Test mode (sandbox) | VM re-run 2026-09-30 after the fixes: Steps 1, 3, 8, 9 and 10 complete with no FAIL. The only warnings are driver `.dll` files not found and instrument shares not reachable from the test VM. |
 | Real run on a VM | First real run on the test VM 2026-09-30 (Reviewed steps only): Steps 1, 3, 8, 9 and 10 wrote the real files, and CNCnetPDM created the `.dll` files. The device connection check needs follow-up (see Open items). |
 | deviceWise (Steps 4-7, 12 export) | **Cannot work as written.** The gateway has no HTTP/REST API; the modules call endpoints that don't exist. Proposed: guided manual steps (see Open items). |
 | Remote run | Not supported. Every step assumes it runs on the target VM (localhost DB/deviceWise, `C:\` paths, HKLM, local services). Run it on the VM itself, e.g. over RDP. |
+| UI | **Step-by-step wizard applied** (2026-09-30): configuration type first, Back/Next, step list on the left, draft-only Verification page. Types available: Initial System Configuration, System Component Configuration, Configuration Update, Verification. Restore and System Update / Import show "Not available yet". Not yet run on the VM. Prototype: https://claude.ai/artifact/TbK5BLeegzRbyjcGmPy7F4 |
 | Sites | **MCR and MPR only** (MFW and MWR dropped 2026-09-30). MPR (Humacao) has instrument defaults; MCR uses generic defaults. |
 
 ---
@@ -171,6 +172,13 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - [ ] Device 1001 (Citizen 01) **is connected**: its log shows `Parts_Machined Command incorrect, deactivated / Part_Required …`, so the controller answers but rejects those two counter commands. Check the counter commands (ParameterNumber 8300/8304) in `citizenm_1001.ini` for this controller.
 - [ ] **Shorten machine names longer than 15 characters in the Site DB / ACW**, e.g. `Citizen L320EA 1`–`27` (16–17 characters) → `Citizen L320 1`–`27`. CNCnetPDM keeps only 15 characters, so the wizard now stops on longer names.
 - [ ] Device 4001 (L320EA 1, `_V`): `INIT Error(-2113798123)` although port 683 answers. Is the `melcfg.ini` `Controller=M7NX` (copied to every MachineNN) right for V-series machines, or does it depend on the family?
+- [ ] **Try the new wizard window on the VM** (it cannot be opened on macOS): Part 2 and 3.2 of the test checklist. Check Back/Next, the step list, the Site DB load on Next, the Machines table (Device Nr / DLL), the Run page, and the draft checklist (Reason ticked, Change ID).
+- [ ] **Configuration types still to build:**
+  - **Configuration Restore:** list the backups for this VM on the backup share and restore the chosen components. No restore code exists; the card is disabled.
+  - **System Update / Import:** backup, then import an approved package (CHMI / APC UI). No import code exists; the card is disabled.
+  - **Configuration Update:** today it works like System Component Configuration (runs the picked steps with the values entered in the wizard). Reading the current values from the VM first is not built yet.
+- [ ] **Confirm:** Verification ticks "Other: Verification only (no changes)" in D01555624 by default (the user can pick another reason on the Verification page).
+- [ ] **To decide:** whether the Change ID is required for every type except Initial (today the wizard only shows a hint), and whether step 12 (backup) should always run for partial runs (today it does, unless the run mode skips it).
 - [ ] Merge `config-files-rework` into `main` once the VM tests pass.
 
 ---
@@ -185,6 +193,26 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
   - A WARN reminds to back up deviceWise manually.
   - The made-up deviceWise REST export is removed.
 - **Tests:** Step 12 is tested with a fake 800xA kit and a robocopy stand-in.
+
+### 2026-09-30 - Step-by-step wizard applied to the code
+- **`APC_ConfigWizard.ps1` rewritten** to match the approved prototype. The step runner, Site DB fetch, sandbox/test mode and all step modules are unchanged.
+  - **Layout:** 1000x720 window, header with the type/site chip, step list on the left (finished pages can be clicked), Back/Next footer.
+  - **Pages by type:**
+    - Initial: Type → Sign in & site → Machines & DOC → SINC & CNCnetPDM → Data applications → Review & run → Run → Verification.
+    - Component / Update: Type → Sign in → Components → Machines & DOC → (SINC & CNCnetPDM if deviceWise or CNCnetPDM is picked) → (Data applications if picked) → Review → Run → Verification. Runs Step 1, the picked steps, 12 and 13.
+    - Verification: Type → Sign in → Machines & DOC → Review → Run → Verification. Runs Steps 1 and 13 only, has no run-mode choice and no "Confirm real run" prompt. Machines & DOC is included because Step 13 needs to know which machine is CNC1-3; this page was not in the prototype.
+  - **Sign in → Next** checks the domain login and loads the Site DB machines; the old "Proceed" button is gone.
+  - **Machines & DOC** shows each machine's family, Device Nr and DLL (red "Error" with the reason when Step 8 would stop).
+  - **Component passwords** are only required when Step 2 (apcuser) or Step 4 (MedtronicSU) will actually run.
+  - **Review & run:** summary, run mode (Reviewed / Full / Test), the steps that will run (skipped ones struck through), and "Start from step" under Advanced.
+  - **Run:** only the type's steps are listed; the progress bar counts the steps that run; the log is behind "Show log". Re-run buttons now reuse the run's state (they used a state without the machines before).
+  - **Verification page:** results counts from Step 13, reason choice (Verification type only), Change ID, "Generate draft checklist" (runs Step 13 again with the Change ID and reason) and "Open draft" (the .docx).
+- **Fixed on the way:** the old Post-Configuration buttons called `Invoke-ConfigVerification` and `Invoke-GenerateReport`, which do not exist. Reviewer name/role/decision are removed.
+- **Step 13 (`modules/13-Verification.ps1`):**
+  - D01555624 row "Reason for Configuration": ticks the box for `State.ConfigReason` (0-5; 5 = Other, with `ConfigReasonOther` written after "Other:").
+  - Row "Related Change Management Record": writes `Change ID: <State.ChangeID>`.
+  - HTML report is titled "(draft)" and its signature lines are replaced by a note that review and QA sign the checklist independently.
+- **Tests:** new window tests (page panels, type cards, component boxes, step rows, ASCII-only source) and D01555624 tests (each reason, Other text, Change ID, nothing ticked when not given). Full suite passing on macOS.
 
 ### 2026-09-30 - 800xA property writes (Step 11) and Full backup (Step 12)
 - Built from the handoff package `ClaudeCode-800xA-Handoff.zip` (HANDOFF.md). The kit is copied unchanged to `kits/800xA` and its hashes match `SHA256SUMS.txt`.
@@ -217,6 +245,44 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - **Step 10:** the unreachable share `\\sjum1bfile05` made the step hang for about 2 minutes. UNC paths now get a quick SMB (port 445) check first (`Test-ShareServerReachable`, about 1.5 s), which warns immediately. Step 13 uses the same check for File Manager sources.
 - **Step 10:** created the local `D:\CMM_…\CSVCLC` and `D:\Contracer_…\CSVCLC` source folders on the real run, as intended.
 - **Tests:** 143 passing.
+
+### 2026-09-30 - UI prototype: Verification type, draft-only checklist
+- **"Other" removed** from the wizard's types and replaced by **Verification**: a read-only check (Step 1 + Step 13) with no changes to the VM, for checking an existing system or troubleshooting. Its path is Type → Sign in → Review → Run → Draft checklist. It has no run-mode choice, because nothing is changed.
+- **The last page is now "Draft checklist"** instead of "Verify & report":
+  - Reviewer name, role and decision are removed; review and QA are independent and don't sign in the wizard.
+  - The page shows the verification results and the Reason for Configuration box that will be ticked.
+  - It shows the Change ID and who ran the wizard and when, and states that signatures are left blank.
+  - Buttons: Generate draft checklist and Open draft.
+- **Open question:** Verification is not one of the D01555624 reasons. The prototype ticks "Other: Verification only (no changes)".
+- **Follow-up the same day:** the Draft checklist page was trimmed to just the Change ID (pre-filled from the type page, editable).
+  - The reason is not shown, because the type already gives it. The exception is **Verification**: there the user picks the reason, with "Other: Verification only (no changes)" as the default.
+  - "Performed by" is not shown, because it comes from the sign-in. "Signatures" is removed.
+- **Second follow-up:**
+  - The last page is renamed from "Draft checklist" to **Verification**.
+  - The Change ID is asked for **only on that last page**. It was removed from the type page and from the Review summary.
+
+### 2026-09-30 - UI prototype: step-by-step wizard with configuration types
+- **Asked for:** replace the long scrolling page with a step-by-step wizard (Back/Next), and add a configuration type choice. Today the wizard only does a full initial configuration. The user asked for the prototype only for now; no code has changed.
+- **Canvas:** https://claude.ai/artifact/TbK5BLeegzRbyjcGmPy7F4 (private).
+  - Page **As-is:** the current window, copied from the XAML.
+  - Page **Proposed:** a clickable wizard, 1000×720, with a step list on the left and Back/Next at the bottom.
+- **Configuration types** are the six "Reason for Configuration" options in the D01555624 checklist (Initial System Configuration, Configuration Restore, System Component Configuration, Configuration Update, System Update / Import, Other). The type chosen decides the pages:
+
+  | Type | Pages |
+  |---|---|
+  | Initial System Configuration | Type → Sign in & site → Machines & DOC → SINC & CNCnetPDM → Data applications → Review & run → Run → Verify & report (all 13 steps) |
+  | System Component Configuration, Configuration Update, Other | Type → Sign in → Components (pick) → only the pages those components need → Review → Run → Report. Runs step 1, the picked steps, 12 and 13. |
+  | Configuration Restore | Type → Sign in → Backup to restore → Review → Run → Report |
+  | System Update / Import | Type → Sign in → Update package → Review → Run → Report |
+
+- **Other changes in the prototype:**
+  - The type page takes a Change ID. "Other" requires a justification.
+  - DOC assignment is a table showing family, Device Nr and DLL.
+  - Error and broadcast paths for each instrument are behind "More paths".
+  - Run mode is chosen on the Review page, which also lists the steps that will run and which are skipped.
+  - The log is behind "Show log".
+  - Verify & report shows the Reason for Configuration box already ticked.
+- The MPR CTSCAN paths in the prototype follow the new UNC default.
 
 ### 2026-09-30 - MPR CTSCAN default is now the UNC path
 - At Humacao, Z: is mapped one level deeper: `\\sjum1bfile05\CMMprograms\REPORTS`, so `Z:\CTScan_Inspection\CSVCLC` is the same folder as the UNC path. The user confirmed this.

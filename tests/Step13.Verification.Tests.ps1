@@ -119,3 +119,64 @@ Describe 'Step 13 T7-T9 - data application checks' {
         (Get-Check $before 'Site identifier configured*').Status | Should -Be 'FAIL'
     }
 }
+
+Describe 'Step 13 - D01555624 draft: reason for configuration and Change ID' {
+    BeforeAll {
+        . (Join-Path $ModulesDir '13-Verification.ps1')
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        # Fill the real template for a State and read back the System Identification rows 5 (reason) and 6 (Change ID)
+        function Get-DraftIdentification {
+            param([hashtable]$State)
+            $out    = Join-Path $TestDrive "draft_$([guid]::NewGuid()).docx"
+            $checks = [System.Collections.Generic.List[hashtable]]::new()
+            $checks.Add(@{ T = 0; I = 0; Status = 'PASS'; Detail = '' })   # outside the check tables; the list may not be empty
+            Invoke-FillD01555624 -TemplatePath (Join-Path $RepoRoot 'templates/D01555624_A_EN.docx') -OutputPath $out `
+                -Manifest (Get-TestManifest) -State $State -Checks $checks -Performer 'tester'
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($out)
+            try {
+                $sr = [System.IO.StreamReader]::new(($zip.Entries | Where-Object FullName -eq 'word/document.xml').Open())
+                [xml]$x = $sr.ReadToEnd(); $sr.Close()
+            } finally { $zip.Dispose() }
+            $ns = [System.Xml.XmlNamespaceManager]::new($x.NameTable)
+            $ns.AddNamespace('w',   'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
+            $ns.AddNamespace('w14', 'http://schemas.microsoft.com/office/word/2010/wordml')
+            $rows  = $x.SelectNodes('//w:tbl', $ns)[2].SelectNodes('w:tr', $ns)
+            $paras = $rows[5].SelectNodes('w:tc', $ns)[1].SelectNodes('w:p', $ns)
+            [pscustomobject]@{
+                Ticked  = @(0..($paras.Count - 1) | Where-Object { $paras[$_].SelectSingleNode('w:sdt/w:sdtContent/w:r/w:t', $ns).InnerText -eq [string][char]0x2612 })
+                Checked = @(0..($paras.Count - 1) | Where-Object { $paras[$_].SelectSingleNode('w:sdt/w:sdtPr/w14:checkbox/w14:checked', $ns).GetAttribute('val', 'http://schemas.microsoft.com/office/word/2010/wordml') -eq '1' })
+                Other   = $paras[5].InnerText
+                Change  = $rows[6].SelectNodes('w:tc', $ns)[1].InnerText
+            }
+        }
+    }
+
+    It 'ticks only the <Name> box' -ForEach @(
+        @{ Index = 0; Name = 'Initial System Configuration' }
+        @{ Index = 1; Name = 'Configuration Restore' }
+        @{ Index = 2; Name = 'System Component Configuration' }
+        @{ Index = 3; Name = 'Configuration Update' }
+        @{ Index = 4; Name = 'System Update' }
+    ) {
+        $r = Get-DraftIdentification @{ SiteCode = 'MPR'; ConfigReason = $Index }
+        $r.Ticked  | Should -Be @($Index)
+        $r.Checked | Should -Be @($Index)
+    }
+
+    It 'ticks Other and names it for a verification-only run' {
+        $r = Get-DraftIdentification @{ SiteCode = 'MPR'; ConfigReason = 5; ConfigReasonOther = 'Verification only (no changes)' }
+        $r.Ticked | Should -Be @(5)
+        $r.Other  | Should -Match 'Other: Verification only \(no changes\)$'
+    }
+
+    It 'writes the Change ID' {
+        (Get-DraftIdentification @{ SiteCode = 'MPR'; ConfigReason = 2; ChangeID = 'CHG0012345' }).Change | Should -Be 'Change ID: CHG0012345'
+    }
+
+    It 'leaves the reason and Change ID as in the template when they are not given' {
+        $r = Get-DraftIdentification @{ SiteCode = 'MPR' }
+        $r.Ticked | Should -BeNullOrEmpty
+        $r.Other  | Should -Match 'Other: _+$'
+        $r.Change | Should -Match '^Change ID\s*$'
+    }
+}

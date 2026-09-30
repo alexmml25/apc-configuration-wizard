@@ -967,7 +967,7 @@ function Invoke-Verification {
     $html = @"
 <!DOCTYPE html>
 <html><head><meta charset='UTF-8'/>
-<title>APC Configuration Verification Report</title>
+<title>APC Configuration Verification Report (draft)</title>
 <style>
   body{font-family:Segoe UI,Arial,sans-serif;background:#f5f5f5;margin:0;padding:20px}
   .header{background:#1a1a2e;color:#fff;padding:20px 30px;border-radius:8px;margin-bottom:20px}
@@ -983,13 +983,11 @@ function Invoke-Verification {
   tr:hover td{background:#fafafa}
   .sign{background:#fff;border-radius:8px;padding:20px 30px;margin-top:20px;box-shadow:0 2px 4px rgba(0,0,0,.1)}
   .sign h2{margin:0 0 16px;font-size:16px}
-  .sign-line{display:flex;gap:40px;margin-top:20px}
-  .sign-field{flex:1;border-top:1px solid #ccc;padding-top:8px;font-size:12px;color:#555}
 </style>
 </head><body>
 <div class='header'>
-  <h1>APC Configuration Verification Report</h1>
-  <p>VM: $($env:COMPUTERNAME) | Site: $siteCode | Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')</p>
+  <h1>APC Configuration Verification Report (draft)</h1>
+  <p>VM: $($env:COMPUTERNAME) | Site: $siteCode | Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')$(if ($State['ChangeID']) { " | Change ID: $([System.Web.HttpUtility]::HtmlEncode([string]$State['ChangeID']))" })</p>
 </div>
 <div class='summary'>
   <div class='card'><div class='num' style='color:$overallColor'>$overallStatus</div><div class='lbl'>Overall</div></div>
@@ -1003,14 +1001,8 @@ function Invoke-Verification {
   <tbody>$($rows -join '')</tbody>
 </table>
 <div class='sign'>
-  <h2>Reviewer Sign-Off (D01555624)</h2>
-  <p>I confirm that the APC System Configuration has been validated against the D01555624 checklist.</p>
-  <div class='sign-line'>
-    <div class='sign-field'>Technician Name &amp; Signature</div>
-    <div class='sign-field'>Date</div>
-    <div class='sign-field'>Reviewer Name &amp; Signature</div>
-    <div class='sign-field'>Date</div>
-  </div>
+  <h2>Draft for review</h2>
+  <p>This report and the filled D01555624 checklist are a draft produced by the wizard. Review and QA check and sign the checklist independently.</p>
 </div>
 </body></html>
 "@
@@ -1106,8 +1098,8 @@ function Invoke-FillD01555624 {
             'Closed-Loop Correction (CLC)',                       # Row 2: Solution
             $siteFull,                                            # Row 3: Site
             'D01555624',                                          # Row 4: Doc ID
-            $null,                                                # Row 5: Reason (leave — has checkboxes)
-            $null                                                 # Row 6: Change ID (leave blank)
+            $null,                                                # Row 5: Reason (checkboxes, below)
+            $null                                                 # Row 6: Change ID (below)
         )
 
         for ($ri = 0; $ri -lt $sysValues.Count; $ri++) {
@@ -1117,6 +1109,28 @@ function Invoke-FillD01555624 {
             $cells = $row.SelectNodes('w:tc', $ns)
             if ($cells.Count -lt 2) { continue }
             Set-DocCellText -Cell $cells[1] -Text $sysValues[$ri] -Ns $ns
+        }
+
+        # Row 5: tick the Reason for Configuration box (one paragraph per option; 5 = Other)
+        $reason = if ($State.ContainsKey('ConfigReason') -and $null -ne $State['ConfigReason']) { [int]$State['ConfigReason'] } else { -1 }
+        if ($reason -ge 0 -and $sysRows.Count -gt 5) {
+            $cells = $sysRows[5].SelectNodes('w:tc', $ns)
+            $paras = if ($cells.Count -ge 2) { $cells[1].SelectNodes('w:p', $ns) } else { @() }
+            if ($reason -lt $paras.Count) {
+                Set-DocCheckbox -Para $paras[$reason] -Ns $ns
+                $other = if ($State.ContainsKey('ConfigReasonOther')) { [string]$State['ConfigReasonOther'] } else { '' }
+                if ($reason -eq 5 -and $other) {
+                    $label = $paras[$reason].SelectSingleNode('w:r/w:t[contains(., "Other")]', $ns)
+                    if ($label) { $label.InnerText = " Other: $other" }
+                }
+            }
+        }
+
+        # Row 6: Change ID
+        $changeId = if ($State.ContainsKey('ChangeID')) { [string]$State['ChangeID'] } else { '' }
+        if ($changeId -and $sysRows.Count -gt 6) {
+            $cells = $sysRows[6].SelectNodes('w:tc', $ns)
+            if ($cells.Count -ge 2) { Set-DocCellText -Cell $cells[1] -Text "Change ID: $changeId" -Ns $ns }
         }
     }
 
@@ -1145,18 +1159,7 @@ function Invoke-FillD01555624 {
 
         if ($paraIdx -ge 0) {
             $paras = $resultsCell.SelectNodes('w:p', $ns)
-            if ($paraIdx -lt $paras.Count) {
-                $para = $paras[$paraIdx]
-                # Toggle the checkbox SDT checked state
-                $checkedNode = $para.SelectSingleNode('w:sdt/w:sdtPr/w14:checkbox/w14:checked', $ns)
-                if ($checkedNode) {
-                    $checkedNode.SetAttribute('val',
-                        'http://schemas.microsoft.com/office/word/2010/wordml', '1')
-                }
-                # Swap ☐ → ☑ inside sdtContent
-                $tNode = $para.SelectSingleNode('w:sdt/w:sdtContent/w:r/w:t', $ns)
-                if ($tNode) { $tNode.InnerText = [char]0x2612 }
-            }
+            if ($paraIdx -lt $paras.Count) { Set-DocCheckbox -Para $paras[$paraIdx] -Ns $ns }
         }
 
         # Write Performed By text (only for automated results, not blanks)
@@ -1211,6 +1214,23 @@ function Invoke-FillD01555624 {
         $zipOut.Dispose()
         $outStream.Dispose()
     }
+}
+
+# -------------------------------------------------------------------------
+# Helper: tick the checkbox content control at the start of a paragraph
+# -------------------------------------------------------------------------
+function Set-DocCheckbox {
+    param(
+        [System.Xml.XmlNode]            $Para,
+        [System.Xml.XmlNamespaceManager]$Ns
+    )
+    $checkedNode = $Para.SelectSingleNode('w:sdt/w:sdtPr/w14:checkbox/w14:checked', $Ns)
+    if ($checkedNode) {
+        $checkedNode.SetAttribute('val', 'http://schemas.microsoft.com/office/word/2010/wordml', '1')
+    }
+    # Swap the empty box for a ticked one inside sdtContent
+    $tNode = $Para.SelectSingleNode('w:sdt/w:sdtContent/w:r/w:t', $Ns)
+    if ($tNode) { $tNode.InnerText = [char]0x2612 }
 }
 
 # -------------------------------------------------------------------------

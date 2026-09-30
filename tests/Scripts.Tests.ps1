@@ -55,13 +55,16 @@ Describe 'Scripts' {
 
 Describe 'Wizard window (XAML)' {
     BeforeAll {
-        # Build the XAML exactly as the wizard does: the here-string plus the generated instrument rows
+        # Build the XAML exactly as the wizard does: the here-string plus the generated instrument and step rows
         $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $RepoRoot 'APC_ConfigWizard.ps1'), [ref]$null, [ref]$null)
         $assign = { param($name) $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.AssignmentStatementAst] -and $a.Left.Extent.Text -eq $name }, $true) | Select-Object -First 1 }
         $xamlText = (& $assign '$xamlText').Right.Expression.Value
         $manifest = Get-TestManifest
+        $StepDefs = & ([scriptblock]::Create((& $assign '$StepDefs').Right.Extent.Text))
         $instFrag = & ([scriptblock]::Create((& $assign '$instFrag').Right.Extent.Text))
-        $xaml = [xml]$xamlText.Replace('<!--DATAAPPS_INSTRUMENTS-->', ($instFrag -join "`n"))
+        $stepFrag = & ([scriptblock]::Create((& $assign '$stepFrag').Right.Extent.Text))
+        $xaml = [xml]$xamlText.Replace('<!--DATAAPPS_INSTRUMENTS-->', ($instFrag -join "`n")).Replace('<!--STEP_ROWS-->', ($stepFrag -join "`n"))
+        $wizardSrc = Get-Content (Join-Path $RepoRoot 'APC_ConfigWizard.ps1') -Raw
         $names = @($xaml.SelectNodes("//*[@*[local-name()='Name']]") | ForEach-Object { $_.GetAttribute('Name', 'http://schemas.microsoft.com/winfx/2006/xaml') })
     }
 
@@ -74,13 +77,36 @@ Describe 'Wizard window (XAML)' {
     }
 
     It 'has the <Control> control the code uses' -ForEach @(
-        'CmbRunMode', 'ChkDefaultLicense', 'TxtLicense', 'TxtDataRoot', 'CmbDOCCount', 'CmbStartStep', 'BtnConfigure' | ForEach-Object { @{ Control = $_ } }
+        'ChkDefaultLicense', 'TxtLicense', 'TxtDataRoot', 'CmbStartStep', 'BtnBack', 'BtnNext', 'NavList', 'TxtChangeID',
+        'RbModeReviewed', 'RbModeFull', 'RbModeTest', 'RbDoc1', 'RbDoc2', 'RbDoc3' | ForEach-Object { @{ Control = $_ } }
     ) {
         $names | Should -Contain $Control
     }
 
+    It 'has a page panel for every wizard page' {
+        $block  = [regex]::Match($wizardSrc, '(?s)\$Script:PagePanels = @\{(.*?)\}').Groups[1].Value
+        $panels = [regex]::Matches($block, "'(?<p>Page\w+)'") | ForEach-Object { $_.Groups['p'].Value }
+        @($panels).Count | Should -Be 9
+        @($panels | Where-Object { $_ -notin $names }) | Should -BeNullOrEmpty
+    }
+
+    It 'has a type card for every configuration type, and a checkbox for every component' {
+        foreach ($id in 'initial', 'restore', 'component', 'update', 'sysupdate', 'verify') { $names | Should -Contain "RbType_$id" }
+        foreach ($c in 'tsdb', 'sinc', 'dw', 'cnc', 'doc', 'da', 'chmi') { $names | Should -Contain "ChkComp_$c" }
+        foreach ($i in 0..5) { $names | Should -Contain "RbReason$i" }
+    }
+
+    It 'has a row, status, icon and re-run button for step <N>' -ForEach (1..13 | ForEach-Object { @{ N = $_ } }) {
+        foreach ($c in "RowStep$N", "TxtStep${N}Icon", "TxtStep${N}Status", "BtnRerun$N") { $names | Should -Contain $c }
+    }
+
+    It 'keeps the source ASCII so Windows PowerShell 5.1 reads it correctly without a BOM' {
+        $wizardSrc | Should -Not -Match '[^\x00-\x7F]'
+    }
+
     It 'has instrument controls for <Type>' -ForEach @('CMM', 'CTSCAN', 'BENCH', 'CONTRACER' | ForEach-Object { @{ Type = $_ } }) {
-        foreach ($c in "CmbInstQty_$Type", "ChkInst_${Type}_1", "ChkInst_${Type}_2", "ChkInst_${Type}_3", "TxtInstSrc_$Type", "TxtInstErr_$Type", "TxtInstBc_$Type") {
+        foreach ($c in "CmbInstQty_$Type", "ChkInst_${Type}_1", "ChkInst_${Type}_2", "ChkInst_${Type}_3", "TxtInstSrc_$Type", "TxtInstErr_$Type", "TxtInstBc_$Type",
+                       "BtnInstMore_$Type", "PanelInstMore_$Type") {
             $names | Should -Contain $c
         }
     }

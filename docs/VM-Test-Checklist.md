@@ -37,26 +37,36 @@ deviceWise, CHMI, backup) are skipped, and the CNCnetPDM service is not restarte
 
 ### 2.1 Start
 
+The wizard is a step-by-step window: the step list is on the left, and **Back** / **Next** are at the bottom.
+
 1. [ ] Double-click **`Start-Wizard.cmd`** and allow the administrator prompt.
-2. [ ] Fill in Setup (site, Site DB, passwords) and click **Proceed to Configuration Options**.
-   The Site DB machines load.
-3. [ ] **DOC Configuration:** set the DOC instance count and pick the machine for each DOC instance.
-   DOC 1 = CNC1, DOC 2 = CNC2, DOC 3 = CNC3.
-4. [ ] **CNCnetPDM Configuration:** leave **Use default perpetual license** ticked (or untick and paste a new key).
-5. [ ] **Data Applications - Instruments:** check that the site defaults loaded. For each instrument:
+2. [ ] **Configuration type:** pick **Initial System Configuration**, then **Next**.
+   Configuration Restore and System Update / Import are greyed out ("Not available yet").
+3. [ ] **Sign in & site:** enter your domain login, pick the site, and check the Site DB fields. Enter the
+   component passwords (needed when step 2 or 4 runs). Click **Next**: your login is checked and the Site DB machines load.
+4. [ ] **Machines & DOC:** set the DOC instance count and pick the machine for each DOC instance.
+   DOC 1 = CNC1, DOC 2 = CNC2, DOC 3 = CNC3. Check the Family, Device Nr and DLL shown for each; a red **Error** means Step 8 would stop (hover for the reason).
+5. [ ] **SINC & CNCnetPDM:** leave **Use default perpetual license** ticked (or untick and paste a new key).
+6. [ ] **Data applications:** check that the site defaults loaded. For each instrument:
    - [ ] **Qty** is correct (CONTRACER is usually 3).
    - [ ] **Used by** is ticked only for the CNCs that use it.
    - [ ] **Source path** is the instrument's shared folder.
-   - [ ] **Error path** (blank = local DoneError folder) and **Broadcast (MES)** (blank = NA) are correct.
-6. [ ] Set **Run mode** to **Test mode** and click **Configure**.
+   - [ ] **More paths:** **Error path** (blank = local DoneError folder) and **Broadcast (MES)** (blank = NA) are correct.
+7. [ ] **Review & run:** check the summary, set **Run mode** to **Test mode**, check the "Steps that will run" (skipped steps are struck through), and click **Start configuration**.
 
 ### 2.2 What you should see
 
-- [ ] The window title ends with `[TEST MODE]`.
-- [ ] The log starts with `TEST MODE - sandbox: C:\APC_Config\Sandbox\...`, the number of files copied, and any files not found.
+- [ ] The window title ends with `[TEST MODE]`, and the **Run** page shows the progress bar and step list. **Back** and **Next** are disabled while it runs.
+- [ ] **Show log** starts with the type and mode line, then `TEST MODE - sandbox: C:\APC_Config\Sandbox\...`, the number of files copied, and any files not found.
 - [ ] Steps 2, 4, 5, 6, 7, 11 and 12 show **Skipped**.
 - [ ] Steps 1, 3, 8, 9 and 10 show **Complete** with no `[FAIL]` lines in the log.
 - [ ] Step 13 runs. Checks for skipped parts (deviceWise, TSDB, CHMI, services) are expected to fail in test mode.
+- [ ] When the run ends, the title on the Run page says **Finished** and **Continue** is enabled.
+- [ ] **Verification** page: the results line shows the passed / warnings / failed / manual counts. Enter a Change ID and click
+  **Generate draft checklist**. **Open draft** opens `C:\APC_Config\Reports\D01555624_Filled_<date-time>.docx`:
+  - [ ] "Reason for Configuration" has only **Initial System Configuration** ticked.
+  - [ ] "Related Change Management Record" shows `Change ID: <what you entered>`.
+  - [ ] The HTML report title says **(draft)** and has no signature lines.
 
 ### 2.3 Check the sandbox files
 
@@ -115,10 +125,10 @@ When the sandbox looks right, delete it or keep it for comparison.
 ## Part 3 - Real run
 
 1. [ ] Close the wizard, start it again (`Start-Wizard.cmd`), and fill in the same values.
-2. [ ] Choose the **Run mode**:
+2. [ ] On **Review & run**, choose the **Run mode**:
    - **Reviewed steps only** (the default): a real run of the steps reviewed so far (1, 3, 8, 9, 10, 13). The others show Skipped.
    - **Full run**: all 13 steps. Use it only once every step has been reviewed.
-3. [ ] Click **Configure** and confirm the "Confirm real run" prompt. For Step 11 (CHMI), complete the manual steps when it pauses.
+3. [ ] Click **Start configuration** and confirm the "Confirm real run" prompt. For Step 11 (CHMI), complete the manual steps when it pauses.
    The title shows `[REVIEWED STEPS ONLY]` for a reviewed-steps run.
 4. [ ] Check the same items as in 2.3, now in the real locations:
    - SINC folders: `C:\Program Files\deviceWISE\Gateway\staging\SINC\`
@@ -150,7 +160,19 @@ Run these on a **non-production** node first. Steps 11 and 12 are not part of *R
   - [ ] Drop a test file in an instrument's source share.
   - [ ] The file reaches the File Manager `NewPath`.
   - [ ] The Data Collector picks it up and archives it to `Backup`.
-- [ ] **Step 13 report:** open the filled D01555624 document. Automated items should be Pass; complete the blank manual items and sign off.
+- [ ] **Draft checklist:** on the **Verification** page, enter the Change ID and click **Generate draft checklist**, then **Open draft**.
+  Automated items should be Pass. The draft is not approved by the wizard: complete the blank manual items, then review and QA sign it independently.
+
+### 3.2 Other configuration types
+
+- [ ] **Verification** (read-only): pick it on the first page. The pages are Sign in & site → Machines & DOC → Review → Run → Verification.
+  - [ ] Review shows the green **Read-only** note and no run-mode choice; the button says **Start verification** and there is no "Confirm real run" prompt.
+  - [ ] Only Steps 1 and 13 are listed and run. No `.bak` files appear, and no installed file changes its "Date modified".
+  - [ ] On the Verification page, **Reason for configuration** is shown, with **Other: Verification only (no changes)** selected. The draft ticks Other with that text.
+- [ ] **System Component Configuration:** pick it, tick one component (e.g. **CNCnetPDM**) on the **Components** page.
+  - [ ] Only the pages that component needs appear (CNCnetPDM: Machines & DOC, then SINC & CNCnetPDM).
+  - [ ] Review lists Steps 1, 8, 12 and 13 (12 struck through in Reviewed steps only). Only those rows show on the Run page.
+  - [ ] The draft ticks **System Component Configuration**.
 
 ---
 
