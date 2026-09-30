@@ -115,6 +115,12 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
     - Before/after values go to `800xA_changes_<ts>.log`. It stops at the first failure.
     - It refuses quotes, `SourceCode`, `TriggerText` and `ActionTrig_*`. Tokens: `{COMPUTERNAME} {SITE} {CNCn} {DEVICENRn}`.
   - **Step 12** runs the 800xA Full backup first (`-Start -Confirmed`) and logs the backup name. The user decided there is no separate pre-change backup step; the backup is part of Step 12.
+- **Step 12 backups (2026-09-30):**
+  - Everything goes to **`C:\APC_Config\Backups\<yyyyMMdd-HHmmss>\`** (manifest `Backup.Root`), next to the wizard's Reports and Logs.
+  - Contents: `800xA\<backup name>` (copied from `C:\BACKUP`, plus the kit log) and `Medtronic\`.
+  - `C:\Medtronic` is copied without `CNCNetPDM\log`, `DataCollector_Data` and `Backup` (`Backup.MedtronicExcludeDirs`).
+  - CNCnetPDM is copied separately only when it is installed outside `C:\Medtronic`.
+  - The network backup share is no longer used.
 - **App account (2026-09-30):** the applications run as the site service account `ENT\SVC-APC-<site>` (manifest `AppAccount`), one per site.
   - Step 3 grants it **Modify** on each `SINC\CNC{n}`, where DOC writes its CSVs.
   - Step 10 grants it Modify on every local folder it creates or configures. Grants use `icacls (OI)(CI)M`, so subfolders inherit them.
@@ -154,11 +160,12 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - [ ] **Decide the deviceWise approach.** Proposed: Steps 4-7 become a guided pause like Step 11. The wizard shows a checklist with this VM's values filled in (CNCAsset/CNCType, EMAIL_TO, CNC_ASSET_Management and CNC_Settings rows, CNCnetPDM path and CNC path mapping, import file paths, License Manager host, OPC UA endpoint settings), waits for Continue, then checks what it can without the API (dwcore/dwts running, port 48020 listening, SINC folders, CNCnetPDM). The rest becomes manual sign-off items in the Step 13 report. The fake REST calls are removed. About 1 day.
 - [ ] Move Step 7 (deviceWise CNCnetPDM integration) after Step 8 (CNCnetPDM), as in the SOP. Today "Connected" cannot pass on the first run.
 - [x] ~~Step 12 backup reads `$Manifest.BackupShare`~~: fixed 2026-09-30, it now reads `APC.BackupShare`.
-- [ ] The deviceWise project export in Step 12 still uses the non-existent API.
+- [ ] deviceWise backup is not automated (no API). Step 12 now shows a WARN reminder to back up in Workbench.
 - [ ] Ask Telit support (support-devicewise@telit.com) whether Gateway 23.04 has a supported way to script configuration (CLI, full-config import, local API).
 - [ ] **Step 11 (CHMI): fill in `ABB800xA.Properties`** in the manifest with the real General Properties. Find each ItemID with `kits\800xA\GPExplore.vbs`; Access must be `RW`. The write mechanism is in place, but the list is empty.
 - [ ] Test Steps 11 and 12 (800xA) on a non-production node, then do one real run and review `800xA_changes_*.log` and `Backup800xA_*.log`. Bool writes are not yet verified on 800xA.
-- [ ] 800xA backups are never purged (`PurgeCount = -1`): `C:\BACKUP` grows by about 110 MB per run of Step 12.
+- [ ] 800xA backups are never purged (`PurgeCount = -1`): `C:\BACKUP` grows by about 110 MB per run of Step 12, and each run also copies the backup into `C:\APC_Config\Backups\<ts>`. Decide on clean-up.
+- [ ] Step 11 properties: find the ItemIDs with `GPExplore.vbs`, e.g. the BENCH CSV path used by CHMI and whether Shift change verification is enabled. Then fill in `ABB800xA.Properties`.
 - [ ] Check the manifest Site DB host: `SiteServers.MPR/MCR.Host` is `sjum1cappd0017`, which is also the APC VM the deviceWise scans ran on. Confirm this is intended.
 - [ ] Finish Part 3 of the test checklist after the first reviewed-steps run: restart File Manager, Data Collector and Data Analyzer, check the DOC indicators, and test file routing.
 - [ ] Device 1001 (Citizen 01) **is connected**: its log shows `Parts_Machined Command incorrect, deactivated / Part_Required …`, so the controller answers but rejects those two counter commands. Check the counter commands (ParameterNumber 8300/8304) in `citizenm_1001.ini` for this controller.
@@ -169,6 +176,15 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 ---
 
 ## Log
+
+### 2026-09-30 - Step 12: one local timestamped backup folder
+- **User decisions:** all backups go to a timestamped folder next to the wizard's Reports (`C:\APC_Config\Backups\<ts>`); CNCnetPDM is not copied twice, since it is under `C:\Medtronic`; deviceWise is not doable yet.
+- **Step 12 rewritten:**
+  - 800xA Full backup first, then copied into the backup folder together with its log.
+  - `C:\Medtronic` is copied without logs, measurement data and old backups.
+  - A WARN reminds to back up deviceWise manually.
+  - The made-up deviceWise REST export is removed.
+- **Tests:** Step 12 is tested with a fake 800xA kit and a robocopy stand-in.
 
 ### 2026-09-30 - 800xA property writes (Step 11) and Full backup (Step 12)
 - Built from the handoff package `ClaudeCode-800xA-Handoff.zip` (HANDOFF.md). The kit is copied unchanged to `kits/800xA` and its hashes match `SHA256SUMS.txt`.

@@ -130,3 +130,77 @@ function Get-Check {
     param($Checks, [string]$NameLike)
     @($Checks | Where-Object { $_.Name -like $NameLike }) | Select-Object -First 1
 }
+
+# ---- Fake 800xA kit (same file names and output format as kits\800xA) ----
+$Script:PwshPath = (Get-Process -Id $PID).Path
+
+function New-Fake800xAKit {
+    param([int]$BackupExit = 0)
+    $dir = Join-Path $TestDrive "kit-$([guid]::NewGuid().ToString('N').Substring(0,6))"
+    New-Item -ItemType Directory -Path $dir | Out-Null
+    Set-Content (Join-Path $dir 'Backup-800xA.ps1') @"
+param([string]`$DefPath, [switch]`$Start, [switch]`$Confirmed, [int]`$MinFreeMB, [int]`$TimeoutMin, [int]`$PollSec, [string]`$LogFile)
+function Out([string]`$t) { `$l = "12:00:00  `$t"; Write-Host `$l; Add-Content -Path `$LogFile -Value `$l }
+Out "Backup-800xA  Mode=START  Def=`$DefPath  Start=`$Start Confirmed=`$Confirmed MinFreeMB=`$MinFreeMB"
+if ($BackupExit -eq 0) {
+    `$root = if (`$env:FAKE_800XA_BACKUPDIR) { `$env:FAKE_800XA_BACKUPDIR } else { 'C:\BACKUP' }
+    `$folder = Join-Path `$root 'Full backup; 2026-09-30; 16-05'
+    if (`$env:FAKE_800XA_BACKUPDIR) { New-Item -ItemType Directory -Path `$folder -Force | Out-Null; Set-Content (Join-Path `$folder 'Backup.log') 'Backup completed.' }
+    Out "Backup: Full backup; 2026-09-30; 16-05"
+    Out "Folder: `$folder   files=45  size=110.2 MB   errors=0  warnings=0"
+    Out "RESULT: BACKUP OK"
+} else { Out "RESULT: failed" }
+exit $BackupExit
+"@
+    Set-Content (Join-Path $dir 'Invoke-800xAGP.ps1') @'
+function Invoke-800xAGP {
+    param([Parameter(Mandatory)][string]$ItemId, [string]$Value, [string]$Server, [string]$ScriptPath)
+    $storePath = Join-Path (Split-Path $ScriptPath) 'store.json'
+    $store = @{}; (Get-Content $storePath -Raw | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $store[$_.Name] = $_.Value }
+    if ($ItemId -like 'Fail:*') { return [pscustomobject]@{ ItemId = $ItemId; Before = $null; After = $null; Success = $false; ExitCode = 1; Error = "ERROR at step 'AddItem $ItemId'"; Output = '' } }
+    $before = [string]$store[$ItemId]
+    if (-not $PSBoundParameters.ContainsKey('Value')) { return [pscustomobject]@{ ItemId = $ItemId; Before = $before; After = $null; Success = $true; ExitCode = 0; Error = $null; Output = '' } }
+    $after = if ($ItemId -like 'Differ:*') { 'something else' } else { $Value }
+    $store[$ItemId] = $after; $store | ConvertTo-Json | Set-Content $storePath
+    $rc = if ($after -ceq $Value) { 0 } else { 3 }
+    [pscustomobject]@{ ItemId = $ItemId; Before = $before; After = $after; Success = ($rc -eq 0); ExitCode = $rc; Error = $null; Output = '' }
+}
+'@
+    Set-Content (Join-Path $dir 'GPWrite3.vbs') "' fake"
+    Set-Content (Join-Path $dir 'GPExplore.vbs') "' fake"
+    Set-Content (Join-Path $dir 'store.json') '{ "Cell_1:URL1": "C:\\old.png", "Cell_1:Count": "5", "Cell_1:Flag": "False" }'
+    $sums = 'Backup-800xA.ps1', 'GPWrite3.vbs', 'Invoke-800xAGP.ps1', 'GPExplore.vbs' |
+            ForEach-Object { "$((Get-FileHash (Join-Path $dir $_) -Algorithm SHA256).Hash.ToLower())  $_" }
+    Set-Content (Join-Path $dir 'SHA256SUMS.txt') $sums
+    $dir
+}
+function New-800xAManifest {
+    param([string]$KitDir, [object[]]$Properties = @())
+    $m = Get-TestManifest
+    $m.ABB800xA.KitDir = $KitDir
+    $m.ABB800xA.PowerShell32 = $Script:PwshPath
+    $m.ABB800xA.Cscript32 = $Script:PwshPath
+    $m.ABB800xA.Properties = @($Properties | ForEach-Object { [pscustomobject]$_ })
+    $m
+}
+function Get-Store { param([string]$Kit) Get-Content (Join-Path $Kit 'store.json') -Raw | ConvertFrom-Json }
+
+# robocopy stand-in for tests (copies with Copy-Item, honours /XD full paths, exit code 1 = files copied)
+function global:robocopy.exe {
+    $src = $args[0]; $dst = $args[1]
+    $xd = @(); $inXd = $false
+    foreach ($a in $args[2..($args.Count - 1)]) {
+        if ($a -eq '/XD') { $inXd = $true; continue }
+        if ($a -match '^/[A-Za-z]+(:|$)') { $inXd = $false; continue }   # a robocopy switch, not a path
+        if ($inXd) { $xd += $a }
+    }
+    $global:RobocopyCalls.Add([pscustomobject]@{ Source = $src; Destination = $dst; Exclude = $xd })
+    New-Item -ItemType Directory -Path $dst -Force | Out-Null
+    Get-ChildItem -LiteralPath $src -Recurse -File | Where-Object { $f = $_.FullName; -not ($xd | Where-Object { $f.StartsWith($_ + [IO.Path]::DirectorySeparatorChar) }) } | ForEach-Object {
+        $target = Join-Path $dst $_.FullName.Substring($src.Length).TrimStart([char]92, [char]47)
+        New-Item -ItemType Directory -Path (Split-Path $target) -Force | Out-Null
+        Copy-Item -LiteralPath $_.FullName -Destination $target
+    }
+    $global:LASTEXITCODE = 1
+}
+$global:RobocopyCalls = [System.Collections.Generic.List[object]]::new()

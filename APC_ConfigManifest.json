@@ -270,6 +270,12 @@
     "SkipSteps":   [ 2, 4, 5, 6, 7, 11, 12 ]
   },
 
+  "Backup": {
+    "Root":                 "C:\\APC_Config\\Backups",
+    "MedtronicDir":         "C:\\Medtronic",
+    "MedtronicExcludeDirs": [ "CNCNetPDM\\log", "DataCollector_Data", "Backup" ]
+  },
+
   "ABB800xA": {
     "KitDir":       "kits\\800xA",
     "PowerShell32": "%WINDIR%\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe",
