@@ -581,24 +581,24 @@ $xamlText = @'
           <StackPanel x:Name="PageCHMI" Visibility="Collapsed">
             <TextBlock Text="CHMI (800xA)" Style="{StaticResource PageTitle}"/>
             <TextBlock Style="{StaticResource PageHint}"
-                       Text="Written to the 800xA General Properties of each cell in Step 11. Values are pre-filled from 800xA; only changed values are written, and before/after values are logged."/>
+                       Text="Step 11 writes these settings to the General Properties of each cell in 800xA. The current values are read from 800xA when this page opens; only values that differ are written, and every change is logged."/>
             <Border Style="{StaticResource Card}" Padding="16,12,16,6">
               <StackPanel>
                 <TextBlock Text="Verification trigger" Style="{StaticResource CardTitle}" Margin="0,0,0,2"/>
-                <TextBlock Style="{StaticResource PageHint}" Margin="0,0,0,10" Text="Button = verification on button press only. Both = button press or shift change."/>
+                <TextBlock Style="{StaticResource PageHint}" Margin="0,0,0,10" Text="When a verification sample is requested. Button: only when the operator presses the button. Both: on the button or at a shift change."/>
                 <Grid>
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="60"/><ColumnDefinition Width="*"/><ColumnDefinition Width="70"/><ColumnDefinition Width="90"/><ColumnDefinition Width="170"/>
+                    <ColumnDefinition Width="60"/><ColumnDefinition Width="200"/><ColumnDefinition Width="80"/><ColumnDefinition Width="100"/><ColumnDefinition Width="170"/><ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
                   <TextBlock Grid.Column="0" Text="CNC"     Style="{StaticResource ColHead}"/>
                   <TextBlock Grid.Column="1" Text="MACHINE" Style="{StaticResource ColHead}"/>
                   <TextBlock Grid.Column="2" Text="CELL"    Style="{StaticResource ColHead}"/>
-                  <TextBlock Grid.Column="3" Text="CURRENT" Style="{StaticResource ColHead}"/>
-                  <TextBlock Grid.Column="4" Text="SET TO"  Style="{StaticResource ColHead}"/>
+                  <TextBlock Grid.Column="3" Text="IN 800xA" Style="{StaticResource ColHead}"/>
+                  <TextBlock Grid.Column="4" Text="SET TO" Style="{StaticResource ColHead}"/>
                 </Grid>
                 <Grid x:Name="GridCHMIRow1">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="60"/><ColumnDefinition Width="*"/><ColumnDefinition Width="70"/><ColumnDefinition Width="90"/><ColumnDefinition Width="170"/>
+                    <ColumnDefinition Width="60"/><ColumnDefinition Width="200"/><ColumnDefinition Width="80"/><ColumnDefinition Width="100"/><ColumnDefinition Width="170"/><ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
                   <TextBlock Text="CNC1" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,0,10"/>
                   <TextBlock x:Name="TxtCHMIMachine1" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,10"/>
@@ -611,7 +611,7 @@ $xamlText = @'
                 </Grid>
                 <Grid x:Name="GridCHMIRow2">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="60"/><ColumnDefinition Width="*"/><ColumnDefinition Width="70"/><ColumnDefinition Width="90"/><ColumnDefinition Width="170"/>
+                    <ColumnDefinition Width="60"/><ColumnDefinition Width="200"/><ColumnDefinition Width="80"/><ColumnDefinition Width="100"/><ColumnDefinition Width="170"/><ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
                   <TextBlock Text="CNC2" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,0,10"/>
                   <TextBlock x:Name="TxtCHMIMachine2" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,10"/>
@@ -624,7 +624,7 @@ $xamlText = @'
                 </Grid>
                 <Grid x:Name="GridCHMIRow3">
                   <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="60"/><ColumnDefinition Width="*"/><ColumnDefinition Width="70"/><ColumnDefinition Width="90"/><ColumnDefinition Width="170"/>
+                    <ColumnDefinition Width="60"/><ColumnDefinition Width="200"/><ColumnDefinition Width="80"/><ColumnDefinition Width="100"/><ColumnDefinition Width="170"/><ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
                   <TextBlock Text="CNC3" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,0,10"/>
                   <TextBlock x:Name="TxtCHMIMachine3" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,10"/>
@@ -648,13 +648,13 @@ $xamlText = @'
             <Border Style="{StaticResource Card}">
               <StackPanel>
                 <TextBlock Text="Inspection CSV folders" Style="{StaticResource CardTitle}" Margin="0,0,0,2"/>
-                <TextBlock Style="{StaticResource PageHint}" Margin="0,0,0,10" Text="Measurements &gt; Inspections GP, the same for every cell. Filled in from the local data root."/>
+                <TextBlock Style="{StaticResource PageHint}" Margin="0,0,0,10" Text="Folders for the inspection CSV files, the same for every cell (Measurements &gt; Inspections GP). The defaults follow the local data root on the Data applications page."/>
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                   <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
-                  <TextBlock Text="BENCH sample CSV" Style="{StaticResource Label}"/>
+                  <TextBlock Text="BENCH sample CSV folder" Style="{StaticResource Label}"/>
                   <TextBox x:Name="TxtCHMIBench" Grid.Column="1" Style="{StaticResource Input}" FontFamily="Consolas"/>
-                  <TextBlock Grid.Row="1" Text="100% inspection CSV" Style="{StaticResource Label}"/>
+                  <TextBlock Grid.Row="1" Text="100% inspection CSV folder" Style="{StaticResource Label}"/>
                   <TextBox x:Name="TxtCHMIPct" Grid.Row="1" Grid.Column="1" Style="{StaticResource Input}" FontFamily="Consolas"/>
                 </Grid>
               </StackPanel>
@@ -1124,7 +1124,7 @@ function Update-CHMIShift {
     $cnt  = Get-DOCCount
     $both = @(1..$cnt | Where-Object { $sel = $controls["CmbCHMITrigger$_"].SelectedItem; $sel -and [string]$sel.Tag -eq 'True' }).Count -gt 0
     $controls['CmbShift1Hour'].IsEnabled = $both
-    $controls['TxtShiftHint'].Text = if ($both) { 'Whole hours only. Written for the cells set to Both.' } else { 'Used only for cells set to Both.' }
+    $controls['TxtShiftHint'].Text = if ($both) { 'Whole hours only. Applies to the cells set to Both.' } else { 'Only needed when a cell is set to Both.' }
 }
 
 function Update-CHMIPage {
@@ -1134,7 +1134,7 @@ function Update-CHMIPage {
         $controls["GridCHMIRow$n"].Visibility = if ($n -le $cnt) { 'Visible' } else { 'Collapsed' }
         $controls["TxtCHMIMachine$n"].Text    = Get-CHMIMachineName $n
         $controls["TxtCHMICurrent$n"].Text    = Get-CHMITriggerText $Script:CHMICurrent[$n]
-        $controls["TxtCHMICurrent$n"].ToolTip = if ($Script:CHMICurrent[$n]) { $null } else { 'Could not read the value from 800xA - pick one.' }
+        $controls["TxtCHMICurrent$n"].ToolTip = if ($Script:CHMICurrent[$n]) { $null } else { 'Could not be read from 800xA. Pick Button or Both.' }
     }
     $set = Get-CHMISiteSettings
     foreach ($pair in @(@('TxtCHMIBench', 'SAMPLECSVPATH'), @('TxtCHMIPct', 'PCT100CSVPATH'))) {
