@@ -292,3 +292,135 @@ function Invoke-800xAPropertyStep {
         $State['800xAChangeLog'] = $changeLog
     }
 }
+
+$Script:OpcUaServerStateText = @{
+    0 = 'Running'; 1 = 'Failed'; 2 = 'NoConfiguration'; 3 = 'Suspended'
+    4 = 'Shutdown'; 5 = 'Test'; 6 = 'CommunicationFault'; 7 = 'Unknown'
+}
+
+function Get-800xAOpcUaServerStatus {
+    <#
+        Reads (never writes) the status of the OPC UA server that 800xA OPC UA Connect is connected to
+        (Node Administration -> DEVICEWISE OPC UA), through the kit's Invoke-800xAGP. The Server URL itself
+        is aspect data and not visible over OPC; the server's own status and build info show whether the
+        connection works and which product answers. Returns State, StateText, Product, Manufacturer,
+        Version, StartTime, CurrentTime, Good (all reads quality Good), Error.
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest, [hashtable]$Kit)
+    $prefix = [string]$Manifest.CHMI.OpcUaStatusItemPrefix
+    $status = [ordered]@{ State = $null; StateText = ''; Product = ''; Manufacturer = ''; Version = ''; StartTime = ''; CurrentTime = ''; Good = $true; Error = '' }
+    if (-not $Kit) { $Kit = Get-800xAKit -Manifest $Manifest }
+    if ($Kit.Problems.Count) { $status.Error = "800xA kit not usable: $($Kit.Problems -join '; ')"; return [pscustomobject]$status }
+
+    $items = [ordered]@{
+        State        = 'ServerStatus.State'
+        Product      = 'ServerStatus.BuildInfo.ProductName'
+        Manufacturer = 'ServerStatus.BuildInfo.ManufacturerName'
+        Version      = 'ServerStatus.BuildInfo.SoftwareVersion'
+        StartTime    = 'ServerStatus.StartTime'
+        CurrentTime  = 'ServerStatus.CurrentTime'
+    }
+    foreach ($key in $items.Keys) {
+        $r = Invoke-800xAGPCall -Kit $Kit -ItemId "$prefix$($items[$key])" -Server ([string]$Manifest.ABB800xA.OpcServer)
+        if (-not $r.Success) { $status.Error = "Read of $prefix$($items[$key]) failed (exit $($r.ExitCode)): $($r.Error)"; break }
+        # OPC DA quality: 192-219 = Good; anything else means the value is not live
+        if ($r.Output -match 'quality=(\d+)' -and ([int]$Matches[1] -band 0xC0) -ne 0xC0) { $status.Good = $false }
+        $status[$key] = $r.Before
+    }
+    if (-not $status.Error) {
+        $code = 0
+        if ([int]::TryParse([string]$status.State, [ref]$code)) {
+            $status.State = $code
+            $status.StateText = if ($Script:OpcUaServerStateText.ContainsKey($code)) { $Script:OpcUaServerStateText[$code] } else { "state $code" }
+        } else { $status.StateText = "unreadable state '$($status.State)'" }
+    }
+    [pscustomobject]$status
+}
+
+function Test-800xAOpcUaServer {
+    <#
+        Adds one result for the OPC UA server connection: PASS when it is Running with Good quality and the
+        product matches CHMI.ExpectedServerProduct, WARN when another product answers, FAIL otherwise.
+        Returns the detail text; throws on FAIL when -Throw is given (for Step 13's Check blocks).
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest, [string]$Phase = 'CHMI', [string]$Check = 'OPC UA server connection', [switch]$Throw)
+    $s = Get-800xAOpcUaServerStatus -Manifest $Manifest
+    $expected = [string]$Manifest.CHMI.ExpectedServerProduct
+    $who = "$($s.Product) $($s.Version) ($($s.Manufacturer))".Trim()
+    if ($s.Error) {
+        $status = 'FAIL'; $detail = $s.Error
+    } elseif ($s.State -ne 0) {
+        $status = 'FAIL'; $detail = "Server state $($s.StateText) - $who"
+    } elseif (-not $s.Good) {
+        $status = 'FAIL'; $detail = 'Values are not live (OPC quality not Good) - check the connection in Node Administration'
+    } elseif ($expected -and $s.Product -notmatch [regex]::Escape($expected)) {
+        $status = 'WARN'; $detail = "Running, but the server is '$who', expected $expected"
+    } else {
+        $status = 'PASS'; $detail = "Running - $who, server started $($s.StartTime)"
+    }
+    if ($Throw) {
+        if ($status -eq 'FAIL') { throw $detail }
+        return $(if ($status -eq 'WARN') { "WARN: $detail" } else { $detail })
+    }
+    Add-Result -Phase $Phase -Check $Check -Status $status -Detail $detail
+    $detail
+}
+
+function Get-800xAOpcUaCertificates {
+    <#
+        Reads (never changes) the 800xA OPC UA certificates under CHMI.PkiRoot.
+        - Root: the newest 800xAOpcUaRoot in OpcUaConnect\pki\issuer\certs. This is the root OPC UA Connect
+          uses. An older root with the same name can still sit in pki\trusted and in the Windows Root store
+          (seen on the MPR VM), so the root is never taken from there.
+        - 800xAOpcUaConnect (pki\own) and 800xAOpcUaManagementPortal (Management Portal pki\trusted): whether
+          each one is signed by that root. This is checked on the signature (certificate chain), not on the
+          issuer name, because every 800xA root has the same name.
+        Returns one object per certificate: Name, Path, Found, Thumbprint, NotBefore, Issuer, IssuedByRoot.
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest)
+    $cfg  = $Manifest.CHMI
+    $root = [string]$cfg.RootCertName
+    $X509 = 'System.Security.Cryptography.X509Certificates'
+
+    $newest = {
+        param([string]$App, [string]$Store, [string]$Filter)
+        $dir = [string]$cfg.PkiRoot
+        foreach ($part in $App, 'pki', $Store, 'certs') { $dir = Join-Path $dir $part }
+        $cert = @(Get-ChildItem -LiteralPath $dir -Filter $Filter -File -ErrorAction SilentlyContinue | ForEach-Object {
+            try { New-Object "$X509.X509Certificate2" $_.FullName | Add-Member -NotePropertyName File -NotePropertyValue $_.FullName -PassThru } catch { }
+        }) | Sort-Object NotBefore -Descending | Select-Object -First 1
+        @{ Cert = $cert; Path = if ($cert) { $cert.File } else { Join-Path $dir $Filter } }
+    }
+    $signedBy = {
+        param($Cert, $RootCert)
+        if (-not $Cert -or -not $RootCert) { return $false }
+        if ($Cert.Thumbprint -eq $RootCert.Thumbprint) { return $true }
+        $chain = New-Object "$X509.X509Chain"
+        $chain.ChainPolicy.RevocationMode    = 'NoCheck'
+        $chain.ChainPolicy.VerificationFlags = 'AllowUnknownCertificateAuthority, IgnoreNotTimeValid'
+        [void]$chain.ChainPolicy.ExtraStore.Add($RootCert)
+        [void]$chain.Build($Cert)
+        $top = $chain.ChainElements[$chain.ChainElements.Count - 1].Certificate
+        # the chain only reaches the root when the root's key verifies the signature
+        $top.Thumbprint -eq $RootCert.Thumbprint -and -not @($chain.ChainStatus | Where-Object { $_.Status -match 'NotSignatureValid' })
+    }
+
+    $rootInfo = & $newest 'OpcUaConnect' 'issuer' "$root*.der"
+    $items = @(
+        @{ Name = $root;                        Info = $rootInfo }
+        @{ Name = '800xAOpcUaConnect';          Info = (& $newest 'OpcUaConnect' 'own' '800xAOpcUaConnect*.der') }
+        @{ Name = '800xAOpcUaManagementPortal'; Info = (& $newest 'OpcUaManagementPortal' 'trusted' '800xAOpcUaManagementPortal*.der') }
+    )
+    foreach ($i in $items) {
+        $cert = $i.Info.Cert
+        [pscustomobject]@{
+            Name         = $i.Name
+            Path         = $i.Info.Path
+            Found        = [bool]$cert
+            Thumbprint   = if ($cert) { $cert.Thumbprint } else { '' }
+            NotBefore    = if ($cert) { $cert.NotBefore } else { $null }
+            Issuer       = if ($cert) { $cert.Issuer } else { '' }
+            IssuedByRoot = [bool](& $signedBy $cert $rootInfo.Cert)
+        }
+    }
+}

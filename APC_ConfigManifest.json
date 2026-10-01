@@ -310,10 +310,13 @@
   },
 
   "CHMI": {
-    "OpcUaConnectRegPath":  "HKLM:\\SOFTWARE\\WOW6432Node\\ABB\\AFW\\OpcUaConnect",
-    "DataPath":             "C:\\OperateITData111",
-    "CertManagerExe":       "C:\\Program Files (x86)\\ABB 800xA\\Base\\bin\\AfwUaCertificateManager.exe",
-    "EngineeringWorkplace": "C:\\Program Files (x86)\\ABB 800xA\\Base\\bin\\WorkplaceNG.exe"
+    "Help":                  "Step 11 / Step 13 (read-only). The deviceWise OPC UA server is configured in Engineering Workplace: Node Administration Structure -> All Nodes -> DEVICEWISE OPC UA, OPC UA Server Node -> DEVICEWISE OPC UA, OPC UA Server -> OPC UA Server Info. The Server URL is aspect data (not visible over OPC; default opc.tcp://localhost:48020 is fine). AutomatedChecks=false keeps Step 11 to the General Property write only (no automated certificate / server checks there); Step 13 still reads the server status through OpcUaStatusItemPrefix + ServerStatus.* and checks the certificates under PkiRoot.",
+    "AutomatedChecks":       false,
+    "OpcUaStatusItemPrefix": "Server:",
+    "ExpectedServerProduct": "deviceWise",
+    "PkiRoot":               "C:\\ProgramData\\ABB\\Process Portal A",
+    "RootCertName":          "800xAOpcUaRoot",
+    "EngineeringWorkplace":  "C:\\Program Files (x86)\\ABB 800xA\\Base\\bin\\WorkplaceNG.exe"
   },
 
   "Services": {

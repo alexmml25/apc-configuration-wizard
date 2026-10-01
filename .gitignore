@@ -14,3 +14,18 @@ desktop.ini
 
 # Personal Claude Code settings
 .claude/settings.local.json
+
+# ABB 800xA binaries copied from a VM for inspection - ABB property, never commit
+ABB.xA.*.dll
+ABB.xA.*.exe
+
+# Decompiled ABB code (inspection only) - never commit
+decompiled/
+
+# Local only (not in the repo): project log, VM test checklist, test launcher
+docs/
+Run-Tests.cmd
+
+# Scripts that call ABB internal functions (from the decompiled portal) - local only
+tools/Invoke-800xACreateRoot.ps1
+tools/Probe-800xARootCert.ps1

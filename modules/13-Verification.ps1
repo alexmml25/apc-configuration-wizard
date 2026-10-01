@@ -12,6 +12,7 @@
 #>
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
+. (Join-Path $PSScriptRoot 'ABB800xA.ps1')
 
 function Invoke-Verification {
     [CmdletBinding()]
@@ -846,49 +847,35 @@ function Invoke-Verification {
 
     #region T10 - CHMI --------------------------------------------------------
 
-    $chmiCfg = $Manifest.CHMI
+    # Read-only: certificate files under CHMI.PkiRoot and the deviceWise OPC UA server status as seen by 800xA
+    $chmiCerts = @(Get-800xAOpcUaCertificates -Manifest $Manifest)
+    $rootName  = [string]$Manifest.CHMI.RootCertName
 
     # Item 1 - Root certificate
     Check 'CHMI' '800xA OPC UA root certificate exists' {
-        $certPaths = @(
-            'HKLM:\SOFTWARE\ABB\800xA\OpcUaConnect',
-            'HKLM:\SOFTWARE\WOW6432Node\ABB\800xA\OpcUaConnect',
-            $chmiCfg.OpcUaConnectRegPath
-        )
-        $found = $false
-        foreach ($p in $certPaths) { if (Test-Path $p) { $found = $true; break } }
-        if (-not $found) { throw "800xA OpcUaConnect registry key not found" }
-        "Registry key present"
+        $c = $chmiCerts | Where-Object Name -eq $rootName
+        if (-not $c.Found) { throw "Root certificate not found: $($c.Path)" }
+        "$($c.Thumbprint), created $($c.NotBefore)"
     } '' 10 1
 
-    # Item 2 - Application certificates updated
+    # Item 2 - Application certificates updated (present and issued by the root)
     Check 'CHMI' 'Application certificates updated' {
-        if (-not (Test-Path $chmiCfg.CertManagerExe)) {
-            throw "CertManager not found: $($chmiCfg.CertManagerExe)"
-        }
-        "CertManager.exe present at $($chmiCfg.CertManagerExe)"
+        $apps = @($chmiCerts | Where-Object Name -ne $rootName)
+        $missing = @($apps | Where-Object { -not $_.Found } | ForEach-Object Name)
+        if ($missing) { throw "Not found: $($missing -join ', ')" }
+        ($apps | ForEach-Object { $_.Name }) -join ', '
     } '' 10 2
 
-    # Item 3 - Issuer verification (manual)
-    Blank 'CHMI' 'Issuer verified (800xAOPCUARoot)' 10 3
+    # Item 3 - Issuer verification
+    Check 'CHMI' "Issuer verified ($rootName)" {
+        $wrong = @($chmiCerts | Where-Object { $_.Name -ne $rootName -and -not $_.IssuedByRoot } | ForEach-Object { "$($_.Name): $(if ($_.Found) { $_.Issuer } else { 'not found' })" })
+        if ($wrong) { throw "Not signed by the current root - $($wrong -join '; ')" }
+        "800xAOpcUaConnect and 800xAOpcUaManagementPortal issued by $rootName"
+    } '' 10 3
 
-    # Item 4 - OPC UA Server URL configured
+    # Item 4 - OPC UA Server URL configured: the URL is aspect data (not readable); a Running deviceWise server proves it
     Check 'CHMI' 'OPC UA Server URL configured in 800xA' {
-        $expectedUrl = "opc.tcp://$($env:COMPUTERNAME):48020"
-        $found = $false
-        foreach ($base in @('HKLM:\SOFTWARE\ABB\800xA\OpcUaConnect',
-                             'HKLM:\SOFTWARE\WOW6432Node\ABB\800xA\OpcUaConnect')) {
-            if (Test-Path $base) {
-                $keys = Get-ChildItem $base -ErrorAction SilentlyContinue
-                foreach ($k in $keys) {
-                    $v = (Get-ItemProperty $k.PSPath -Name 'ServerUrl' -ErrorAction SilentlyContinue).ServerUrl
-                    if ($v -eq $expectedUrl) { $found = $true; break }
-                }
-            }
-            if ($found) { break }
-        }
-        if (-not $found) { throw "ServerUrl '$expectedUrl' not found in 800xA registry" }
-        "URL: $expectedUrl"
+        Test-800xAOpcUaServer -Manifest $Manifest -Throw
     } '' 10 4
 
     # Items 5-7 - manual
