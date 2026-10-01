@@ -78,7 +78,8 @@ Describe 'Wizard window (XAML)' {
 
     It 'has the <Control> control the code uses' -ForEach @(
         'ChkDefaultLicense', 'TxtLicense', 'TxtDataRoot', 'CmbStartStep', 'BtnBack', 'BtnNext', 'NavList', 'TxtChangeID',
-        'RbModeReviewed', 'RbModeFull', 'RbModeTest', 'RbDoc1', 'RbDoc2', 'RbDoc3' | ForEach-Object { @{ Control = $_ } }
+        'RbModeReviewed', 'RbModeFull', 'RbModeTest', 'RbDoc1', 'RbDoc2', 'RbDoc3',
+        'CmbShift1Hour', 'TxtShiftHint', 'TxtCHMIBench', 'TxtCHMIPct' | ForEach-Object { @{ Control = $_ } }
     ) {
         $names | Should -Contain $Control
     }
@@ -86,7 +87,7 @@ Describe 'Wizard window (XAML)' {
     It 'has a page panel for every wizard page' {
         $block  = [regex]::Match($wizardSrc, '(?s)\$Script:PagePanels = @\{(.*?)\}').Groups[1].Value
         $panels = [regex]::Matches($block, "'(?<p>Page\w+)'") | ForEach-Object { $_.Groups['p'].Value }
-        @($panels).Count | Should -Be 9
+        @($panels).Count | Should -Be 10
         @($panels | Where-Object { $_ -notin $names }) | Should -BeNullOrEmpty
     }
 
@@ -94,6 +95,12 @@ Describe 'Wizard window (XAML)' {
         foreach ($id in 'initial', 'restore', 'component', 'update', 'sysupdate', 'verify') { $names | Should -Contain "RbType_$id" }
         foreach ($c in 'tsdb', 'sinc', 'dw', 'cnc', 'doc', 'da', 'chmi') { $names | Should -Contain "ChkComp_$c" }
         foreach ($i in 0..5) { $names | Should -Contain "RbReason$i" }
+    }
+
+    It 'has a CHMI (800xA) row for CNC<N> with a Button / Both choice' -ForEach (1..3 | ForEach-Object { @{ N = $_ } }) {
+        foreach ($c in "GridCHMIRow$N", "TxtCHMIMachine$N", "TxtCHMICurrent$N", "CmbCHMITrigger$N") { $names | Should -Contain $c }
+        $cmb = $xaml.SelectSingleNode("//*[@*[local-name()='Name']='CmbCHMITrigger$N']")
+        @($cmb.ChildNodes | ForEach-Object { "$($_.Content)=$($_.Tag)" }) | Should -Be @('Button=False', 'Both=True')
     }
 
     It 'has a row, status, icon and re-run button for step <N>' -ForEach (1..13 | ForEach-Object { @{ N = $_ } }) {

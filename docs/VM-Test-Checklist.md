@@ -141,9 +141,15 @@ When the sandbox looks right, delete it or keep it for comparison.
 
 Run these on a **non-production** node first. Steps 11 and 12 are not part of *Reviewed steps only* yet.
 
-- [ ] **Step 11:** for each entry in manifest `ABB800xA.Properties`, the log shows `800xA property <ItemID>` with `'before' -> 'after'`, or `Already '<value>' - not written`.
+- [ ] **CHMI (800xA) page** (after Data applications): opening it takes a few seconds while it reads each cell.
+  - **Current** shows each cell's `VerificationOnShift` from 800xA (on the MPR test VM: Cell_1 Both, Cell_2/3 Button), and **Set to** starts on the same value. "Unknown" means the read failed; you then have to pick a value.
+  - **First shift starts at** shows 05:00 for MPR. It is enabled only when a cell is set to Both.
+  - The CSV folders are `<data root>\BENCH` and `<data root>\100%`.
+  - **Review & run** lists the trigger per CNC and marks changed ones "(changed)".
+- [ ] **Step 11:** for each cell, the log shows `800xA property <ItemID>` with `'before' -> 'after'`, or `Already '<value>' - not written`.
+  - The properties are `Root/Medtronic/Cell_n/Measurements:SampleCSV_Filepath`, `...:100pctCSV_Filepath`, `Cell_n:VerificationOnShift`, and `Cell_n:Shift1Hour` (only for cells set to Both).
   - Every change is also recorded in `C:\APC_Config\Logs\800xA_changes_<date-time>.log`.
-  - With no properties configured, the log says so and nothing is written.
+  - Check one changed value in Plant Explorer (Cell_n > Verification GP, Measurements > Inspections GP). This is also the first real Bool write.
 - [ ] **Step 12:** `800xA Full backup` PASS shows the backup name, e.g. `Full backup; 2026-09-30; 16-05`, with its folder under `C:\BACKUP`, file count, size, errors 0 and warnings 0.
   - The kit's full output is in `C:\APC_Config\Logs\Backup800xA_<date-time>.log`.
 - [ ] If the log shows `800xA kit … SHA256 mismatch`, a file in `kits\800xA` was changed or damaged in the copy. Copy the kit again; do not edit it.

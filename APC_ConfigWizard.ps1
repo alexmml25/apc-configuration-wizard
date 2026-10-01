@@ -33,6 +33,7 @@ function Get-Manifest {
 }
 $manifest = Get-Manifest
 . (Join-Path $Script:ModulesDir 'Common.ps1')
+. (Join-Path $Script:ModulesDir 'ABB800xA.ps1')
 $Script:RunManifest = $manifest   # replaced by the sandbox copy in test mode
 $Script:TestMode    = $false
 $Script:SkipSteps   = @()
@@ -86,13 +87,14 @@ $Script:PageLabels = [ordered]@{
     machines   = 'Machines & DOC'
     components = 'SINC & CNCnetPDM'
     dataapps   = 'Data applications'
+    chmi       = 'CHMI (800xA)'
     review     = 'Review & run'
     run        = 'Run'
     verify     = 'Verification'
 }
 $Script:PagePanels = @{
     type = 'PageType'; signin = 'PageSignin'; scope = 'PageScope'; machines = 'PageMachines'; components = 'PageComponents'
-    dataapps = 'PageDataApps'; review = 'PageReview'; run = 'PageRun'; verify = 'PageVerify'
+    dataapps = 'PageDataApps'; chmi = 'PageCHMI'; review = 'PageReview'; run = 'PageRun'; verify = 'PageVerify'
 }
 
 $xamlText = @'
@@ -297,9 +299,8 @@ $xamlText = @'
                 Padding="10,3" VerticalAlignment="Center">
           <TextBlock x:Name="TxtTypeChip" FontSize="12" Foreground="#334155"/>
         </Border>
-        <Image x:Name="ImgAppIcon" Grid.Column="3" Width="44" Height="44" Stretch="Uniform" Margin="16,0,0,0" VerticalAlignment="Center">
-          <Image.Clip><EllipseGeometry Center="22,22" RadiusX="22" RadiusY="22"/></Image.Clip>
-        </Image>
+        <Image x:Name="ImgAppIcon" Grid.Column="3" Width="44" Height="44" Stretch="Uniform" Margin="16,0,0,0" VerticalAlignment="Center"
+               RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True"/>
       </Grid>
     </Border>
 
@@ -571,6 +572,90 @@ $xamlText = @'
                   <TextBlock Grid.Column="3" Text="SOURCE PATH" Style="{StaticResource ColHead}"/>
                 </Grid>
                 <!--DATAAPPS_INSTRUMENTS-->
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <!-- ===== CHMI (800xA) ===== -->
+          <StackPanel x:Name="PageCHMI" Visibility="Collapsed">
+            <TextBlock Text="CHMI (800xA)" Style="{StaticResource PageTitle}"/>
+            <TextBlock Style="{StaticResource PageHint}"
+                       Text="Written to the 800xA General Properties of each cell in Step 11. Values are pre-filled from 800xA; only changed values are written, and before/after values are logged."/>
+            <Border Style="{StaticResource Card}" Padding="16,12,16,6">
+              <StackPanel>
+                <TextBlock Text="Verification trigger" Style="{StaticResource CardTitle}" Margin="0,0,0,2"/>
+                <TextBlock Style="{StaticResource PageHint}" Margin="0,0,0,10" Text="Button = verification on button press only. Both = button press or shift change."/>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="60"/><ColumnDefinition Width="*"/><ColumnDefinition Width="70"/><ColumnDefinition Width="90"/><ColumnDefinition Width="170"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="CNC"     Style="{StaticResource ColHead}"/>
+                  <TextBlock Grid.Column="1" Text="MACHINE" Style="{StaticResource ColHead}"/>
+                  <TextBlock Grid.Column="2" Text="CELL"    Style="{StaticResource ColHead}"/>
+                  <TextBlock Grid.Column="3" Text="CURRENT" Style="{StaticResource ColHead}"/>
+                  <TextBlock Grid.Column="4" Text="SET TO"  Style="{StaticResource ColHead}"/>
+                </Grid>
+                <Grid x:Name="GridCHMIRow1">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="60"/><ColumnDefinition Width="*"/><ColumnDefinition Width="70"/><ColumnDefinition Width="90"/><ColumnDefinition Width="170"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="CNC1" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                  <TextBlock x:Name="TxtCHMIMachine1" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                  <TextBlock Grid.Column="2" Text="Cell_1" FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                  <TextBlock x:Name="TxtCHMICurrent1" Grid.Column="3" FontSize="12" Foreground="#475569" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                  <ComboBox x:Name="CmbCHMITrigger1" Grid.Column="4" Style="{StaticResource Combo}">
+                    <ComboBoxItem Content="Button" Tag="False"/>
+                    <ComboBoxItem Content="Both" Tag="True"/>
+                  </ComboBox>
+                </Grid>
+                <Grid x:Name="GridCHMIRow2">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="60"/><ColumnDefinition Width="*"/><ColumnDefinition Width="70"/><ColumnDefinition Width="90"/><ColumnDefinition Width="170"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="CNC2" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                  <TextBlock x:Name="TxtCHMIMachine2" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                  <TextBlock Grid.Column="2" Text="Cell_2" FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                  <TextBlock x:Name="TxtCHMICurrent2" Grid.Column="3" FontSize="12" Foreground="#475569" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                  <ComboBox x:Name="CmbCHMITrigger2" Grid.Column="4" Style="{StaticResource Combo}">
+                    <ComboBoxItem Content="Button" Tag="False"/>
+                    <ComboBoxItem Content="Both" Tag="True"/>
+                  </ComboBox>
+                </Grid>
+                <Grid x:Name="GridCHMIRow3">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="60"/><ColumnDefinition Width="*"/><ColumnDefinition Width="70"/><ColumnDefinition Width="90"/><ColumnDefinition Width="170"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="CNC3" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                  <TextBlock x:Name="TxtCHMIMachine3" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                  <TextBlock Grid.Column="2" Text="Cell_3" FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                  <TextBlock x:Name="TxtCHMICurrent3" Grid.Column="3" FontSize="12" Foreground="#475569" VerticalAlignment="Center" Margin="0,0,0,10"/>
+                  <ComboBox x:Name="CmbCHMITrigger3" Grid.Column="4" Style="{StaticResource Combo}">
+                    <ComboBoxItem Content="Button" Tag="False"/>
+                    <ComboBoxItem Content="Both" Tag="True"/>
+                  </ComboBox>
+                </Grid>
+                <Border BorderBrush="#F1F5F9" BorderThickness="0,1,0,0" Padding="0,10,0,0">
+                  <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="110"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="First shift starts at" Style="{StaticResource Label}"/>
+                    <ComboBox x:Name="CmbShift1Hour" Grid.Column="1" Style="{StaticResource Combo}"/>
+                    <TextBlock x:Name="TxtShiftHint" Grid.Column="2" FontSize="12" Foreground="#64748B" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0,0,10"/>
+                  </Grid>
+                </Border>
+              </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}">
+              <StackPanel>
+                <TextBlock Text="Inspection CSV folders" Style="{StaticResource CardTitle}" Margin="0,0,0,2"/>
+                <TextBlock Style="{StaticResource PageHint}" Margin="0,0,0,10" Text="Measurements &gt; Inspections GP, the same for every cell. Filled in from the local data root."/>
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                  <TextBlock Text="BENCH sample CSV" Style="{StaticResource Label}"/>
+                  <TextBox x:Name="TxtCHMIBench" Grid.Column="1" Style="{StaticResource Input}" FontFamily="Consolas"/>
+                  <TextBlock Grid.Row="1" Text="100% inspection CSV" Style="{StaticResource Label}"/>
+                  <TextBox x:Name="TxtCHMIPct" Grid.Row="1" Grid.Column="1" Style="{StaticResource Input}" FontFamily="Consolas"/>
+                </Grid>
               </StackPanel>
             </Border>
           </StackPanel>
@@ -982,6 +1067,114 @@ $controls['ChkDefaultLicense'].Add_Unchecked({
     $controls['TxtLicense'].Focus() | Out-Null
 })
 
+# ---- CHMI (800xA) page ------------------------------------------------------------
+
+foreach ($h in 0..23) {
+    $item = New-Object System.Windows.Controls.ComboBoxItem
+    $item.Content = '{0:00}:00' -f $h
+    $item.Tag     = $h
+    [void]$controls['CmbShift1Hour'].Items.Add($item)
+}
+$Script:CHMIAuto    = @{}   # last auto-filled value per CSV folder box, so a typed value is kept
+$Script:CHMICurrent = @{}   # VerificationOnShift read from 800xA per CNC: 'True' / 'False' / '' (could not read)
+$Script:CHMIReadFor = ''    # DOC assignment the current values were read for
+
+function Get-CHMIMachineName([int]$N) {
+    $cmb = $controls["CmbDOCMachine$N"]
+    if ($cmb.SelectedItem) { [string]$cmb.SelectedItem.Content } else { '' }
+}
+
+# Step 11 setting values for the chosen site and data root (manifest ABB800xA.Settings)
+function Get-CHMISiteSettings {
+    $site = if ($controls['CmbSiteCode'].SelectedItem) { [string]$controls['CmbSiteCode'].SelectedItem.Content } else { '' }
+    Get-800xASettings -Manifest $manifest -State @{ SiteCode = $site; DataAppsLocalRoot = $controls['TxtDataRoot'].Text.Trim() }
+}
+
+# Reads Cell_n:VerificationOnShift for each DOC-assigned CNC through the 800xA kit (read-only, about 1 s per cell)
+# and pre-selects Button / Both. Read again only when the DOC assignment changes.
+function Read-CHMICurrentValues {
+    $cnt = Get-DOCCount
+    $key = (1..$cnt | ForEach-Object { Get-CHMIMachineName $_ }) -join '|'
+    if ($key -eq $Script:CHMIReadFor) { return }
+    $Script:CHMIReadFor = $key
+    $Script:CHMICurrent = @{}
+    $prop = @($manifest.ABB800xA.Properties | Where-Object { [string]$_.Value -eq '{VERIFYONSHIFT}' }) | Select-Object -First 1
+    $kit  = Get-800xAKit -Manifest $manifest
+    if ($prop -and $kit.Problems.Count -eq 0) {
+        $window.Cursor = [System.Windows.Input.Cursors]::Wait
+        try {
+            foreach ($n in 1..$cnt) {
+                $id = ([string]$prop.ItemId).Replace('{CELL}', [string]$n)
+                $r  = Invoke-800xAGPCall -Kit $kit -ItemId $id -Server ([string]$manifest.ABB800xA.OpcServer)
+                $Script:CHMICurrent[$n] = if ($r.Success -and $r.Before -in 'True', 'False') { [string]$r.Before } else { '' }
+            }
+        } catch {
+            $Script:CHMICurrent = @{}
+        } finally { $window.Cursor = $null }
+    }
+    foreach ($n in 1..3) {
+        $controls["CmbCHMITrigger$n"].SelectedIndex = switch ([string]$Script:CHMICurrent[$n]) { 'True' { 1 } 'False' { 0 } default { -1 } }
+    }
+}
+
+function Get-CHMITriggerText($Value) { switch ([string]$Value) { 'True' { 'Both' } 'False' { 'Button' } default { 'Unknown' } } }
+
+function Update-CHMIShift {
+    $cnt  = Get-DOCCount
+    $both = @(1..$cnt | Where-Object { $sel = $controls["CmbCHMITrigger$_"].SelectedItem; $sel -and [string]$sel.Tag -eq 'True' }).Count -gt 0
+    $controls['CmbShift1Hour'].IsEnabled = $both
+    $controls['TxtShiftHint'].Text = if ($both) { 'Whole hours only. Written for the cells set to Both.' } else { 'Used only for cells set to Both.' }
+}
+
+function Update-CHMIPage {
+    Read-CHMICurrentValues
+    $cnt = Get-DOCCount
+    foreach ($n in 1..3) {
+        $controls["GridCHMIRow$n"].Visibility = if ($n -le $cnt) { 'Visible' } else { 'Collapsed' }
+        $controls["TxtCHMIMachine$n"].Text    = Get-CHMIMachineName $n
+        $controls["TxtCHMICurrent$n"].Text    = Get-CHMITriggerText $Script:CHMICurrent[$n]
+        $controls["TxtCHMICurrent$n"].ToolTip = if ($Script:CHMICurrent[$n]) { $null } else { 'Could not read the value from 800xA - pick one.' }
+    }
+    $set = Get-CHMISiteSettings
+    foreach ($pair in @(@('TxtCHMIBench', 'SAMPLECSVPATH'), @('TxtCHMIPct', 'PCT100CSVPATH'))) {
+        $box = $controls[$pair[0]]
+        if (-not $box.Text.Trim() -or $box.Text -eq $Script:CHMIAuto[$pair[0]]) {
+            $box.Text = [string]$set[$pair[1]]
+            $Script:CHMIAuto[$pair[0]] = $box.Text
+        }
+    }
+    if (-not $controls['CmbShift1Hour'].SelectedItem -and $set['SHIFT1HOUR'] -match '^\d+$' -and [int]$set['SHIFT1HOUR'] -le 23) {
+        $controls['CmbShift1Hour'].SelectedIndex = [int]$set['SHIFT1HOUR']
+    }
+    Update-CHMIShift
+}
+
+foreach ($n in 1..3) { $controls["CmbCHMITrigger$n"].Add_SelectionChanged({ Update-CHMIShift }) }
+
+function Test-CHMIPage {
+    $cnt = Get-DOCCount
+    $missing = @(1..$cnt | Where-Object { -not $controls["CmbCHMITrigger$_"].SelectedItem } | ForEach-Object { "CNC$_" })
+    if ($missing) { Show-Warning "Pick Button or Both for: $($missing -join ', ')"; return $false }
+    if ($controls['CmbShift1Hour'].IsEnabled -and -not $controls['CmbShift1Hour'].SelectedItem) { Show-Warning "Pick the first shift start hour."; return $false }
+    foreach ($b in 'TxtCHMIBench', 'TxtCHMIPct') {
+        $t = $controls[$b].Text.Trim()
+        if (-not $t) { Show-Warning "Enter both inspection CSV folders."; return $false }
+        if ($t -match '"') { Show-Warning "The inspection CSV folders cannot contain double quotes."; return $false }
+    }
+    return $true
+}
+
+# State['800xASettings'] for Step 11: CSV folders, first shift hour and the per-cell trigger (CELLn.VERIFYONSHIFT)
+function Get-CHMISettingsState {
+    $set = @{ SAMPLECSVPATH = $controls['TxtCHMIBench'].Text.Trim(); PCT100CSVPATH = $controls['TxtCHMIPct'].Text.Trim() }
+    if ($controls['CmbShift1Hour'].SelectedItem) { $set['SHIFT1HOUR'] = [int]$controls['CmbShift1Hour'].SelectedItem.Tag }
+    foreach ($n in 1..(Get-DOCCount)) {
+        $sel = $controls["CmbCHMITrigger$n"].SelectedItem
+        if ($sel) { $set["CELL$n"] = @{ VERIFYONSHIFT = [string]$sel.Tag } }
+    }
+    return $set
+}
+
 # ---- Helpers ----------------------------------------------------------------
 
 function Test-InstallerCredential {
@@ -1083,13 +1276,14 @@ function Get-PlanSteps {
 function Get-WizardPages {
     $type = Get-ConfigType
     switch ($type) {
-        'initial' { return @('type', 'signin', 'machines', 'components', 'dataapps', 'review', 'run', 'verify') }
+        'initial' { return @('type', 'signin', 'machines', 'components', 'dataapps', 'chmi', 'review', 'run', 'verify') }
         'verify'  { return @('type', 'signin', 'machines', 'review', 'run', 'verify') }
         default {
             $picked = Get-PickedComponents
             $pages  = @('type', 'signin', 'scope', 'machines')
             if ('dw' -in $picked -or 'cnc' -in $picked) { $pages += 'components' }
             if ('da' -in $picked) { $pages += 'dataapps' }
+            if ('chmi' -in $picked) { $pages += 'chmi' }
             return $pages + @('review', 'run', 'verify')
         }
     }
@@ -1162,6 +1356,13 @@ function Update-ReviewPage {
         $cmb = $controls["CmbDOCMachine$_"]
         "CNC$_ $(if ($cmb.SelectedItem) { $cmb.SelectedItem.Content } else { '-' })"
     }) -join "  $Script:Dot  "
+    if ('chmi' -in (Get-WizardPages)) {
+        $rows['Verification trigger'] = (1..$cnt | ForEach-Object {
+            $sel = $controls["CmbCHMITrigger$_"].SelectedItem
+            $val = if ($sel) { [string]$sel.Tag } else { '' }
+            "CNC$_ $(Get-CHMITriggerText $val)$(if ($val -and $Script:CHMICurrent[$_] -and $val -ne $Script:CHMICurrent[$_]) { ' (changed)' })"
+        }) -join "  $Script:Dot  "
+    }
     if ($type -eq 'verify') { $rows['Changes to this VM'] = 'None (read-only)' }
 
     $panel = $controls['PanelSummary']
@@ -1225,8 +1426,7 @@ function Update-Wizard {
     }
     Update-NavList -Pages $pages
 
-    $site = if ($controls['CmbSiteCode'].SelectedItem) { $controls['CmbSiteCode'].SelectedItem.Content } else { '' }
-    $controls['TxtTypeChip'].Text   = "$($Script:ConfigTypes[(Get-ConfigType)].Name) $Script:Dot $site"
+    $controls['TxtTypeChip'].Text   = $Script:ConfigTypes[(Get-ConfigType)].Name
     $controls['TxtFooterStep'].Text = "Step $($Script:PageIndex + 1) of $($pages.Count) $Script:Dot $($Script:PageLabels[$key])"
     $controls['TxtScopeHint'].Text  = if ((Get-ConfigType) -eq 'update') {
         'Only the selected components are updated with the values entered in this wizard; everything else is left as it is.'
@@ -1241,6 +1441,7 @@ function Update-Wizard {
         'verify' { 'Finish' }
         default  { 'Next' }
     }
+    if ($key -eq 'chmi')   { Update-CHMIPage }
     if ($key -eq 'review') { Update-ReviewPage }
     if ($key -eq 'verify') { Update-VerifyPage }
     $controls['MainScroller'].ScrollToTop()
@@ -1610,6 +1811,8 @@ function Start-ConfigurationRun {
         Show-Warning "Enter the CNCnetPDM license key or tick 'Use default perpetual license'."; return $false
     }
     if (10 -in $runSteps -and -not (Test-DataAppsPage)) { return $false }
+    $chmiPage = 'chmi' -in (Get-WizardPages)
+    if (11 -in $runSteps -and $chmiPage -and -not (Test-CHMIPage)) { return $false }
 
     $docCount = Get-DOCCount
     $docMachineAssignments = @(1..$docCount | ForEach-Object {
@@ -1636,6 +1839,7 @@ function Start-ConfigurationRun {
     $Script:AutoState['DataAppsInstruments']   = @(Get-DataAppsSelection -CncCount $docCount)
     $Script:AutoState['DataAppsLocalRoot']     = $controls['TxtDataRoot'].Text.Trim()
     $Script:AutoState['CNCnetPDMLicense']      = $license
+    if ($chmiPage) { $Script:AutoState['800xASettings'] = Get-CHMISettingsState }
 
     $apcPwd = New-Object System.Security.SecureString
     foreach ($c in $controls['PwdAPCUser'].Password.ToCharArray()) { $apcPwd.AppendChar($c) }
@@ -1710,6 +1914,7 @@ $controls['BtnNext'].Add_Click({
             if (-not $controls['TxtLicense'].Text.Trim()) { Show-Warning "Enter the CNCnetPDM license key or tick 'Use default perpetual license'."; return }
         }
         'dataapps' { if (-not (Test-DataAppsPage)) { return } }
+        'chmi'     { if (-not (Test-CHMIPage)) { return } }
         'review' {
             if (-not (Start-ConfigurationRun)) { return }
             $Script:PageIndex++

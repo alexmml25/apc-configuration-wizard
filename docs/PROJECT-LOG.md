@@ -21,7 +21,7 @@ Add a dated entry to the **Log** whenever something is changed or tested, and up
 | Real run on a VM | First real run on the test VM 2026-09-30 (Reviewed steps only): Steps 1, 3, 8, 9 and 10 wrote the real files, and CNCnetPDM created the `.dll` files. The device connection check needs follow-up (see Open items). |
 | deviceWise (Steps 4-7, 12 export) | **Cannot work as written.** The gateway has no HTTP/REST API; the modules call endpoints that don't exist. Proposed: guided manual steps (see Open items). |
 | Remote run | Not supported. Every step assumes it runs on the target VM (localhost DB/deviceWise, `C:\` paths, HKLM, local services). Run it on the VM itself, e.g. over RDP. |
-| UI | **Step-by-step wizard applied** (2026-09-30): configuration type first, Back/Next, step list on the left, draft-only Verification page. Types available: Initial System Configuration, System Component Configuration, Configuration Update, Verification. Restore and System Update / Import show "Not available yet". Not yet run on the VM. Prototype: https://claude.ai/artifact/TbK5BLeegzRbyjcGmPy7F4 |
+| UI | **Step-by-step wizard applied** (2026-09-30; CHMI (800xA) page added 2026-10-01): configuration type first, Back/Next, step list on the left, draft-only Verification page. Types available: Initial System Configuration, System Component Configuration, Configuration Update, Verification. Restore and System Update / Import show "Not available yet". Not yet run on the VM. Prototype: https://claude.ai/artifact/TbK5BLeegzRbyjcGmPy7F4 |
 | Sites | **MCR and MPR only** (MFW and MWR dropped 2026-09-30). MPR (Humacao) has instrument defaults; MCR uses generic defaults. |
 
 ---
@@ -163,10 +163,11 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 - [x] ~~Step 12 backup reads `$Manifest.BackupShare`~~: fixed 2026-09-30, it now reads `APC.BackupShare`.
 - [ ] deviceWise backup is not automated (no API). Step 12 now shows a WARN reminder to back up in Workbench.
 - [ ] Ask Telit support (support-devicewise@telit.com) whether Gateway 23.04 has a supported way to script configuration (CLI, full-config import, local API).
-- [ ] **Step 11 (CHMI): fill in `ABB800xA.Properties`** in the manifest with the real General Properties. Find each ItemID with `kits\800xA\GPExplore.vbs`; Access must be `RW`. The write mechanism is in place, but the list is empty.
+- [x] ~~Step 11 ItemIDs~~: confirmed with GPExplore on the MPR VM (2026-09-30). `Root/Medtronic/Cell_n/Measurements:SampleCSV_Filepath` / `100pctCSV_Filepath` (String, RW) and `Cell_n:Shift1Hour` (Int32, RW) / `Cell_n:VerificationOnShift` (Bool, RW). Values on that VM: Shift1Hour = 5 on all cells; VerificationOnShift = True on Cell_1, False on Cell_2/3.
+- [x] ~~Step 11 settings in the wizard window~~: done 2026-10-01 (CHMI (800xA) page, see Log).
+- [ ] **First shift at 5:30 at MPR:** `Shift1Hour` is a whole hour and there is no minutes property, so the wizard writes **5** for MPR (user decision 2026-09-30; default 7 for other sites). A true 5:30 start would need a new property and a change to the 800xA shift calculation. The wizard writes `VerificationOnShift`, not `ShiftChange` (a runtime one-shot flag).
 - [ ] Test Steps 11 and 12 (800xA) on a non-production node, then do one real run and review `800xA_changes_*.log` and `Backup800xA_*.log`. Bool writes are not yet verified on 800xA.
 - [ ] 800xA backups are never purged (`PurgeCount = -1`): `C:\BACKUP` grows by about 110 MB per run of Step 12, and each run also copies the backup into `C:\APC_Config\Backups\<ts>`. Decide on clean-up.
-- [ ] Step 11 properties: find the ItemIDs with `GPExplore.vbs`, e.g. the BENCH CSV path used by CHMI and whether Shift change verification is enabled. Then fill in `ABB800xA.Properties`.
 - [ ] Check the manifest Site DB host: `SiteServers.MPR/MCR.Host` is `sjum1cappd0017`, which is also the APC VM the deviceWise scans ran on. Confirm this is intended.
 - [ ] Finish Part 3 of the test checklist after the first reviewed-steps run: restart File Manager, Data Collector and Data Analyzer, check the DOC indicators, and test file routing.
 - [ ] Device 1001 (Citizen 01) **is connected**: its log shows `Parts_Machined Command incorrect, deactivated / Part_Required …`, so the controller answers but rejects those two counter commands. Check the counter commands (ParameterNumber 8300/8304) in `citizenm_1001.ini` for this controller.
@@ -184,6 +185,35 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 ---
 
 ## Log
+
+### 2026-10-01 - CHMI (800xA) page in the window; header chip and icon
+- **Prototype approved** (Button / Both per cell, no "Keep current"), now built into `APC_ConfigWizard.ps1`:
+  - **New page CHMI (800xA)**: in Initial after Data applications; in Component / Update when CHMI / APC UI is picked.
+  - **Opening the page** reads `Cell_n:VerificationOnShift` for each DOC-assigned CNC through the 800xA kit (read-only, about 1 s per cell; read again only when the DOC machines change). It shows the value under Current and pre-selects Button / Both. If the read fails, it shows "Unknown" and you must pick.
+  - **First shift starts at** (00:00-23:00, default from `ABB800xA.Settings`, 05:00 for MPR) is enabled only when a cell is set to Both.
+  - **BENCH / 100% CSV folders** are filled in from the data root; a typed value is kept.
+  - **Review & run** shows "Verification trigger" per CNC, with "(changed)" against the value read.
+  - **Run:** `State.800xASettings` = CSV folders, SHIFT1HOUR and `CELLn.VERIFYONSHIFT`, which Step 11 writes.
+- **Header chip** shows only the configuration type (site removed), in both the window and the prototype.
+- **App icon:** the PNG had a white square background, so the window and taskbar icon showed white corners, and the 44 px header copy was scaled roughly. The corners are now transparent (anti-aliased circle), and the header image uses high-quality scaling instead of a clip.
+- **Tests:** window tests updated (10 page panels, CHMI rows with Button=False / Both=True). **Not run:** no PowerShell on this Mac; run `Run-Tests.cmd` on the VM.
+
+### 2026-09-30 - Step 11: ItemIDs confirmed, shift settings per cell
+- **GPExplore on the MPR VM:** the Measurements paths are full-path IDs, as the manifest had; `Shift1Hour` and `VerificationOnShift` are short IDs (`Cell_n:...`). All four are RW, and their types match. The manifest and tests are updated.
+- **Per cell:** settings layers can hold `CELL1`..`CELL3` values, e.g. shift verification on for Cell_1 only.
+- **Not set = unchanged:** an empty setting skips the property (reported as SKIP). `VERIFYONSHIFT` is empty until the window asks for it, so a run cannot switch Cell_1 off by default.
+- **MPR first shift = 5** (`Settings.MPR.SHIFT1HOUR`). The SOP time is 5:30, but the property holds whole hours only (user decision).
+- **Tests:** shipped-list tests rewritten (per cell, MPR hour, other-site hour, SKIP). **Not run:** no PowerShell on this Mac.
+
+### 2026-09-30 - Step 11: Inspections GP and Verification GP properties
+- **From the Plant Explorer screenshots** (Cell_1 → Verification GP; Cell_1/Measurements → Inspections GP), Step 11 now writes for each DOC-assigned CNC n (Cell_n):
+  - `Measurements:SampleCSV_Filepath` = BENCH sample CSV folder (default `C:\Medtronic\DataCollector_Data\BENCH`)
+  - `Measurements:100pctCSV_Filepath` = 100% CSV folder (default `C:\Medtronic\DataCollector_Data\100%`)
+  - `Shift1Hour` (Int32, 0-23, default 7), **only when shift change verification is on**, written before the flag
+  - `VerificationOnShift` (Bool, default False = button press only)
+- **Manifest:** new `ABB800xA.Settings` (Default + optional per-site key) supplies the values as tokens `{VERIFYONSHIFT}`, `{SHIFT1HOUR}`, `{SAMPLECSVPATH}`, `{PCT100CSVPATH}`; `{DATAROOT}` is the DataApps local data root. `State.800xASettings` overrides them (for the future wizard fields).
+- **Property entries** can now use `{CELL}` (one write per assigned CNC), `When` (write only when a setting is True) and `Min`/`Max`. Optional fields are read StrictMode-safe.
+- **Tests:** 5 new Pester tests for the shipped list. **Not run:** PowerShell is not installed on this Mac. Run `Run-Tests.cmd` on the VM.
 
 ### 2026-09-30 - App icon
 - `APC Configuration Manager Icon.png` (user's icon, scaled from 1254 px to 256 px) is in the header's right corner, opposite the APC logo, clipped to its circle. It is also the window and taskbar icon.
