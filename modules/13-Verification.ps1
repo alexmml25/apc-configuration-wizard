@@ -35,10 +35,9 @@ function Invoke-Verification {
     $siteCode  = $State['SiteCode']
     $docCount  = [int]$State['DOCCount']
 
-    $reportDir  = 'C:\APC_Config\Reports'
+    $reportDir  = Get-RunDir -State $State -Name Reports
     $ts         = Get-Date -Format 'yyyyMMdd-HHmmss'
     $reportPath = Join-Path $reportDir "APC_ConfigReport_$ts.html"
-    New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
 
     $checks = [System.Collections.Generic.List[hashtable]]::new()
 

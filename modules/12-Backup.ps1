@@ -3,11 +3,12 @@
 .SYNOPSIS
     Step 12 - Back up the APC configuration to one timestamped folder on the VM.
 .DESCRIPTION
-    Everything goes to <Manifest.Backup.Root>\<yyyyMMdd-HHmmss>\ (default C:\APC_Config\Backups, next to the
-    wizard's Reports and Logs folders):
+    Everything goes to the run's Backups folder, C:\APC_Config\<type>_<yyyyMMdd-HHmmss>\Backups\ (from the wizard;
+    without a run folder: <Manifest.Backup.Root>\<yyyyMMdd-HHmmss>\):
       800xA\<backup name>   800xA Full backup made by kits\800xA\Backup-800xA.ps1 (32-bit PowerShell, gated on
                             its exit code), then copied from the 800xA backup folder (C:\BACKUP\...);
-                            the kit's log Backup800xA_<ts>.log is written to the backup folder
+                            the kit's log Backup800xA_<ts>.log and the robocopy logs go to the run's Logs
+                            folder (without a run folder: the backup folder)
       Medtronic\            C:\Medtronic: DOC 1-3, File Manager, Data Collector, Data Analyzer and CNCnetPDM,
                             without the folders in Manifest.Backup.MedtronicExcludeDirs (logs, measurement data,
                             old backups)
@@ -29,20 +30,21 @@ function Invoke-Backup {
     Write-Log STEP "Application Backup"
 
     $cfg      = $Manifest.Backup
-    $destRoot = Join-Path $cfg.Root (Get-Date -Format 'yyyyMMdd-HHmmss')
     try {
-        New-Item -ItemType Directory -Path $destRoot -Force -ErrorAction Stop | Out-Null
+        $destRoot = Get-RunDir -State $State -Name Backups -Manifest $Manifest
         Add-Result -Phase Backup -Check "Backup folder" -Status PASS -Detail $destRoot
     } catch {
-        Add-Result -Phase Backup -Check "Backup folder" -Status FAIL -Detail "Cannot create ${destRoot}: $($_.Exception.Message)"
+        Add-Result -Phase Backup -Check "Backup folder" -Status FAIL -Detail "Cannot create the backup folder: $($_.Exception.Message)"
         throw "Backup folder could not be created - nothing was backed up."
     }
     $State['BackupRoot'] = $destRoot
+    # robocopy / 800xA kit logs: the run's Logs folder, or next to the backup when there is no run folder
+    $logDir = if ($State['RunRoot']) { Get-RunDir -State $State -Name Logs } else { $destRoot }
 
     # robocopy exit codes 0-7 mean success (8+ = failures)
     function Copy-Tree {
         param([string]$Source, [string]$Destination, [string]$Label, [string[]]$ExcludeDirs = @())
-        $log  = Join-Path $destRoot "robocopy_$($Label -replace '\W', '').log"
+        $log  = Join-Path $logDir "robocopy_$($Label -replace '\W', '').log"
         $argz = @($Source, $Destination, '/E', '/R:2', '/W:5', '/NP', "/LOG+:$log")
         if ($ExcludeDirs) { $argz += '/XD'; $argz += $ExcludeDirs }
         & robocopy.exe @argz | Out-Null
@@ -64,7 +66,7 @@ function Invoke-Backup {
         foreach ($problem in $kit.Problems) { Add-Result -Phase Backup -Check "800xA kit" -Status FAIL -Detail $problem }
         if ($kit.Problems.Count -eq 0) {
             Write-Log INFO "Starting 800xA Full backup ($($Manifest.ABB800xA.Backup.DefPath)) - usually about 1.5 minutes..."
-            $bk = Invoke-800xABackup -Manifest $Manifest -Kit $kit -LogDir $destRoot
+            $bk = Invoke-800xABackup -Manifest $Manifest -Kit $kit -LogDir $logDir
             $copied = ''
             if ($bk.Ok) {
                 Add-Result -Phase Backup -Check "800xA Full backup" -Status PASS `

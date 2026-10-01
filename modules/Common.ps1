@@ -251,6 +251,22 @@ function New-SandboxManifest {
     return @{ Manifest = $m; Copied = [string[]]$copied; Missing = [string[]]$missing }
 }
 
+function Get-RunDir {
+    <#
+        Folder for this run's Logs / Backups / Reports. The wizard gives each run its own folder,
+        State.RunRoot = C:\APC_Config\<Type>_<yyyyMMdd-HHmmss>, with Logs, Backups and Reports inside.
+        Without RunRoot (e.g. APC_Config.ps1) the shared folders are used: C:\APC_Config\Logs,
+        <Manifest.Backup.Root>\<yyyyMMdd-HHmmss> and C:\APC_Config\Reports. The folder is created.
+    #>
+    param([Parameter(Mandatory)] [hashtable]$State, [Parameter(Mandatory)] [ValidateSet('Logs', 'Backups', 'Reports')] [string]$Name,
+          [object]$Manifest)
+    $dir = if ($State['RunRoot']) { Join-Path ([string]$State['RunRoot']) $Name }
+           elseif ($Name -eq 'Backups') { Join-Path ([string]$Manifest.Backup.Root) (Get-Date -Format 'yyyyMMdd-HHmmss') }
+           else { Join-Path 'C:\APC_Config' $Name }
+    New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop | Out-Null
+    return $dir
+}
+
 function Test-SandboxPath {
     # True when not in test mode, or when $Path is inside the sandbox root (test mode must not create
     # folders outside the sandbox, e.g. on instrument shares)

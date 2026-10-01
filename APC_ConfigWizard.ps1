@@ -58,13 +58,14 @@ $StepDefs = @(
 
 # Configuration types = the "Reason for Configuration" options of D01555624 (ReasonIndex = checkbox row).
 # Verification replaces "Other" in the wizard: a read-only check that ticks "Other" in the draft.
+# Folder = prefix of the run's own folder, C:\APC_Config\<Folder>_<yyyyMMdd-HHmmss> (Logs, Backups, Reports inside).
 $Script:ConfigTypes = [ordered]@{
-    initial   = @{ Name = 'Initial System Configuration';   ReasonIndex = 0 }
-    restore   = @{ Name = 'Configuration Restore';          ReasonIndex = 1 }
-    component = @{ Name = 'System Component Configuration'; ReasonIndex = 2 }
-    update    = @{ Name = 'Configuration Update';           ReasonIndex = 3 }
-    sysupdate = @{ Name = 'System Update / Import';         ReasonIndex = 4 }
-    verify    = @{ Name = 'Verification';                   ReasonIndex = 5 }
+    initial   = @{ Name = 'Initial System Configuration';   ReasonIndex = 0; Folder = 'InitialConfiguration' }
+    restore   = @{ Name = 'Configuration Restore';          ReasonIndex = 1; Folder = 'ConfigurationRestore' }
+    component = @{ Name = 'System Component Configuration'; ReasonIndex = 2; Folder = 'ComponentConfiguration' }
+    update    = @{ Name = 'Configuration Update';           ReasonIndex = 3; Folder = 'ConfigurationUpdate' }
+    sysupdate = @{ Name = 'System Update / Import';         ReasonIndex = 4; Folder = 'SystemUpdate' }
+    verify    = @{ Name = 'Verification';                   ReasonIndex = 5; Folder = 'Verification' }
 }
 $Script:VerifyReasonOther = 'Verification only (no changes)'
 $Script:Dot = [string][char]0x00B7   # middle dot; kept out of the source so Windows PowerShell 5.1 reads the file as plain ASCII
@@ -692,7 +693,7 @@ $xamlText = @'
             </Border>
             <Border x:Name="PanelReadOnly" Margin="0,0,0,16" Background="#F0FDF4" BorderBrush="#BBF7D0" BorderThickness="1" CornerRadius="8" Padding="16,12" Visibility="Collapsed">
               <TextBlock TextWrapping="Wrap" Foreground="#166534">
-                <Bold>Read-only.</Bold> No configuration, service or database on this VM is changed; only the report and the draft checklist are saved to C:\APC_Config\Reports. Use it to check an existing system or to troubleshoot.
+                <Bold>Read-only.</Bold> No configuration, service or database on this VM is changed; only the report and the draft checklist are saved, in this run's folder under C:\APC_Config. Use it to check an existing system or to troubleshoot.
               </TextBlock>
             </Border>
             <Border Style="{StaticResource Card}" Padding="16,12">
@@ -1053,7 +1054,7 @@ foreach ($n in 1,2,3) {
 # ---- Run mode and license -----------------------------------------------------
 
 $controls['TxtModeDescReviewed'].Text = "Real run of the reviewed steps ($(@(1..13 | Where-Object { $_ -notin (Get-RunModeSkipSteps -Manifest $manifest -Mode Reviewed) }) -join ', ')); the others are skipped."
-$controls['TxtModeDescTest'].Text     = "Works on sandbox copies under $($manifest.TestMode.SandboxRoot); nothing installed is changed. Runs steps $(@(1..13 | Where-Object { $_ -notin (Get-RunModeSkipSteps -Manifest $manifest -Mode Test) }) -join ', ')."
+$controls['TxtModeDescTest'].Text     = "Works on sandbox copies in the run folder (C:\APC_Config\<type>_<time>\Sandbox); nothing installed is changed. Runs steps $(@(1..13 | Where-Object { $_ -notin (Get-RunModeSkipSteps -Manifest $manifest -Mode Test) }) -join ', ')."
 $controls["RbMode$($manifest.RunModes.Default)"].IsChecked = $true
 
 # CNCnetPDM license: default from manifest, editable when the checkbox is cleared
@@ -1236,7 +1237,19 @@ function Save-State {
     foreach ($k in $State.Keys) {
         if ($State[$k] -isnot [System.Security.SecureString]) { $safe[$k] = $State[$k] }
     }
-    $safe | ConvertTo-Json -Depth 10 | Set-Content $Script:StateFile -Encoding UTF8
+    $json = $safe | ConvertTo-Json -Depth 10
+    $json | Set-Content $Script:StateFile -Encoding UTF8
+    if ($State['RunRoot']) { $json | Set-Content (Join-Path $State['RunRoot'] 'config_state.json') -Encoding UTF8 }
+}
+
+# The window's run log (what "Show log" shows) -> <RunRoot>\Logs\Wizard.log, rewritten after each step
+function Save-RunLog {
+    if (-not $Script:AutoState -or -not $Script:AutoState['RunRoot']) { return }
+    try {
+        $dir = Join-Path $Script:AutoState['RunRoot'] 'Logs'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $dir 'Wizard.log'), $controls['LogAll'].Text)
+    } catch { }
 }
 
 function Add-LogSection {
@@ -1551,6 +1564,7 @@ function Complete-Run {
     param([string]$Title)
     $Script:RunState = 'done'
     $controls['TxtRunTitle'].Text = $Title
+    Save-RunLog
     Update-VerifySummary -LogText $controls['LogAll'].Text
     Update-Wizard
 }
@@ -1588,6 +1602,7 @@ function Run-NextAutoModule {
             $timeStr   = if ($elapsed.TotalSeconds -lt 60) { "$([math]::Round($elapsed.TotalSeconds)) sec" } else { "$($elapsed.Minutes) min $($elapsed.Seconds) sec" }
             $controls['LogAll'].AppendText("-- $(if ($ok) {'Completed'} else {'Failed'}) in $timeStr --`r`n")
             $controls['LogAll'].ScrollToEnd()
+            Save-RunLog
 
             # Step 11 (CHMI) uses Paused state when manual steps are required
             if ($doneIndex -eq 11 -and $Script:RSSync.Paused) {
@@ -1830,6 +1845,14 @@ function Start-ConfigurationRun {
     }
 
     $Script:AutoState = Get-CurrentState
+    # This run's own folder: C:\APC_Config\<type>_<yyyyMMdd-HHmmss>\{Logs,Backups,Reports}
+    $runRoot = Join-Path 'C:\APC_Config' ("{0}_{1}" -f $Script:ConfigTypes[$type].Folder, (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    try {
+        foreach ($sub in 'Logs', 'Reports') { New-Item -ItemType Directory -Path (Join-Path $runRoot $sub) -Force -ErrorAction Stop | Out-Null }
+    } catch {
+        [System.Windows.MessageBox]::Show("Could not create the run folder $runRoot`n$_", "Run folder", "OK", "Error") | Out-Null; return $false
+    }
+    $Script:AutoState['RunRoot'] = $runRoot
     $Script:AutoState['ConfigType']            = $type
     $Script:AutoState['ConfigReason']          = $Script:ConfigTypes[$type].ReasonIndex
     $Script:AutoState['ConfigReasonOther']     = if ($type -eq 'verify') { $Script:VerifyReasonOther } else { '' }
@@ -1851,12 +1874,12 @@ function Start-ConfigurationRun {
     $Script:AutoState['MedtronicSUPassword'] = $suPwd
     $Script:AutoState['SiteDBPassword']      = $sdbPwd
 
-    $runLog = @("$($Script:ConfigTypes[$type].Name) - $($Script:RunModeName): steps $($runSteps -join ', ')")
+    $runLog = @("$($Script:ConfigTypes[$type].Name) - $($Script:RunModeName): steps $($runSteps -join ', ')", "Run folder: $runRoot")
     switch ($runMode) {
         'Reviewed' { $window.Title = 'APC Configuration Deployment Wizard  [REVIEWED STEPS ONLY]' }
         'Verify'   { $window.Title = 'APC Configuration Deployment Wizard  [VERIFICATION ONLY]' }
         'Test' {
-            $sandboxRoot = Join-Path $manifest.TestMode.SandboxRoot (Get-Date -Format 'yyyyMMdd-HHmmss')
+            $sandboxRoot = Join-Path $runRoot 'Sandbox'
             try {
                 $sb = New-SandboxManifest -Manifest $manifest -Root $sandboxRoot
             } catch {
@@ -1946,6 +1969,7 @@ foreach ($s in $Script:StepDefs) {
             -OnDone       {
                 param([bool]$ok)
                 Set-StepState -Index $Script:RerunIndex -State $(if ($ok) { 'Done' } else { 'Failed' })
+                Save-RunLog
                 if ($Script:RerunIndex -eq 13) { Update-VerifySummary -LogText $controls['LogAll'].Text }
             }
     })
@@ -1994,7 +2018,8 @@ $controls['BtnGenerateReport'].Add_Click({
 $controls['BtnOpenReport'].Add_Click({
     $doc = if ($Script:AutoState) { $Script:AutoState['VerificationDocPath'] } else { $null }
     if (-not $doc -or -not (Test-Path $doc)) {
-        $doc = Get-ChildItem 'C:\APC_Config\Reports\' -Filter 'D01555624_Filled_*.docx' -ErrorAction SilentlyContinue |
+        $reports = if ($Script:AutoState -and $Script:AutoState['RunRoot']) { Join-Path $Script:AutoState['RunRoot'] 'Reports' } else { 'C:\APC_Config\Reports' }
+        $doc = Get-ChildItem $reports -Filter 'D01555624_Filled_*.docx' -ErrorAction SilentlyContinue |
                Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
     }
     if ($doc) { Start-Process $doc }

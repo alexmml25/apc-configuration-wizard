@@ -40,7 +40,7 @@ function Invoke-CHMI {
 
     #region -- 800xA General Properties (Manifest.ABB800xA.Properties) --------
 
-    Invoke-800xAPropertyStep -Manifest $Manifest -State $State -Phase CHMI
+    Invoke-800xAPropertyStep -Manifest $Manifest -State $State -Phase CHMI -LogDir (Get-RunDir -State $State -Name Logs)
 
     #endregion
 
