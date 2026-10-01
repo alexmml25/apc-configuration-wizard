@@ -83,6 +83,68 @@ Describe 'Get-800xAPropertyPlan' {
     }
 }
 
+Describe 'Step 11 shipped property list (Inspections GP / Verification GP)' {
+    BeforeAll { $Script:Shipped = Get-TestManifest }
+
+    It 'writes the CSV paths per DOC-assigned cell and leaves the shift settings alone when not chosen' {
+        $state = New-HumState -DocCount 2
+        $state['DataAppsLocalRoot'] = 'C:\Medtronic\DataCollector_Data\'
+        $p = @(Get-800xAPropertyPlan -Manifest $Script:Shipped -State $state)
+        $p.Problem | Where-Object { $_ } | Should -BeNullOrEmpty
+        $write = @($p | Where-Object { -not $_.Skip })
+        $write.ItemId | Should -Be @(
+            'Root/Medtronic/Cell_1/Measurements:SampleCSV_Filepath', 'Root/Medtronic/Cell_2/Measurements:SampleCSV_Filepath',
+            'Root/Medtronic/Cell_1/Measurements:100pctCSV_Filepath', 'Root/Medtronic/Cell_2/Measurements:100pctCSV_Filepath')
+        $write[0].Value | Should -Be 'C:\Medtronic\DataCollector_Data\BENCH'
+        $write[2].Value | Should -Be 'C:\Medtronic\DataCollector_Data\100%'
+        ($p | Where-Object ItemId -eq 'Cell_1:VerificationOnShift').Skip | Should -Match 'VERIFYONSHIFT not set'
+        ($p | Where-Object ItemId -eq 'Cell_1:Shift1Hour').Skip          | Should -Match 'only written when VERIFYONSHIFT is True'
+    }
+
+    It 'uses per-cell choices, and the MPR first shift hour 5 before VerificationOnShift' {
+        $state = New-HumState
+        $state['800xASettings'] = @{ CELL1 = @{ VERIFYONSHIFT = $true }; CELL2 = @{ VERIFYONSHIFT = $false } }
+        $p = @(Get-800xAPropertyPlan -Manifest $Script:Shipped -State $state | Where-Object { $_.ItemId -notmatch 'Measurements' -and -not $_.Skip })
+        $p.ItemId | Should -Be @('Cell_1:Shift1Hour', 'Cell_1:VerificationOnShift', 'Cell_2:VerificationOnShift')
+        $p.Value  | Should -Be @('5', 'True', 'False')
+        $p.Problem | Where-Object { $_ } | Should -BeNullOrEmpty
+    }
+
+    It 'uses the default first shift hour 7 for other sites' {
+        $state = New-HumState -DocCount 1
+        $state['SiteCode'] = 'MCR'
+        $state['800xASettings'] = @{ VERIFYONSHIFT = 'True' }
+        (Get-800xAPropertyPlan -Manifest $Script:Shipped -State $state | Where-Object ItemId -eq 'Cell_1:Shift1Hour').Value | Should -Be '7'
+    }
+
+    It 'rejects a shift start hour outside 0-23' {
+        $state = New-HumState -DocCount 1
+        $state['800xASettings'] = @{ VERIFYONSHIFT = $true; SHIFT1HOUR = 24 }
+        (Get-800xAPropertyPlan -Manifest $Script:Shipped -State $state | Where-Object ItemId -match 'Shift1Hour').Problem | Should -Match 'above the maximum 23'
+    }
+
+    It 'lets a site key override the defaults' {
+        $m = Get-TestManifest
+        $m.ABB800xA.Settings.MPR | Add-Member -NotePropertyName SAMPLECSVPATH -NotePropertyValue 'D:\Bench'
+        $p = @(Get-800xAPropertyPlan -Manifest $m -State (New-HumState -DocCount 1) | Where-Object ItemId -match 'SampleCSV')
+        $p.Value | Should -Be 'D:\Bench'
+    }
+
+    It 'flags a When that names an unknown setting' {
+        $m = New-800xAManifest (New-Fake800xAKit) @(@{ ItemId = 'Cell_1:X'; Value = '1'; Type = 'Int32'; When = 'NOPE' })
+        (Get-800xAPropertyPlan -Manifest $m -State (New-HumState)).Problem | Should -Match "unknown setting 'NOPE'"
+    }
+
+    It 'reports skipped entries as SKIP and does not touch them' {
+        Reset-StepResults
+        $kit = New-Fake800xAKit
+        $m = New-800xAManifest $kit @(@{ ItemId = 'Cell_{CELL}:Flag'; Value = '{VERIFYONSHIFT}'; Type = 'Bool' })
+        Invoke-800xAPropertyStep -Manifest $m -State (New-HumState -DocCount 1) -LogDir (Join-Path $TestDrive 'logs-skip')
+        (Get-StepResults | Where-Object Check -eq '800xA property Cell_1:Flag').Status | Should -Be 'SKIP'
+        (Get-Store $kit).'Cell_1:Flag' | Should -Not -Be 'False'
+    }
+}
+
 Describe 'Invoke-800xAPropertyStep (Step 11)' {
     BeforeEach { Reset-StepResults }
 

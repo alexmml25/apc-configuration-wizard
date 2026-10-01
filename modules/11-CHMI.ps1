@@ -16,7 +16,8 @@
     800xA General Properties (first, config-driven): each entry of Manifest.ABB800xA.Properties is read,
     written and read back through the proven kit in kits\800xA (32-bit cscript), with before/after values
     logged to C:\APC_Config\Logs\800xA_changes_<ts>.log. The step stops at the first failed read/write.
-    The list of properties to write is still to be supplied (see docs/PROJECT-LOG.md, Open items).
+    Today: Inspections GP CSV folders (BENCH / 100%) and Verification GP shift settings, per DOC-assigned
+    Cell_n, with values from Manifest.ABB800xA.Settings.
 #>
 
 . (Join-Path $PSScriptRoot 'Common.ps1')

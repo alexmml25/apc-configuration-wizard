@@ -88,45 +88,121 @@ function Invoke-800xABackup {
     return $r
 }
 
+function Get-800xASettings {
+    <#
+        Values for the Step 11 setting tokens: Manifest.ABB800xA.Settings.Default, then Settings.<SiteCode>,
+        then State['800xASettings'] (operator choices) on top. Keys are token names (upper case).
+        Each layer may hold CELL1..CELL3 objects with per-cell values; with -Cell n, a layer's CELLn values
+        apply on top of that layer's own values.
+        {DATAROOT} inside a value is the DataApps local data root (State DataAppsLocalRoot or the manifest's).
+        Returns a hashtable of strings; Bool values become 'True' / 'False', and an empty value means
+        "not set - leave 800xA unchanged".
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [hashtable]$State, [int]$Cell)
+    $pairsOf = {
+        param($Layer)
+        if ($Layer -is [System.Collections.IDictionary]) { foreach ($k in $Layer.Keys) { [pscustomobject]@{ Name = [string]$k; Value = $Layer[$k] } } }
+        elseif ($Layer) { foreach ($f in $Layer.PSObject.Properties) { [pscustomobject]@{ Name = $f.Name; Value = $f.Value } } }
+    }
+    $layers = @()
+    $cfg = $Manifest.ABB800xA.PSObject.Properties['Settings']
+    if ($cfg -and $cfg.Value) {
+        foreach ($key in 'Default', [string]$State['SiteCode']) {
+            if ($key -and $cfg.Value.PSObject.Properties[$key]) { $layers += $cfg.Value.$key }
+        }
+    }
+    $layers += $State['800xASettings']
+
+    $values = @{}
+    foreach ($layer in $layers) {
+        if (-not $layer) { continue }
+        $cellLayer = $null
+        foreach ($kv in @(& $pairsOf $layer)) {
+            $name = $kv.Name.ToUpper()
+            if ($name -match '^CELL\d+$') { if ($Cell -and $name -eq "CELL$Cell") { $cellLayer = $kv.Value }; continue }
+            $values[$name] = [string]$kv.Value
+        }
+        foreach ($kv in @(& $pairsOf $cellLayer)) { $values[$kv.Name.ToUpper()] = [string]$kv.Value }
+    }
+    $dataRoot = if ($State['DataAppsLocalRoot']) { [string]$State['DataAppsLocalRoot'] } else { [string]$Manifest.DataApps.LocalDataRoot }
+    foreach ($k in @($values.Keys)) { $values[$k] = $values[$k].Replace('{DATAROOT}', $dataRoot.TrimEnd('\')) }
+    return $values
+}
+
 function Get-800xAPropertyPlan {
     <#
         Turns Manifest.ABB800xA.Properties into a checked write list. Each entry:
-          ItemId, Value (tokens expanded), Type, Description, Problem ('' when the entry is valid)
+          ItemId, Value (tokens expanded), Type, Description,
+          Problem ('' when the entry is valid), Skip ('' or why the entry is left unchanged)
         Tokens in Value/ItemId: {COMPUTERNAME}, {SITE}, {CNC1}..{CNC3} (DOC-assigned machine names),
-        {DEVICENR1}..{DEVICENR3}.
+        {DEVICENR1}..{DEVICENR3}, and the setting tokens from Get-800xASettings (e.g. {VERIFYONSHIFT}).
+        An entry whose ItemId contains {CELL} is repeated for each DOC-assigned CNC n (Cell_n); {CNC}/{DEVICENR}
+        then mean that CNC's machine name / Device Nr, and setting tokens use that cell's values.
+        Optional per entry: When = a setting token; the entry is only written when that setting is True.
+                            Min / Max = allowed range for numeric types.
+        Skipped: a setting used in Value is empty (not set), or the When setting is not True.
         Refused (HANDOFF): values containing ", and SourceCode / TriggerText / ActionTrig_* properties.
     #>
     param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [hashtable]$State)
-    $tokens = @{ COMPUTERNAME = $env:COMPUTERNAME; SITE = [string]$State['SiteCode'] }
-    foreach ($m in (Get-AssignedCNCs -State $State -Manifest $Manifest)) {
-        $tokens["CNC$($m.CNCIndex)"]      = $m.MachineName
-        $tokens["DEVICENR$($m.CNCIndex)"] = $m.DeviceNr
+    $base = @{ COMPUTERNAME = $env:COMPUTERNAME; SITE = [string]$State['SiteCode'] }
+    $cncs = @(Get-AssignedCNCs -State $State -Manifest $Manifest)
+    foreach ($m in $cncs) {
+        $base["CNC$($m.CNCIndex)"]      = $m.MachineName
+        $base["DEVICENR$($m.CNCIndex)"] = $m.DeviceNr
     }
     $expand = {
-        param([string]$Text)
-        [regex]::Replace($Text, '\{([A-Z0-9]+)\}', { param($x) if ($tokens.ContainsKey($x.Groups[1].Value)) { [string]$tokens[$x.Groups[1].Value] } else { $x.Value } })
+        param([string]$Text, [hashtable]$Tokens)
+        [regex]::Replace($Text, '\{([A-Z0-9]+)\}', { param($x) if ($Tokens.ContainsKey($x.Groups[1].Value)) { [string]$Tokens[$x.Groups[1].Value] } else { $x.Value } })
     }
     $numeric = @{ Int8 = [sbyte]; Byte = [byte]; Int16 = [int16]; UInt16 = [uint16]; Int32 = [int32]; UInt32 = [uint32]
                   Int64 = [int64]; UInt64 = [uint64]; Float = [single]; Double = [double] }
 
+    $field = { param($Entry, [string]$Name) $f = $Entry.PSObject.Properties[$Name]; if ($f) { $f.Value } }
+
     foreach ($p in @($Manifest.ABB800xA.Properties)) {
         if (-not $p) { continue }
-        $item  = & $expand ([string]$p.ItemId)
-        $value = & $expand ([string]$p.Value)
-        $type  = if ($p.Type) { [string]$p.Type } else { 'String' }
-        $problem = ''
-        if (-not $item) { $problem = 'ItemId is empty' }
-        elseif ($item -match ':(SourceCode|TriggerText|ActionTrig_)') { $problem = 'This property must never be written (calculation code / triggers / order flags)' }
-        elseif ("$item $value" -match '\{[A-Z0-9]+\}') { $problem = "Unknown token in '$item' / '$value'" }
-        elseif ($value -match '"') { $problem = 'Values containing double quotes are not supported' }
-        elseif ($type -eq 'Bool' -and $value -notin 'True', 'False') { $problem = "Bool value must be True or False, not '$value'" }
-        elseif ($numeric.ContainsKey($type)) {
-            $parsed = $null
-            try { $parsed = [System.Convert]::ChangeType($value, $numeric[$type], [System.Globalization.CultureInfo]::InvariantCulture) } catch { }
-            if ($null -eq $parsed) { $problem = "'$value' is not a valid $type" }
+        $when = ([string](& $field $p 'When')).ToUpper()
+        $min  = & $field $p 'Min'
+        $max  = & $field $p 'Max'
+        $type = if (& $field $p 'Type') { [string]$p.Type } else { 'String' }
+
+        # one pass per DOC-assigned CNC for {CELL} entries, otherwise a single pass
+        $passes = if ([string]$p.ItemId -match '\{CELL\}') {
+            @($cncs | ForEach-Object { @{ Cell = [int]$_.CNCIndex; Extra = @{ CELL = $_.CNCIndex; CNC = $_.MachineName; DEVICENR = $_.DeviceNr } } })
+        } else { @(@{ Cell = 0; Extra = @{} }) }
+
+        foreach ($pass in $passes) {
+            $settings = Get-800xASettings -Manifest $Manifest -State $State -Cell $pass.Cell
+            $tokens = $base.Clone()
+            foreach ($k in $settings.Keys) { $tokens[$k] = $settings[$k] }
+            foreach ($k in $pass.Extra.Keys) { $tokens[$k] = $pass.Extra[$k] }
+
+            $item  = & $expand ([string]$p.ItemId) $tokens
+            $value = & $expand ([string]$p.Value) $tokens
+            $unset = @([regex]::Matches([string]$p.Value, '\{([A-Z0-9]+)\}') | ForEach-Object { $_.Groups[1].Value } |
+                       Where-Object { $settings.ContainsKey($_) -and -not $settings[$_] })
+            $skip = ''
+            if ($when -and $settings.ContainsKey($when) -and $settings[$when] -ne 'True') { $skip = "only written when $when is True" }
+            elseif ($unset) { $skip = "$($unset -join ', ') not set - left unchanged" }
+
+            $problem = ''
+            if (-not $item) { $problem = 'ItemId is empty' }
+            elseif ($item -match ':(SourceCode|TriggerText|ActionTrig_)') { $problem = 'This property must never be written (calculation code / triggers / order flags)' }
+            elseif ($when -and -not $settings.ContainsKey($when)) { $problem = "When refers to an unknown setting '$when'" }
+            elseif ($skip) { }
+            elseif ("$item $value" -match '\{[A-Z0-9]+\}') { $problem = "Unknown token in '$item' / '$value'" }
+            elseif ($value -match '"') { $problem = 'Values containing double quotes are not supported' }
+            elseif ($type -eq 'Bool' -and $value -notin 'True', 'False') { $problem = "Bool value must be True or False, not '$value'" }
+            elseif ($numeric.ContainsKey($type)) {
+                $parsed = $null
+                try { $parsed = [System.Convert]::ChangeType($value, $numeric[$type], [System.Globalization.CultureInfo]::InvariantCulture) } catch { }
+                if ($null -eq $parsed) { $problem = "'$value' is not a valid $type" }
+                elseif ($null -ne $min -and [double]$parsed -lt [double]$min) { $problem = "$value is below the minimum $min" }
+                elseif ($null -ne $max -and [double]$parsed -gt [double]$max) { $problem = "$value is above the maximum $max" }
+            }
+            elseif ($type -ne 'String' -and $type -ne 'Bool') { $problem = "Unknown Type '$type' (String, Bool, Int16/32/64, UInt16/32/64, Int8, Byte, Float, Double)" }
+            [pscustomobject]@{ ItemId = $item; Value = $value; Type = $type; Description = [string](& $field $p 'Description'); Problem = $problem; Skip = $skip }
         }
-        elseif ($type -ne 'String' -and $type -ne 'Bool') { $problem = "Unknown Type '$type' (String, Bool, Int16/32/64, UInt16/32/64, Int8, Byte, Float, Double)" }
-        [pscustomobject]@{ ItemId = $item; Value = $value; Type = $type; Description = [string]$p.Description; Problem = $problem }
     }
 }
 
@@ -161,7 +237,10 @@ function Invoke-800xAPropertyStep {
         $invalid = @($plan | Where-Object Problem)
         foreach ($p in $invalid) { Add-Result -Phase $Phase -Check "800xA property $($p.ItemId)" -Status FAIL -Detail $p.Problem }
         if ($invalid) { throw "800xA property list has errors - nothing was written. Fix Manifest.ABB800xA.Properties." }
-
+        foreach ($p in @($plan | Where-Object Skip)) { Add-Result -Phase $Phase -Check "800xA property $($p.ItemId)" -Status SKIP -Detail $p.Skip }
+        $plan = @($plan | Where-Object { -not $_.Skip })
+    }
+    if ($plan.Count) {
         $kit = Get-800xAKit -Manifest $Manifest
         foreach ($problem in $kit.Problems) { Add-Result -Phase $Phase -Check "800xA kit" -Status FAIL -Detail $problem }
         if ($kit.Problems.Count) { throw "800xA kit not usable - nothing was written." }
