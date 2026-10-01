@@ -145,7 +145,7 @@ function Get-800xAPropertyPlan {
     #>
     param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [hashtable]$State)
     $base = @{ COMPUTERNAME = $env:COMPUTERNAME; SITE = [string]$State['SiteCode'] }
-    $cncs = @(Get-AssignedCNCs -State $State -Manifest $Manifest)
+    $cncs = Get-AssignedCNCs -State $State -Manifest $Manifest   # already an array (return ,$result); @() would nest it
     foreach ($m in $cncs) {
         $base["CNC$($m.CNCIndex)"]      = $m.MachineName
         $base["DEVICENR$($m.CNCIndex)"] = $m.DeviceNr
@@ -161,7 +161,7 @@ function Get-800xAPropertyPlan {
 
     foreach ($p in @($Manifest.ABB800xA.Properties)) {
         if (-not $p) { continue }
-        $when = ([string](& $field $p 'When')).ToUpper()
+        $when = "$(& $field $p 'When')".ToUpper()   # an empty pipeline cast to [string] is $null, not ''
         $min  = & $field $p 'Min'
         $max  = & $field $p 'Max'
         $type = if (& $field $p 'Type') { [string]$p.Type } else { 'String' }

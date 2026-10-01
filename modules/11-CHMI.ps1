@@ -78,7 +78,7 @@ function Invoke-CHMI {
     #region -- Guided checklist (pause for operator) --------------------------
 
     $account = ([string]$Manifest.AppAccount) -replace '\{SITE\}', [string]$State['SiteCode']
-    $cells = @(Get-AssignedCNCs -State $State -Manifest $Manifest | ForEach-Object { "Cell_$($_.CNCIndex)" })
+    $cells = @((Get-AssignedCNCs -State $State -Manifest $Manifest) | ForEach-Object { "Cell_$($_.CNCIndex)" })   # () unrolls the returned array
     if (-not $cells) { $cells = @('CNCx_Cell') }
 
     Write-Log MANUAL "CHMI requires manual steps (D01555607, CHMI / APC UI)."
