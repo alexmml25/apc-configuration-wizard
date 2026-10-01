@@ -581,7 +581,7 @@ $xamlText = @'
           <StackPanel x:Name="PageCHMI" Visibility="Collapsed">
             <TextBlock Text="CHMI (800xA)" Style="{StaticResource PageTitle}"/>
             <TextBlock Style="{StaticResource PageHint}"
-                       Text="Step 11 writes these settings to the General Properties of each cell in 800xA. The current values are read from 800xA when this page opens; only values that differ are written, and every change is logged."/>
+                       Text="800xA (CHMI) settings for each cell. The current values are read from 800xA; only changed values are written, and every change is logged."/>
             <Border Style="{StaticResource Card}" Padding="16,12,16,6">
               <StackPanel>
                 <TextBlock Text="Verification trigger" Style="{StaticResource CardTitle}" Margin="0,0,0,2"/>
@@ -648,7 +648,7 @@ $xamlText = @'
             <Border Style="{StaticResource Card}">
               <StackPanel>
                 <TextBlock Text="Inspection CSV folders" Style="{StaticResource CardTitle}" Margin="0,0,0,2"/>
-                <TextBlock Style="{StaticResource PageHint}" Margin="0,0,0,10" Text="Folders for the inspection CSV files, the same for every cell (Measurements &gt; Inspections GP). The defaults follow the local data root on the Data applications page."/>
+                <TextBlock Style="{StaticResource PageHint}" Margin="0,0,0,10" Text="Folders for the inspection CSV files, the same for every cell. The defaults follow the local data root on the Data applications page."/>
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                   <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
