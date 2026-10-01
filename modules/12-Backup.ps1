@@ -115,8 +115,19 @@ function Invoke-Backup {
 
     #region -- deviceWise (not automated yet) ----------------------------------
 
+    # Not automated (no API). A marker file in Backups\deviceWise keeps the gap visible; Step 13 warns until
+    # a real deviceWise backup is saved next to it.
+    $dwDir = Join-Path $destRoot 'deviceWise'
+    try {
+        New-Item -ItemType Directory -Path $dwDir -Force | Out-Null
+        Set-Content -Path (Join-Path $dwDir 'NOT_BACKED_UP.txt') -Encoding ASCII -Value @(
+            'deviceWise is NOT backed up by the wizard (no API). This backup is incomplete until it is done by hand:'
+            '  deviceWise Workbench -> Projects -> right-click each project -> Backup (include Network Settings),'
+            "  save the files into this folder ($dwDir)."
+            'Then delete this file.')
+    } catch { }
     Add-Result -Phase Backup -Check "deviceWise backup" -Status WARN `
-        -Detail "Not automated yet - in Workbench: Projects -> right-click each project -> Backup (include Network Settings), save to $(Join-Path $destRoot 'deviceWise')"
+        -Detail "NOT backed up - the backup is incomplete. In Workbench: Projects -> right-click each project -> Backup (include Network Settings), save to $dwDir"
 
     #endregion
 
