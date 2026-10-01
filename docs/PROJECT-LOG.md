@@ -185,6 +185,9 @@ Rules the wizard follows, confirmed with the APC engineer. The file where each r
 
 ## Log
 
+### 2026-09-30 - App icon
+- `APC Configuration Manager Icon.png` (user's icon, scaled from 1254 px to 256 px) is in the header's right corner, opposite the APC logo, clipped to its circle. It is also the window and taskbar icon.
+
 ### 2026-09-30 - Step 12: one local timestamped backup folder
 - **User decisions:** all backups go to a timestamped folder next to the wizard's Reports (`C:\APC_Config\Backups\<ts>`); CNCnetPDM is not copied twice, since it is under `C:\Medtronic`; deviceWise is not doable yet.
 - **Step 12 rewritten:**

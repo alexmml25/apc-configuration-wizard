@@ -289,7 +289,7 @@ $xamlText = @'
     <!-- Header -->
     <Border Grid.Row="0" Background="#F0F0F0" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1">
       <Grid Margin="16,0">
-        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <Image x:Name="ImgLogo" Height="36" MaxWidth="150" Stretch="Uniform" Margin="0,0,24,0" VerticalAlignment="Center"/>
         <TextBlock Grid.Column="1" Text="APC Configuration Deployment Wizard" FontSize="18" FontWeight="SemiBold"
                    Foreground="Black" VerticalAlignment="Center"/>
@@ -297,6 +297,9 @@ $xamlText = @'
                 Padding="10,3" VerticalAlignment="Center">
           <TextBlock x:Name="TxtTypeChip" FontSize="12" Foreground="#334155"/>
         </Border>
+        <Image x:Name="ImgAppIcon" Grid.Column="3" Width="44" Height="44" Stretch="Uniform" Margin="16,0,0,0" VerticalAlignment="Center">
+          <Image.Clip><EllipseGeometry Center="22,22" RadiusX="22" RadiusY="22"/></Image.Clip>
+        </Image>
       </Grid>
     </Border>
 
@@ -787,16 +790,21 @@ $xaml.SelectNodes("//*[@*[local-name()='Name']]") | ForEach-Object {
     $controls[$_.Name] = $window.FindName($_.Name)
 }
 
-# Logo
-$logoPath = Join-Path $Script:RootDir 'APC Logo.png'
-if (Test-Path $logoPath) {
+# Logo (left), app icon (right, and the window / taskbar icon)
+function Get-ImageFile([string]$Name) {
+    $path = Join-Path $Script:RootDir $Name
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
     $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
     $bmp.BeginInit()
-    $bmp.UriSource   = [Uri]::new($logoPath, [System.UriKind]::Absolute)
+    $bmp.UriSource   = [Uri]::new($path, [System.UriKind]::Absolute)
     $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
     $bmp.EndInit()
-    $controls['ImgLogo'].Source = $bmp
+    return $bmp
 }
+$bmp = Get-ImageFile 'APC Logo.png'
+if ($bmp) { $controls['ImgLogo'].Source = $bmp }
+$bmp = Get-ImageFile 'APC Configuration Manager Icon.png'
+if ($bmp) { $controls['ImgAppIcon'].Source = $bmp; $window.Icon = $bmp }
 
 # Init controls
 $controls['TxtUsername'].Text = "$env:USERDOMAIN\"
