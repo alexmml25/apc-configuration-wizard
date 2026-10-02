@@ -273,8 +273,8 @@
   "Backup": {
     "Root":                 "C:\\APC_Config\\Backups",
     "MedtronicDir":         "C:\\Medtronic",
-    "MedtronicHelp":        "Step 12 copies only these folders of MedtronicDir into Backups\\Medtronic\\<folder>, leaving out MedtronicExcludeDirs (relative to MedtronicDir).",
-    "MedtronicIncludeDirs": [ "File Manager", "Data Collector", "Data Analyzer", "CNCNetPDM" ],
+    "MedtronicHelp":        "Step 12 copies only these folders of MedtronicDir into Backups\\Medtronic\\<folder>, leaving out MedtronicExcludeDirs (relative to MedtronicDir). {n} = each DOC instance of the run (1..DOCCount).",
+    "MedtronicIncludeDirs": [ "DOC-{n}", "File Manager", "Data Collector", "Data Analyzer", "CNCNetPDM" ],
     "MedtronicExcludeDirs": [ "CNCNetPDM\\log" ]
   },
 

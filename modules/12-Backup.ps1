@@ -9,8 +9,9 @@
                             its exit code), then copied from the 800xA backup folder (C:\BACKUP\...);
                             the kit's log Backup800xA_<ts>.log and the robocopy logs go to the run's Logs
                             folder (without a run folder: the backup folder)
-      Medtronic\<folder>    only the C:\Medtronic folders in Manifest.Backup.MedtronicIncludeDirs (File Manager,
-                            Data Collector, Data Analyzer, CNCNetPDM), without MedtronicExcludeDirs (CNCnetPDM logs)
+      Medtronic\<folder>    only the C:\Medtronic folders in Manifest.Backup.MedtronicIncludeDirs (DOC-1..DOCCount,
+                            File Manager, Data Collector, Data Analyzer, CNCNetPDM), without MedtronicExcludeDirs
+                            (CNCnetPDM logs)
       CNCnetPDM\            only when CNCnetPDM is installed outside C:\Medtronic
     deviceWise projects are not backed up automatically yet (no API) - back them up in Workbench.
 #>
@@ -92,8 +93,13 @@ function Invoke-Backup {
     if (Test-Path -LiteralPath $medtronic) {
         $sep     = [IO.Path]::DirectorySeparatorChar
         $exclude = @($cfg.MedtronicExcludeDirs | Where-Object { $_ } | ForEach-Object { Join-Path $medtronic ($_ -replace '[\\/]', $sep) })
-        Write-Log INFO "Medtronic backup: $($cfg.MedtronicIncludeDirs -join ', ')$(if ($exclude) { " (leaving out $($cfg.MedtronicExcludeDirs -join ', '))" })"
-        foreach ($sub in @($cfg.MedtronicIncludeDirs)) {
+        # "DOC-{n}" = one folder per DOC instance of this run
+        $docCount = [int]$State['DOCCount']; if ($docCount -lt 1) { $docCount = 3 }
+        $subs = foreach ($d in @($cfg.MedtronicIncludeDirs)) {
+            if ($d -match '\{n\}') { 1..$docCount | ForEach-Object { $d.Replace('{n}', [string]$_) } } else { $d }
+        }
+        Write-Log INFO "Medtronic backup: $($subs -join ', ')$(if ($exclude) { " (leaving out $($cfg.MedtronicExcludeDirs -join ', '))" })"
+        foreach ($sub in @($subs)) {
             $src = Join-Path $medtronic $sub
             if (-not (Test-Path -LiteralPath $src)) {
                 Add-Result -Phase Backup -Check "Medtronic\$sub backup" -Status WARN -Detail "Not found: $src"
