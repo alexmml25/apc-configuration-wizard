@@ -9,9 +9,8 @@
                             its exit code), then copied from the 800xA backup folder (C:\BACKUP\...);
                             the kit's log Backup800xA_<ts>.log and the robocopy logs go to the run's Logs
                             folder (without a run folder: the backup folder)
-      Medtronic\            C:\Medtronic: DOC 1-3, File Manager, Data Collector, Data Analyzer and CNCnetPDM,
-                            without the folders in Manifest.Backup.MedtronicExcludeDirs (logs, measurement data,
-                            old backups)
+      Medtronic\<folder>    only the C:\Medtronic folders in Manifest.Backup.MedtronicIncludeDirs (File Manager,
+                            Data Collector, Data Analyzer, CNCNetPDM), without MedtronicExcludeDirs (CNCnetPDM logs)
       CNCnetPDM\            only when CNCnetPDM is installed outside C:\Medtronic
     deviceWise projects are not backed up automatically yet (no API) - back them up in Workbench.
 #>
@@ -87,13 +86,22 @@ function Invoke-Backup {
 
     #endregion
 
-    #region -- C:\Medtronic (DOC, data applications, CNCnetPDM) ----------------
+    #region -- C:\Medtronic: only the folders in Manifest.Backup.MedtronicIncludeDirs ------
 
     $medtronic = [string]$cfg.MedtronicDir
     if (Test-Path -LiteralPath $medtronic) {
-        $exclude = @($cfg.MedtronicExcludeDirs | ForEach-Object { Join-Path $medtronic ($_ -replace '[\\/]', [IO.Path]::DirectorySeparatorChar) })
-        if ($exclude) { Write-Log INFO "Medtronic backup leaves out: $($cfg.MedtronicExcludeDirs -join ', ')" }
-        [void](Copy-Tree -Source $medtronic -Destination (Join-Path $destRoot 'Medtronic') -Label 'Medtronic' -ExcludeDirs $exclude)
+        $sep     = [IO.Path]::DirectorySeparatorChar
+        $exclude = @($cfg.MedtronicExcludeDirs | Where-Object { $_ } | ForEach-Object { Join-Path $medtronic ($_ -replace '[\\/]', $sep) })
+        Write-Log INFO "Medtronic backup: $($cfg.MedtronicIncludeDirs -join ', ')$(if ($exclude) { " (leaving out $($cfg.MedtronicExcludeDirs -join ', '))" })"
+        foreach ($sub in @($cfg.MedtronicIncludeDirs)) {
+            $src = Join-Path $medtronic $sub
+            if (-not (Test-Path -LiteralPath $src)) {
+                Add-Result -Phase Backup -Check "Medtronic\$sub backup" -Status WARN -Detail "Not found: $src"
+                continue
+            }
+            $subExclude = @($exclude | Where-Object { (Join-Path $_ '').StartsWith((Join-Path $src ''), [System.StringComparison]::OrdinalIgnoreCase) })
+            [void](Copy-Tree -Source $src -Destination (Join-Path (Join-Path $destRoot 'Medtronic') $sub) -Label "Medtronic\$sub" -ExcludeDirs $subExclude)
+        }
     } else {
         Add-Result -Phase Backup -Check "Medtronic backup" -Status FAIL -Detail "Not found: $medtronic"
     }
@@ -105,8 +113,8 @@ function Invoke-Backup {
     $cncPdmDir = @($Manifest.CNCnetPDM.InstallDir, $Manifest.CNCnetPDM.FallbackDir) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
     if (-not $cncPdmDir) {
         Add-Result -Phase Backup -Check "CNCnetPDM backup" -Status WARN -Detail "CNCnetPDM folder not found"
-    } elseif ((Join-Path $cncPdmDir '').StartsWith((Join-Path $medtronic ''), [System.StringComparison]::OrdinalIgnoreCase)) {
-        Write-Log INFO "CNCnetPDM ($cncPdmDir) is inside $medtronic - included in the Medtronic backup."
+    } elseif (@($cfg.MedtronicIncludeDirs | Where-Object { (Join-Path (Join-Path $medtronic $_) '') -eq (Join-Path $cncPdmDir '') }).Count) {
+        Write-Log INFO "CNCnetPDM ($cncPdmDir) is included in the Medtronic backup."
     } else {
         [void](Copy-Tree -Source $cncPdmDir -Destination (Join-Path $destRoot 'CNCnetPDM') -Label 'CNCnetPDM' -ExcludeDirs @(Join-Path $cncPdmDir 'log'))
     }

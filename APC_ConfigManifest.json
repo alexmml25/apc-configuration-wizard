@@ -273,7 +273,9 @@
   "Backup": {
     "Root":                 "C:\\APC_Config\\Backups",
     "MedtronicDir":         "C:\\Medtronic",
-    "MedtronicExcludeDirs": [ "CNCNetPDM\\log", "DataCollector_Data", "Backup" ]
+    "MedtronicHelp":        "Step 12 copies only these folders of MedtronicDir into Backups\\Medtronic\\<folder>, leaving out MedtronicExcludeDirs (relative to MedtronicDir).",
+    "MedtronicIncludeDirs": [ "File Manager", "Data Collector", "Data Analyzer", "CNCNetPDM" ],
+    "MedtronicExcludeDirs": [ "CNCNetPDM\\log" ]
   },
 
   "ABB800xA": {
