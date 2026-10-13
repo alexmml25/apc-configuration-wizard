@@ -4,8 +4,10 @@
     Step 4 - deviceWise base platform (SOP D01555607 2.1.1, deviceWise - Base Platform Setup).
 .DESCRIPTION
     No Workbench and no API: everything goes through the gateway's import folder (DeviceWise.ps1).
-      1. Packages OPC UA Server, OPC UA Client, FileWatcher, CNCnetPDM: the approved .pkg files from
-         <RepositoryRoot>\<DeviceWise.PackagesRepoSubPath>, one per dwcore restart, skipped when
+      1. Packages OPC UA Server, OPC UA Client, FileWatcher, CNCnetPDM from the approved payload in
+         <RepositoryRoot>\<DeviceWise.PackagesRepoSubPath> (tools\Export-DwPackagePayload.ps1; the .pkg
+         files are encrypted and rejected by the gateway): each package's own install instructions
+         are followed, all in one dwcore stop, files checked against SHA256SUMS.txt; skipped when
          already installed (Gateway\dwcore\packages\<name>.xml).
       2. Base configuration from the approved baseline backup (<DeviceWise.BaselineRepoSubPath>,
          5-Automation\Baseline_Backup.dbk = the SJUM7AAPPS0065 backup): licence client (MSPM7AAPPS0342; the source VM's voucher
@@ -55,30 +57,18 @@ function Invoke-DeviceWiseBase {
 
     #region -- 1. Packages --------------------------------------------------------
 
-    $pkgFiles = Get-ChildItem $pkgDir -Filter '*.pkg' -File
-    foreach ($name in $dw.Packages) {
-        if (Test-Path (Join-Path $paths.Packages "$name.xml")) {
-            Add-Result -Phase $phase -Check "Package $name" -Status PASS -Detail 'already installed'
-            continue
-        }
-        $file = $pkgFiles | Where-Object { $_.Name -like "dw.$name.*.pkg" } | Sort-Object Name | Select-Object -Last 1
-        if (-not $file) {
-            Add-Result -Phase $phase -Check "Package $name" -Status FAIL -Detail "no dw.$name.*.pkg in $pkgDir"
-            throw "Package $name not found in $pkgDir"
-        }
-        if (-not $saved) {
-            Restart-DwCore -WhileStopped { Save-DwDatabases -Paths $paths -Dest $safety }
-            $saved = $true
-            Write-Log INFO "Safety copy of the gateway databases: $safety"
-        }
-        Write-Log INFO "Installing $($file.Name)"
-        $r = Install-DwPackage -Paths $paths -PkgFile $file.FullName -Name $name -TimeoutSec $dw.ImportTimeoutSec
-        $r.Lines | ForEach-Object { Write-Log INFO "  $_" }
-        if (-not $r.Ok) {
-            Add-Result -Phase $phase -Check "Package $name" -Status FAIL -Detail $r.Detail
-            throw "Package $name was not installed: $($r.Detail)"
-        }
-        Add-Result -Phase $phase -Check "Package $name" -Status PASS -Detail $file.Name
+    $plan = Get-DwPackagePlan -Paths $paths -PayloadDir $pkgDir -Keys @($dw.Packages)
+    foreach ($p in $plan | Where-Object { $_.Installed }) {
+        Add-Result -Phase $phase -Check "Package $($p.Key)" -Status PASS -Detail 'already installed'
+    }
+    $installed = @(Install-DwPackages -Paths $paths -Plan $plan -BeforeCopy {
+        Save-DwDatabases -Paths $paths -Dest $safety
+        Write-Log INFO "Safety copy of the gateway databases: $safety"
+    })
+    if ($installed.Count) { $saved = $true }
+    foreach ($p in $plan | Where-Object { $installed -contains $_.Key }) {
+        $ok = Test-Path (Join-Path $paths.Packages "$($p.Key).xml")
+        Add-Result -Phase $phase -Check "Package $($p.Key)" -Status $(if ($ok) { 'PASS' } else { 'FAIL' }) -Detail "$($p.Name) $($p.Version)"
     }
 
     #endregion

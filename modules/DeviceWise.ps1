@@ -7,7 +7,9 @@
     documented import folder, Gateway\staging\system\import (import.readme.txt in the install):
       import.dwx   a deviceWise export / Workbench backup, imported when dwcore starts;
                    outcome in import.result (the readme says import.results), file then deleted
-      package.sup  a package (.pkg), installed when dwcore starts; outcome in package.result(s)
+      package.sup  a package; NOT usable with the approved .pkg files (encrypted: "Failed to
+                   decrypt file", -7018). Packages are installed from an exported payload
+                   by following their own install instructions (Get-DwPackagePlan).
     Rules found on the test VMs (2026-10-08 / 10-13):
       - dwts must be running during an import, or every transport / transaction fails (-4999);
         dwcore and dwts have no service dependency, so only dwcore is restarted.
@@ -192,20 +194,67 @@ function Save-DwDatabases {
     }
 }
 
-function Install-DwPackage {
-    # Installs one .pkg through package.sup. Returns @{ Ok; Lines; Detail }.
-    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$PkgFile,
-          [Parameter(Mandatory)] [string]$Name, [int]$TimeoutSec = 900)
-    $target  = Join-Path $Paths.ImportDir 'package.sup'
-    $results = @((Join-Path $Paths.ImportDir 'package.results'), (Join-Path $Paths.ImportDir 'package.result'))
-    if (Test-Path $target) { throw "A package.sup is already waiting in $($Paths.ImportDir)." }
-    foreach ($r in $results) { if (Test-Path $r) { Remove-Item $r -Force } }
-    Restart-DwCore -WhileStopped { Copy-Item $PkgFile $target }
-    $done = Wait-DwImportFile -Queued $target -ResultFiles $results -TimeoutSec $TimeoutSec
-    $installed = Test-Path (Join-Path $Paths.Packages "$Name.xml")
-    $lines = if ($done) { @(Get-Content $done) } else { @() }
-    $detail = if (-not $done) { "no package result after $TimeoutSec s" } else { ($lines | Select-Object -Last 2) -join ' / ' }
-    return @{ Ok = ($installed -and [bool]$done); Lines = $lines; Detail = $detail }
+function Get-DwPackagePlan {
+    <#
+        Reads the approved package payload (Manifest.DeviceWise.PackagesRepoSubPath, made by
+        tools\Export-DwPackagePayload.ps1 from a gateway installed through Workbench):
+          <dir>\<key>\<key>.xml   the package's own install instructions (DWPackage/Install)
+          <dir>\<key>\<from>      each file the instructions add
+          <dir>\SHA256SUMS.txt    checksums of all of them
+        The .pkg files themselves are encrypted; the gateway rejects them as package.sup (-7018).
+        Returns one entry per key: @{ Key; Name; Version; Xml; Copies = @(@{ Src; Dest }); Installed }.
+        Throws on a missing file, a checksum mismatch or an install action the wizard does not know.
+    #>
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$PayloadDir, [Parameter(Mandatory)] [string[]]$Keys)
+    $sumFile = Join-Path $PayloadDir 'SHA256SUMS.txt'
+    if (-not (Test-Path $sumFile)) { throw "SHA256SUMS.txt not found in $PayloadDir" }
+    $sums = @{}
+    foreach ($line in Get-Content $sumFile) { if ($line -match '^([0-9A-Fa-f]{64})\s+(.+)$') { $sums[$Matches[2].Trim()] = $Matches[1].ToUpper() } }
+    $check = {
+        param([string]$rel)
+        $file = Join-Path $PayloadDir ($rel -replace '/', '\')
+        if (-not (Test-Path $file)) { throw "Package payload file missing: $file" }
+        if (-not $sums.ContainsKey($rel)) { throw "No checksum for $rel in SHA256SUMS.txt" }
+        if ((Get-FileHash $file -Algorithm SHA256).Hash -ne $sums[$rel]) { throw "Checksum mismatch: $file" }
+        return $file
+    }
+    $plan = foreach ($key in $Keys) {
+        $xmlFile = & $check "$key/$key.xml"
+        [xml]$pkg = Get-Content $xmlFile -Raw
+        $copies = @()
+        foreach ($a in @($pkg.DocumentElement.SelectNodes('Install/*'))) {
+            switch ($a.LocalName) {
+                { $_ -in 'StopRuntime', 'StartRuntime' } { continue }   # dwcore is stopped/started around all packages
+                'AddFile'        { $copies += @{ Src = (& $check "$key/$($a.GetAttribute('from'))"); Dest = Join-Path $Paths.Root ('dwcore\'  + ($a.GetAttribute('to') -replace '/', '\')) } }
+                'AddStagingFile' { $copies += @{ Src = (& $check "$key/$($a.GetAttribute('from'))"); Dest = Join-Path $Paths.Root ('staging\' + ($a.GetAttribute('to') -replace '/', '\')) } }
+                default          { throw "Package $key uses install action <$($a.LocalName)>, which the wizard does not support." }
+            }
+        }
+        @{ Key = $key; Name = $pkg.DocumentElement.GetAttribute('name'); Version = $pkg.DocumentElement.GetAttribute('version'); Xml = $xmlFile; Copies = $copies
+           Installed = Test-Path (Join-Path $Paths.Packages "$key.xml") }
+    }
+    return ,@($plan)
+}
+
+function Install-DwPackages {
+    # Installs the plan's packages that are not installed yet, in one dwcore stop: the files from
+    # their install instructions, then <key>.xml into dwcore\packages (how the gateway records an
+    # installed package). $BeforeCopy runs first while dwcore is stopped. Returns the keys installed.
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [object[]]$Plan, [scriptblock]$BeforeCopy)
+    $todo = @($Plan | Where-Object { -not $_.Installed })
+    if (-not $todo.Count) { return @() }
+    Restart-DwCore -WhileStopped {
+        if ($BeforeCopy) { & $BeforeCopy }
+        foreach ($p in $todo) {
+            foreach ($c in $p.Copies) {
+                New-Item -ItemType Directory -Path (Split-Path $c.Dest) -Force | Out-Null
+                Copy-Item $c.Src $c.Dest -Force
+                Write-Log INFO "  $($p.Key): $(Split-Path $c.Src -Leaf) -> $($c.Dest)"
+            }
+            Copy-Item $p.Xml (Join-Path $Paths.Packages "$($p.Key).xml") -Force
+        }
+    }
+    return @($todo | ForEach-Object { $_.Key })
 }
 
 #endregion

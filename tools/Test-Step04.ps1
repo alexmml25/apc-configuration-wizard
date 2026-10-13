@@ -7,7 +7,8 @@
     Loads the wizard's manifest and modules\04-DeviceWiseBase.ps1 and runs Invoke-DeviceWiseBase with
     the CNCs given here, so Step 1 (Site DB) is not needed. Results and the log go to
     C:\APC_Config\Test-Step04_<ts>\ (Logs, Backups with the safety copy of the gateway databases).
-    -PackageDir / -Baseline (the .dbk file) override the repository share paths from the manifest.
+    -PackageDir (the package payload folder from tools\Export-DwPackagePayload.ps1) / -Baseline (the .dbk
+    file) override the repository share paths from the manifest.
     This CHANGES the gateway.
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Test-Step04.ps1 -Cnc 'Citizen 01|CITIZEN_L20X_IV','Citizen 03|CITIZEN_L20X_IV','Citizen 08|CITIZEN_L20X_IV'
