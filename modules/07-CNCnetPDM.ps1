@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Step 8 - Configure CNCnetPDM machine entries, license, and INI files.
+    Step 7 - Configure CNCnetPDM machine entries, license, and INI files.
 .DESCRIPTION
     Machines are the DOC-assigned CNCs (CNC n = DOC instance n). DeviceNr comes from Get-CNCDeviceInfo
     (Common.ps1): family digit + 3-digit machine number, e.g. CITIZEN_L20X_IV + 'Citizen 08' -> 1008;

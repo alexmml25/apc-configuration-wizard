@@ -179,7 +179,7 @@ function Get-DOCInclusionList {
 function New-SandboxManifest {
     <#
         Test mode: copies the installed config files the wizard edits into $Root and returns a copy of
-        the manifest whose paths point there, so Steps 3, 8, 9 and 10 change only the copies.
+        the manifest whose paths point there, so Steps 3, 7, 9 and 10 change only the copies.
           <Root>\DataApps\        File Manager / Data Collector / Data Analyzer configs
           <Root>\CNCnetPDM\       CNCnetPDM.ini, melcfg.ini, citizenm*/mitsubishim* driver .dll/.ini
           <Root>\DOC-{n}\DOC_II\  DOC XMLs (PartLookup under Plugins, SpcDb / Iqs under Plugins\IQS)

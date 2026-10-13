@@ -1,16 +1,15 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Step 7 - Register CNCnetPDM with deviceWise and map CNC paths.
+    Step 8 - Register CNCnetPDM with deviceWise and map CNC paths.
 .DESCRIPTION
     - Registers the CNCnetPDM instance folder with deviceWise
     - Polls until the instance reports Connected status
     - Maps each CNCnetPDM machine to its corresponding deviceWise CNC path
       (CNCnetPDM machine 1 -> CNC1_Path, etc.)
 
-    Prerequisite: CNCnetPDM must be configured (Step 8) and running before
-    the deviceWise connection will show Connected. This step registers the
-    path; connectivity confirmation may require Step 8 to complete first.
+    Runs after Step 7 (CNCnetPDM configured and running), as in the SOP, so the
+    CNCnetPDM machines are available when the paths are mapped.
 #>
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
@@ -94,7 +93,7 @@ function Invoke-DeviceWiseCNCPDM {
             Add-Result -Phase DeviceWise -Check "CNCnetPDM connection" -Status PASS -Detail "Connected"
         } else {
             Add-Result -Phase DeviceWise -Check "CNCnetPDM connection" -Status WARN `
-                -Detail "Not yet Connected  -  this is expected if CNCnetPDM is not fully configured yet (Step 8). Verify after Step 8 completes."
+                -Detail "Not yet Connected  -  check that Step 7 (CNCnetPDM) completed and the CNCnetPDM service is running."
         }
     }
 
@@ -127,5 +126,5 @@ function Invoke-DeviceWiseCNCPDM {
     #endregion
 
     Write-Log PASS "deviceWise CNCnetPDM integration complete."
-    Write-Log INFO "NOTE: CNCnetPDM connectivity (green indicator) must be verified after Step 8 configures the machine entries."
+    Write-Log INFO "NOTE: CNCnetPDM connectivity (green indicator) depends on the machine entries written by Step 7."
 }

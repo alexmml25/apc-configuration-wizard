@@ -47,8 +47,8 @@ $StepDefs = @(
     @{ Index =  4; Name = 'deviceWise Base Platform';       File = '04-DeviceWiseBase.ps1';   Fn = 'Invoke-DeviceWiseBase'    },
     @{ Index =  5; Name = 'deviceWise CHMI Integration';    File = '05-DeviceWiseCHMI.ps1';   Fn = 'Invoke-DeviceWiseCHMI'    },
     @{ Index =  6; Name = 'deviceWise SINC Integration';    File = '06-DeviceWiseSINC.ps1';   Fn = 'Invoke-DeviceWiseSINC'    },
-    @{ Index =  7; Name = 'deviceWise CNCnetPDM Integrate'; File = '07-DeviceWiseCNCPDM.ps1'; Fn = 'Invoke-DeviceWiseCNCPDM'  },
-    @{ Index =  8; Name = 'CNCnetPDM Configuration';        File = '08-CNCnetPDM.ps1';        Fn = 'Invoke-CNCnetPDM'   },
+    @{ Index =  7; Name = 'CNCnetPDM Configuration';        File = '07-CNCnetPDM.ps1';        Fn = 'Invoke-CNCnetPDM'   },
+    @{ Index =  8; Name = 'deviceWise CNCnetPDM Integrate'; File = '08-DeviceWiseCNCPDM.ps1'; Fn = 'Invoke-DeviceWiseCNCPDM'  },
     @{ Index =  9; Name = 'DOC XML Configuration';          File = '09-DOCConfig.ps1';        Fn = 'Invoke-DOCConfig'         },
     @{ Index = 10; Name = 'Data Applications Config';       File = '10-DataApps.ps1';         Fn = 'Invoke-DataApps'    },
     @{ Index = 11; Name = 'CHMI / APC UI OPC UA';           File = '11-CHMI.ps1';             Fn = 'Invoke-CHMI'        },
@@ -74,8 +74,8 @@ $Script:Dot = [string][char]0x00B7   # middle dot; kept out of the source so Win
 $Script:Components = [ordered]@{
     tsdb = @{ Label = 'TimescaleDB';                                                   Steps = @(2) }
     sinc = @{ Label = 'SINC folders';                                                  Steps = @(3) }
-    dw   = @{ Label = 'deviceWise';                                                    Steps = @(4, 5, 6, 7) }
-    cnc  = @{ Label = 'CNCnetPDM';                                                     Steps = @(8) }
+    dw   = @{ Label = 'deviceWise';                                                    Steps = @(4, 5, 6, 8) }
+    cnc  = @{ Label = 'CNCnetPDM';                                                     Steps = @(7) }
     doc  = @{ Label = 'DOC';                                                           Steps = @(9) }
     da   = @{ Label = 'Data applications (File Manager, Data Collector, Data Analyzer)'; Steps = @(10) }
     chmi = @{ Label = 'CHMI / APC UI';                                                 Steps = @(11) }
@@ -435,11 +435,11 @@ $xamlText = @'
                     <CheckBox x:Name="ChkComp_sinc" Content="SINC folders" FontWeight="SemiBold" VerticalContentAlignment="Center"/></DockPanel>
                 </Border>
                 <Border BorderBrush="#F1F5F9" BorderThickness="0,0,0,1" Padding="0,8">
-                  <DockPanel><TextBlock DockPanel.Dock="Right" Text="Steps 4-7" FontSize="12" Foreground="#64748B"/>
+                  <DockPanel><TextBlock DockPanel.Dock="Right" Text="Steps 4-6, 8" FontSize="12" Foreground="#64748B"/>
                     <CheckBox x:Name="ChkComp_dw" Content="deviceWise" FontWeight="SemiBold" VerticalContentAlignment="Center"/></DockPanel>
                 </Border>
                 <Border BorderBrush="#F1F5F9" BorderThickness="0,0,0,1" Padding="0,8">
-                  <DockPanel><TextBlock DockPanel.Dock="Right" Text="Step 8" FontSize="12" Foreground="#64748B"/>
+                  <DockPanel><TextBlock DockPanel.Dock="Right" Text="Step 7" FontSize="12" Foreground="#64748B"/>
                     <CheckBox x:Name="ChkComp_cnc" Content="CNCnetPDM" FontWeight="SemiBold" VerticalContentAlignment="Center"/></DockPanel>
                 </Border>
                 <Border BorderBrush="#F1F5F9" BorderThickness="0,0,0,1" Padding="0,8">
@@ -1017,7 +1017,7 @@ function Update-DOCMachineChoices {
     }
 }
 
-# Family, Device Nr and DLL for each assigned machine, as Step 8 will derive them
+# Family, Device Nr and DLL for each assigned machine, as Step 7 will derive them
 function Update-DOCDetails {
     foreach ($n in 1,2,3) {
         $cmb  = $controls["CmbDOCMachine$n"]
@@ -1822,7 +1822,7 @@ function Start-ConfigurationRun {
         Show-Warning "Enter the MedtronicSU password on the Sign in page - deviceWise (step 4) needs it." 'Password Required'; return $false
     }
     $license = $controls['TxtLicense'].Text.Trim()
-    if (8 -in $runSteps -and -not $license) {
+    if (7 -in $runSteps -and -not $license) {
         Show-Warning "Enter the CNCnetPDM license key or tick 'Use default perpetual license'."; return $false
     }
     if (10 -in $runSteps -and -not (Test-DataAppsPage)) { return $false }

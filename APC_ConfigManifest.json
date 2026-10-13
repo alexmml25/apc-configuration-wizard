@@ -90,7 +90,12 @@
     "OpcUaTagsRepoSubPath":   "deviceWise\\4-Projects and OPC UA Tags",
     "CHMIProjectRepoSubPath": "deviceWise\\4-Projects and OPC UA Tags",
     "SINCProjectRepoSubPath": "deviceWise\\4-Projects and OPC UA Tags",
-    "CNCNodes": [ "CNC1", "CNC2", "CNC3" ]
+    "CNCNodes": [ "CNC1", "CNC2", "CNC3" ],
+    "PackagesRepoSubPath":  "APC VM Software Components\\deviceWise\\3-Packages",
+    "Packages":             [ "dwopcua_server_v3", "dwopcua", "dwfilewatcher", "dwcncnetpdm" ],
+    "BaselineRepoSubPath":  "APC VM Software Components\\deviceWise\\5-Automation\\Baseline_Backup.dbk",
+    "BaseImportTypes":      [ "license.pool", "system", "Devices", "device", "file", "Endpoints", "user", "role", "policy", "alerts", "attention bit", "timesync", "report" ],
+    "ImportTimeoutSec":     900
   },
 
   "CHMIComponents": {
@@ -262,12 +267,12 @@
 
   "RunModes": {
     "Default":       "Reviewed",
-    "ReviewedSteps": [ 1, 3, 8, 9, 10, 11, 12, 13 ]
+    "ReviewedSteps": [ 1, 3, 7, 9, 10, 11, 12, 13 ]
   },
 
   "TestMode": {
     "SandboxRoot": "C:\\APC_Config\\Sandbox",
-    "SkipSteps":   [ 2, 4, 5, 6, 7, 11, 12 ]
+    "SkipSteps":   [ 2, 4, 5, 6, 8, 11, 12 ]
   },
 
   "Backup": {

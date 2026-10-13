@@ -571,7 +571,7 @@ function Invoke-Verification {
         }
     }
 
-    # Item 6 - per-device driver files: <dll>_<DeviceNr>.ini (renamed by Step 8) and .dll (created by CNCnetPDM)
+    # Item 6 - per-device driver files: <dll>_<DeviceNr>.ini (renamed by Step 7) and .dll (created by CNCnetPDM)
     Check 'CNCnetPDM' 'Driver DLL files renamed correctly' {
         if (-not $driverDir) { throw "Directory unknown" }
         $files = @($pdmCNCs | ForEach-Object {

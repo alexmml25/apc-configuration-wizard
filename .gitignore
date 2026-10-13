@@ -29,3 +29,22 @@ Run-Tests.cmd
 # Scripts that call ABB internal functions (from the decompiled portal) - local only
 tools/Invoke-800xACreateRoot.ps1
 tools/Probe-800xARootCert.ps1
+
+# deviceWise inspection output (contains the gateway product key) - never commit
+dw-*.txt
+
+# deviceWise gateway databases copied for inspection (user DB has password hashes) - never commit
+DW*.db
+DW*.db-journal
+
+# deviceWise installer copied for inspection - Telit property, never commit
+DWEnterprise_Install*
+
+# deviceWise export/backup files (site config) - never commit
+*.dwx
+*.dbk
+
+# deviceWise discovery tools (read binaries / abandoned HTTP API route) - local only
+tools/Find-DwStrings.ps1
+tools/Inspect-DwGateway.ps1
+tools/Test-DwHttpApi.ps1

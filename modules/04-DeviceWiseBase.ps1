@@ -1,22 +1,25 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Step 4 - Configure the deviceWise Gateway base platform via REST API.
+    Step 4 - deviceWise base platform (SOP D01555607 2.1.1, deviceWise - Base Platform Setup).
 .DESCRIPTION
-    - Discovers the deviceWise REST API port (probes common ports)
-    - Authenticates with the Gateway
-    - Installs required packages (OPC UA Server, OPC UA Client Driver, FileWatcher, CNCnetPDM)
-    - Configures the License Manager address
-    - Imports OPC UA tag definition files from the repository
-    - Configures the OPC UA Server endpoint (port 48020, security modes, user auth)
-    - Exposes CNC1, CNC2, CNC3 devices on the OPC UA Server
-    - Sets CNCAsset and CNCType variables for each CNC
-    - Creates the MedtronicSU OPC UA user
-
-    NOTE: REST API endpoint paths are based on deviceWise Gateway 23.04 documentation.
-    Verify all endpoint URIs against the installed version before first live run.
-    The deviceWise web UI (once you can log in) shows API docs at /api-docs or /swagger.
+    No Workbench and no API: everything goes through the gateway's import folder (DeviceWise.ps1).
+      1. Packages OPC UA Server, OPC UA Client, FileWatcher, CNCnetPDM: the approved .pkg files from
+         <RepositoryRoot>\<DeviceWise.PackagesRepoSubPath>, one per dwcore restart, skipped when
+         already installed (Gateway\dwcore\packages\<name>.xml).
+      2. Base configuration from the approved baseline backup (<DeviceWise.BaselineRepoSubPath>,
+         5-Automation\Baseline_Backup.dbk = the SJUM7AAPPS0065 backup): licence client (MSPM7AAPPS0342; the source VM's voucher
+         removed), OPC UA tag definitions (devices CNC1-3 + their OPC UA device files), OPC UA server
+         endpoint (48020, security modes/policies, user auth, anonymous; host = this VM), users
+         (MedtronicSU) / roles / policy, gateway name = this VM, CNCn CNCAsset / CNCType = the Site DB
+         machine name and type (as variable defaults: the devices do not persist values).
+      3. Checks: each imported item status 0, OPC UA endpoint listening, gateway name.
+    Projects (CHMI, SINC, TimescaleDB), tables and the CNCn_PATH devices are imported by Steps 5, 6, 8.
+    A safety copy of the gateway databases is kept in the run's Backups\deviceWise-before-step4.
 #>
+
+. (Join-Path $PSScriptRoot 'Common.ps1')
+. (Join-Path $PSScriptRoot 'DeviceWise.ps1')
 
 function Invoke-DeviceWiseBase {
     [CmdletBinding()]
@@ -26,226 +29,124 @@ function Invoke-DeviceWiseBase {
         [switch]$NonInteractive
     )
 
-    Write-Log STEP "deviceWise Base Platform Configuration"
+    Write-Log STEP 'deviceWise Base Platform Configuration'
+    $dw    = $Manifest.DeviceWise
+    $paths = Get-DwPaths -Manifest $Manifest
+    $phase = 'deviceWise Base'
 
-    $dw       = $Manifest.DeviceWise
-    $machines = $State['CNCMachines']
-
-    if (-not $machines -or $machines.Count -eq 0) {
-        throw "CNCMachines not populated. Run Steps 1-3 first."
+    $cncs = Get-AssignedCNCs -State $State -Manifest $Manifest   # already an array (return ,$result); @() would nest it
+    if (-not $cncs.Count) { throw 'No CNC machines in the state. Run Step 1 first.' }
+    if ($cncs.Count -gt @($dw.CNCNodes).Count) { throw "$($cncs.Count) CNCs assigned; the baseline has only $(@($dw.CNCNodes) -join ', ')." }
+    foreach ($svc in 'dwcore', 'dwts') {
+        if (-not (Get-Service $svc -ErrorAction SilentlyContinue)) { throw "Service $svc not found - is the deviceWise Gateway installed?" }
     }
+    if (-not (Test-Path $paths.ImportDir)) { throw "Import folder not found: $($paths.ImportDir)" }
 
-    #region -- Port discovery -------------------------------------------------
+    $pkgDir   = Get-DwRepoPath -Manifest $Manifest -SubPath $dw.PackagesRepoSubPath
+    $basePath = Get-DwRepoPath -Manifest $Manifest -SubPath $dw.BaselineRepoSubPath
+    if (-not (Test-Path $pkgDir))   { throw "Package folder not found: $pkgDir" }
+    if (-not (Test-Path $basePath -PathType Leaf)) { throw "Baseline backup not found: $basePath" }
+    $baseline = Get-Item $basePath
+    Write-Log INFO "Packages: $pkgDir"
+    Write-Log INFO "Baseline: $($baseline.FullName)"
 
-    $dwPort  = 0
-    $baseUrl = ''
-    foreach ($port in $dw.GatewayProbePorts) {
-        try {
-            $testUri = "http://localhost:${port}$($dw.ApiBasePath)/version"
-            $resp    = Invoke-RestMethod -Uri $testUri -Method GET -TimeoutSec 5 -ErrorAction Stop
-            $dwPort  = $port
-            $baseUrl = "http://localhost:${port}$($dw.ApiBasePath)"
-            Write-Log INFO "deviceWise REST API found on port $port"
-            Add-Result -Phase DeviceWise -Check "API port discovery" -Status PASS -Detail "Port $port"
-            break
-        } catch { }
-    }
+    $safety = Join-Path (Get-RunDir -State $State -Name Backups -Manifest $Manifest) 'deviceWise-before-step4'
+    $saved  = $false
 
-    if ($dwPort -eq 0) {
-        Add-Result -Phase DeviceWise -Check "API port discovery" -Status FAIL -Detail "Tried ports: $($dw.GatewayProbePorts -join ', ')"
-        throw "Cannot reach deviceWise REST API. Confirm service 'dwcore' is running and check gateway port configuration."
-    }
+    #region -- 1. Packages --------------------------------------------------------
 
-    $State['DeviceWisePort'] = $dwPort
-
-    #endregion
-
-    # No authentication required - deviceWise REST API is open
-    $State['DeviceWiseToken'] = ''
-    $headers = @{ 'Content-Type' = 'application/json' }
-    Add-Result -Phase DeviceWise -Check "Authentication" -Status PASS -Detail "No auth required"
-
-    function Invoke-DW {
-        param([string]$Method, [string]$Path, [object]$Body = $null, [string]$Desc = '')
-        $params = @{ Uri = "$baseUrl$Path"; Method = $Method; Headers = $headers; TimeoutSec = 60 }
-        if ($Body) { $params['Body'] = ($Body | ConvertTo-Json -Depth 10) }
-        try {
-            $r = Invoke-RestMethod @params -ErrorAction Stop
-            if ($Desc) { Write-Log INFO "$Desc : OK" }
-            return $r
-        } catch {
-            $statusCode = $_.Exception.Response.StatusCode.value__
-            Write-Log WARN "$Desc failed (HTTP $statusCode): $_"
-            return $null
+    $pkgFiles = Get-ChildItem $pkgDir -Filter '*.pkg' -File
+    foreach ($name in $dw.Packages) {
+        if (Test-Path (Join-Path $paths.Packages "$name.xml")) {
+            Add-Result -Phase $phase -Check "Package $name" -Status PASS -Detail 'already installed'
+            continue
         }
-    }
-
-    #region -- Install packages -----------------------------------------------
-
-    foreach ($pkg in $dw.PackagesToInstall) {
-        Write-Log INFO "Installing package: $pkg"
-        $result = Invoke-DW -Method POST -Path "/packages/install" `
-            -Body @{ name = $pkg } -Desc "Install package '$pkg'"
-
-        # Poll until installed (up to 120s)
-        $waited = 0
-        do {
-            Start-Sleep -Seconds 5; $waited += 5
-            $status = Invoke-DW -Method GET -Path "/packages/$([System.Web.HttpUtility]::UrlEncode($pkg))" -Desc "Package status '$pkg'"
-        } while ($status -and $status.status -notin @('Installed','Error') -and $waited -lt 120)
-
-        if ($status -and $status.status -eq 'Installed') {
-            Add-Result -Phase DeviceWise -Check "Package: $pkg" -Status PASS
-        } else {
-            Add-Result -Phase DeviceWise -Check "Package: $pkg" -Status WARN -Detail "Status: $($status.status)  -  verify manually in Workbench"
+        $file = $pkgFiles | Where-Object { $_.Name -like "dw.$name.*.pkg" } | Sort-Object Name | Select-Object -Last 1
+        if (-not $file) {
+            Add-Result -Phase $phase -Check "Package $name" -Status FAIL -Detail "no dw.$name.*.pkg in $pkgDir"
+            throw "Package $name not found in $pkgDir"
         }
-    }
-
-    Write-Log INFO "Waiting 15s for packages to stabilize after installation..."
-    Start-Sleep -Seconds 15
-
-    #endregion
-
-    #region -- License Manager -----------------------------------------------
-
-    $licResult = Invoke-DW -Method PUT -Path "/config/license" `
-        -Body @{ address = $dw.LicenseManagerHost; enabled = $true } `
-        -Desc "Configure License Manager ($($dw.LicenseManagerHost))"
-
-    if ($licResult) {
-        Add-Result -Phase DeviceWise -Check "License Manager address" -Status PASS -Detail $dw.LicenseManagerHost
-    } else {
-        Add-Result -Phase DeviceWise -Check "License Manager address" -Status WARN -Detail "Check manually: Admin -> License Client -> $($dw.LicenseManagerHost)"
-    }
-
-    #endregion
-
-    #region -- Import OPC UA tag files ----------------------------------------
-
-    $tagsPath = Join-Path $Manifest.APC.RepositoryRoot $dw.OpcUaTagsRepoSubPath
-    Write-Log INFO "OPC UA tag files path: $tagsPath"
-
-    $tagFiles = Get-ChildItem $tagsPath -Filter '*.csv' -ErrorAction SilentlyContinue
-    if (-not $tagFiles) {
-        Add-Result -Phase DeviceWise -Check "OPC UA tag files" -Status WARN -Detail "No .csv tag files found in $tagsPath  -  import manually in Workbench -> Devices -> Import"
-    } else {
-        foreach ($tagFile in $tagFiles) {
-            Write-Log INFO "Importing tag file: $($tagFile.Name)"
-            try {
-                $form = [System.Net.Http.MultipartFormDataContent]::new()
-                $fileBytes = [System.IO.File]::ReadAllBytes($tagFile.FullName)
-                $fileContent = [System.Net.Http.ByteArrayContent]::new($fileBytes)
-                $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('text/csv')
-                $form.Add($fileContent, 'file', $tagFile.Name)
-
-                $client = [System.Net.Http.HttpClient]::new()
-                if ($token) { $client.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $token) }
-                $resp = $client.PostAsync("$baseUrl/devices/import", $form).Result
-                $client.Dispose()
-
-                if ($resp.IsSuccessStatusCode) {
-                    Add-Result -Phase DeviceWise -Check "Tag import: $($tagFile.Name)" -Status PASS
-                } else {
-                    Add-Result -Phase DeviceWise -Check "Tag import: $($tagFile.Name)" -Status WARN -Detail "HTTP $($resp.StatusCode.value__)"
-                }
-            } catch {
-                Add-Result -Phase DeviceWise -Check "Tag import: $($tagFile.Name)" -Status WARN -Detail $_
-            }
+        if (-not $saved) {
+            Restart-DwCore -WhileStopped { Save-DwDatabases -Paths $paths -Dest $safety }
+            $saved = $true
+            Write-Log INFO "Safety copy of the gateway databases: $safety"
         }
-    }
-
-    #endregion
-
-    #region -- Configure OPC UA Server endpoint --------------------------------
-
-    $endpointBody = @{
-        port              = $dw.OpcUaEndpointPort
-        securityModes     = @('None', 'Sign', 'SignAndEncrypt')
-        userAuthentication = $true
-        allowAnonymous    = $true
-    }
-    $epResult = Invoke-DW -Method PUT -Path "/opcua/server/endpoint" `
-        -Body $endpointBody -Desc "OPC UA endpoint (port $($dw.OpcUaEndpointPort))"
-
-    if ($epResult) {
-        Add-Result -Phase DeviceWise -Check "OPC UA endpoint configured" -Status PASS -Detail "Port $($dw.OpcUaEndpointPort)"
-    } else {
-        Add-Result -Phase DeviceWise -Check "OPC UA endpoint" -Status WARN -Detail "Configure manually: Admin -> OPC UA Server -> Endpoint -> Port $($dw.OpcUaEndpointPort)"
-    }
-
-    # Start the endpoint
-    Invoke-DW -Method POST -Path "/opcua/server/endpoint/start" -Desc "Start OPC UA endpoint" | Out-Null
-    Add-Result -Phase DeviceWise -Check "OPC UA endpoint started" -Status PASS
-
-    #endregion
-
-    #region -- Expose CNC devices on OPC UA -----------------------------------
-
-    $cncNodes = $dw.CNCNodes | Select-Object -First $machines.Count
-    $exposeResult = Invoke-DW -Method PUT -Path "/opcua/server/devices" `
-        -Body @{ devices = $cncNodes } -Desc "Expose CNC devices on OPC UA"
-
-    if ($exposeResult) {
-        Add-Result -Phase DeviceWise -Check "OPC UA exposed devices" -Status PASS -Detail ($cncNodes -join ', ')
-    } else {
-        Add-Result -Phase DeviceWise -Check "OPC UA exposed devices" -Status WARN -Detail "Set manually: Admin -> OPC UA Server -> Devices tab"
-    }
-
-    #endregion
-
-    #region -- Set CNCAsset and CNCType variables for each CNC ---------------
-
-    for ($i = 0; $i -lt $machines.Count; $i++) {
-        $machine  = $machines[$i]
-        $cncNode  = "CNC$($i + 1)"
-        $assetVal = $machine.MachineName
-        $typeVal  = $machine.CNCType
-
-        foreach ($varSpec in @(
-            @{ Name = 'CNCAsset'; Value = $assetVal },
-            @{ Name = 'CNCType';  Value = $typeVal  }
-        )) {
-            $varResult = Invoke-DW -Method PUT -Path "/devices/$cncNode/variables/$($varSpec.Name)" `
-                -Body @{ value = $varSpec.Value } `
-                -Desc "Set $cncNode.$($varSpec.Name) = $($varSpec.Value)"
-
-            if ($varResult) {
-                Add-Result -Phase DeviceWise -Check "$cncNode $($varSpec.Name)" -Status PASS -Detail $varSpec.Value
-            } else {
-                Add-Result -Phase DeviceWise -Check "$cncNode $($varSpec.Name)" -Status WARN `
-                    -Detail "Set manually: Devices -> $cncNode -> Variables -> $($varSpec.Name) = $($varSpec.Value)"
-            }
+        Write-Log INFO "Installing $($file.Name)"
+        $r = Install-DwPackage -Paths $paths -PkgFile $file.FullName -Name $name -TimeoutSec $dw.ImportTimeoutSec
+        $r.Lines | ForEach-Object { Write-Log INFO "  $_" }
+        if (-not $r.Ok) {
+            Add-Result -Phase $phase -Check "Package $name" -Status FAIL -Detail $r.Detail
+            throw "Package $name was not installed: $($r.Detail)"
         }
+        Add-Result -Phase $phase -Check "Package $name" -Status PASS -Detail $file.Name
     }
 
     #endregion
 
-    #region -- Create MedtronicSU OPC UA user ---------------------------------
+    #region -- 2. Base configuration import ---------------------------------------
 
-    $suPwd = ''
-    if ($State.ContainsKey('MedtronicSUPassword') -and $State['MedtronicSUPassword']) {
-        $bstr   = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($State['MedtronicSUPassword'])
-        try { $suPwd = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr) }
-        finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    $gateway = $env:COMPUTERNAME
+    $build = New-DwBaseImport -BaselinePath $baseline.FullName -Manifest $Manifest -Cncs $cncs -GatewayName $gateway
+    Write-Log INFO "Import: $($build.Items.Count) item(s) from $($baseline.Name)"
+    $build.Changes | ForEach-Object { Write-Log INFO "  $_" }
+
+    $target  = Join-Path $paths.ImportDir 'import.dwx'
+    $result  = Join-Path $paths.ImportDir 'import.result'
+    if (Test-Path $target) { throw "An import.dwx is already waiting in $($paths.ImportDir)." }
+    foreach ($old in $result, "${result}s") { if (Test-Path $old) { Remove-Item $old -Force } }
+    $staged = Join-Path $env:TEMP ("dw-step4-{0}.dwx" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    Save-DwXml -Xml $build.Xml -Path $staged
+
+    Restart-DwCore -WhileStopped {
+        if (-not $saved) { Save-DwDatabases -Paths $paths -Dest $safety; Write-Log INFO "Safety copy of the gateway databases: $safety" }
+        Copy-Item $staged $target
+    }
+    $done = Wait-DwImportFile -Queued $target -ResultFiles @($result, "${result}s") -TimeoutSec $dw.ImportTimeoutSec
+    Remove-Item $staged -ErrorAction SilentlyContinue
+    if (-not $done) {
+        Add-Result -Phase $phase -Check 'Base configuration import' -Status FAIL -Detail "no import.result after $($dw.ImportTimeoutSec) s"
+        throw 'The gateway did not process the import.'
+    }
+    New-Item -ItemType Directory -Path $safety -Force | Out-Null
+    Copy-Item $done (Join-Path $safety 'step4-import.result')
+
+    $res = Read-DwImportResult -Path $done
+    foreach ($i in $res.Items) {
+        $status = if ($i.Status -eq 0) { 'PASS' } else { 'FAIL' }
+        Add-Result -Phase $phase -Check "Import $($i.Type) $($i.Item)" -Status $status -Detail "status $($i.Status)"
+    }
+    $bad = @($res.Items | Where-Object { $_.Status -ne 0 })
+    Add-Result -Phase $phase -Check 'Base configuration import' -Status $(if ($bad.Count) { 'FAIL' } else { 'PASS' }) `
+        -Detail ("{0} item(s), {1} failed, overall status {2}" -f $res.Items.Count, $bad.Count, $res.Overall)
+
+    #endregion
+
+    #region -- 3. Checks ------------------------------------------------------------
+
+    $port = [int]$dw.OpcUaEndpointPort
+    $deadline = (Get-Date).AddSeconds(120); $listening = $false
+    while (-not $listening -and (Get-Date) -lt $deadline) {
+        $listening = [bool](Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
+        if (-not $listening) { Start-Sleep -Seconds 5 }
+    }
+    Add-Result -Phase $phase -Check "OPC UA endpoint port $port" -Status $(if ($listening) { 'PASS' } else { 'FAIL' }) `
+        -Detail $(if ($listening) { "opc.tcp://${gateway}:$port listening" } else { 'not listening after 2 min' })
+
+    try {
+        $sys = Get-DwPersistence -Paths $paths -Group 'system'
+        $name = $sys['module.name']
+        Add-Result -Phase $phase -Check 'Gateway name' -Status $(if ($name -eq $gateway) { 'PASS' } else { 'WARN' }) -Detail "module.name = $name"
+    } catch {
+        Add-Result -Phase $phase -Check 'Gateway name' -Status WARN -Detail "could not read DWUSER.db: $($_.Exception.Message)"
     }
 
-    if ($suPwd) {
-        $userResult = Invoke-DW -Method POST -Path "/security/users" `
-            -Body @{ userName = $dw.OpcUaUser; password = $suPwd; role = 'operator' } `
-            -Desc "Create OPC UA user $($dw.OpcUaUser)"
-        $suPwd = ''
-
-        if ($userResult) {
-            Add-Result -Phase DeviceWise -Check "OPC UA user $($dw.OpcUaUser)" -Status PASS
-        } else {
-            Add-Result -Phase DeviceWise -Check "OPC UA user $($dw.OpcUaUser)" -Status WARN `
-                -Detail "Create manually: Admin -> Security -> Users -> New -> $($dw.OpcUaUser)"
-        }
-    } else {
-        Add-Result -Phase DeviceWise -Check "OPC UA user $($dw.OpcUaUser)" -Status WARN -Detail "MedtronicSUPassword not in state  -  create user manually"
+    foreach ($c in $cncs) {
+        Add-Result -Phase $phase -Check "CNC$($c.CNCIndex) CNCAsset / CNCType" -Status MANUAL `
+            -Detail "Workbench > Devices > CNC$($c.CNCIndex) > Variables: CNCAsset = $($c.MachineName), CNCType = $($c.CNCType)"
     }
 
     #endregion
 
-    Write-Log PASS "deviceWise base platform configuration complete."
+    $State['DeviceWiseBaseline'] = $baseline.FullName
+    Write-Log PASS 'deviceWise base platform configuration complete.'
 }
