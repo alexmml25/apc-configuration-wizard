@@ -95,7 +95,8 @@
     "Packages":             [ "dwopcua_server_v3", "dwopcua", "dwfilewatcher", "dwcncnetpdm" ],
     "BaselineRepoSubPath":  "APC VM Software Components\\deviceWise\\5-Automation\\Baseline_Backup.dbk",
     "BaseImportTypes":      [ "license.pool", "system", "Devices", "device", "file", "Endpoints", "user", "role", "policy", "alerts", "attention bit", "timesync", "report" ],
-    "ImportTimeoutSec":     900
+    "ImportTimeoutSec":     900,
+    "OpcUaSecurityPolicies": [ "Basic128Rsa15", "Basic256", "Basic256Sha256", "Aes128Sha256RsaOeap" ]
   },
 
   "CHMIComponents": {

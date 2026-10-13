@@ -124,7 +124,8 @@ function Invoke-DeviceWiseBase {
 
     try {
         $sys = Get-DwPersistence -Paths $paths -Group 'system'
-        $name = $sys['module.name']
+        # the stored value carries a leading control byte (0x01, seen on SJUM7AAPPS0048), so compare the printable part
+        $name = ([string]$sys['module.name']) -replace '[\x00-\x1F]', ''
         Add-Result -Phase $phase -Check 'Gateway name' -Status $(if ($name -eq $gateway) { 'PASS' } else { 'WARN' }) -Detail "module.name = $name"
     } catch {
         Add-Result -Phase $phase -Check 'Gateway name' -Status WARN -Detail "could not read DWUSER.db: $($_.Exception.Message)"

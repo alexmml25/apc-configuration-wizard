@@ -118,7 +118,15 @@ function New-DwBaseImport {
     if ($ep) {
         $text = $ep.InnerText
         $new  = [regex]::Replace($text, '("endpoint_address"\s*:\s*"opc\.tcp://)[^:/"]+', { param($m) $m.Groups[1].Value + $GatewayName })
-        if ($new -ne $text) { $ep.InnerText = $new; $changes.Add("OPC UA endpoint host = $GatewayName") }
+        if ($new -ne $text) { $changes.Add("OPC UA endpoint host = $GatewayName") }
+        # SOP 2.1.1: all security policies except the last (Aes256Sha256RsaPss); the baseline differs
+        if ($dw.PSObject.Properties['OpcUaSecurityPolicies']) {
+            $pol  = @($dw.OpcUaSecurityPolicies) -join ','
+            $new2 = [regex]::Replace($new, '("group_security_security_policies"\s*:\s*")[^"]*', { param($m) $m.Groups[1].Value + $pol })
+            if ($new2 -ne $new) { $changes.Add("OPC UA security policies = $pol") }
+            $new = $new2
+        }
+        $ep.InnerText = $new
     }
 
     foreach ($c in $Cncs) {
