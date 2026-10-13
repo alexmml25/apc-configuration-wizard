@@ -51,9 +51,11 @@ $machines = foreach ($c in $Cnc) {
     [pscustomobject]@{ MachineName = $p[0].Trim(); CNCType = $p[1].Trim(); AssetFamily = $p[1].Trim(); DLLName = 'n/a' }
 }
 
-$manifest = Get-Content (Join-Path $root 'APC_ConfigManifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-if ($PackageDir)  { $manifest.DeviceWise.PackagesRepoSubPath = (Resolve-Path $PackageDir).Path }
-if ($Baseline)    { $manifest.DeviceWise.BaselineRepoSubPath = (Resolve-Path $Baseline).Path }
+$manifestPath = Join-Path $root 'APC_ConfigManifest.json'
+$manifest = Get-Content $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+Write-Host "Manifest: $manifestPath ($((Get-Item $manifestPath).LastWriteTime)) - packages: $($manifest.DeviceWise.PackagesRepoSubPath)"
+if ($PackageDir)  { $manifest.DeviceWise.PackagesRepoSubPath = (Resolve-Path $PackageDir).ProviderPath }
+if ($Baseline)    { $manifest.DeviceWise.BaselineRepoSubPath = (Resolve-Path $Baseline).ProviderPath }
 
 $state = @{
     RunRoot               = $run
