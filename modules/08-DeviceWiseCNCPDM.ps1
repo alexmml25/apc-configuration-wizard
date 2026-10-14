@@ -68,10 +68,17 @@ function Invoke-DeviceWiseCNCPDM {
         Write-Log INFO "  $node = $instance / $machine"
     }
 
+    # Registered already (re-run): no DWUSER.db write, so an import with nothing left needs no dwcore restart
+    $register = $null
+    $already = $false
+    try { $already = ((([string](Get-DwPersistence -Paths $paths -Group 'cncnetpdm.instances')[$instance]) -replace '[\x00-\x1F]', '') -eq $pdmDir) } catch { }
+    if ($already) { Write-Log INFO "CNCnetPDM instance $instance already registered" }
+    else { $register = { Set-DwPersistence -Paths $paths -Group 'cncnetpdm.instances' -Values @{ $instance = $pdmDir } } }
+
     $safety = Join-Path (Get-RunDir -State $State -Name Backups -Manifest $Manifest) 'deviceWise-before-step8'
     try {
         $res = Invoke-DwImport -Paths $paths -Xml $build.Xml -Label 'step8-cncnetpdm' -SafetyDir $safety -SaveDatabases -TimeoutSec $dw.ImportTimeoutSec `
-            -WhileStopped { Set-DwPersistence -Paths $paths -Group 'cncnetpdm.instances' -Values @{ $instance = $pdmDir } }
+            -WhileStopped $register
     } catch {
         Add-Result -Phase $phase -Check 'CNCnetPDM devices import' -Status FAIL -Detail $_.Exception.Message
         throw

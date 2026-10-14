@@ -375,7 +375,22 @@ function Invoke-DwImport {
     $dwImportStartDevices = @($unchanged.Start)
     if (-not $Xml.DocumentElement.SelectNodes('exportcontent').Count) {
         Write-Log INFO 'Nothing left to import (all items unchanged).'
-        if ($dwImportStartDevices.Count) { Restart-DwCore -Paths $Paths -WhileStopped { Set-DwDeviceState -Paths $Paths -Names $dwImportStartDevices -State 1 } }
+        # Restart only when there is something to do: a needless restart right after another one left
+        # Devicewise_OPC_UA_Sinc in state 3 (Step 8, SJUM7AAPPS0048 2026-10-14)
+        $st = @{}
+        try { $st = Get-DwDeviceStates -Paths $Paths } catch { }
+        $dwImportStartDevices = @($dwImportStartDevices | Where-Object { -not $st.ContainsKey($_) -or $st[$_] -ne 1 })
+        if ($dwImportExtraAction -or $dwImportStartDevices.Count) {
+            Restart-DwCore -Paths $Paths -WhileStopped {
+                if ($dwImportExtraAction) { & $dwImportExtraAction }
+                if ($dwImportStartDevices.Count) {
+                    Set-DwDeviceState -Paths $Paths -Names $dwImportStartDevices -State 1
+                    Write-Log INFO "Started (unchanged devices): $($dwImportStartDevices -join ', ')"
+                }
+            }
+        } else {
+            Write-Log INFO 'No dwcore restart needed (the unchanged devices are already started).'
+        }
         return [pscustomobject]@{ Items = @(); Overall = 0; Lines = @(); Unchanged = @($unchanged.Kept) }
     }
     Save-DwXml -Xml $Xml -Path $staged
@@ -823,7 +838,7 @@ function Test-DwDevicesStarted {
         foreach ($n in $Names) {
             $v = if ($s.ContainsKey($n)) { $s[$n] } else { -1 }
             Add-Result -Phase $Phase -Check "$n started" -Status $(if ($v -eq 1) { 'PASS' } else { 'FAIL' }) `
-                -Detail $(switch ($v) { 1 { 'Started' } 2 { 'Stopped - start it in Workbench > Devices' } -1 { 'not in the gateway' } default { "state $v" } })
+                -Detail $(switch ($v) { 1 { 'Started' } 2 { 'Stopped - start it in Workbench > Devices' } 3 { 'state 3, could not start - start it in Workbench > Devices' } -1 { 'not in the gateway' } default { "state $v" } })
         }
     } catch {
         foreach ($n in $Names) { Add-Result -Phase $Phase -Check "$n started" -Status MANUAL -Detail "could not read DWCORE.db ($($_.Exception.Message)). Workbench > Devices: $n Started" }
