@@ -175,6 +175,7 @@ function Get-ConfigCredentials {
     $creds = @{}
     $creds['SiteDBPassword']     = Read-PasswordDialog -Prompt 'Site DB PostgreSQL password'
     $creds['APCUserPassword']    = Read-PasswordDialog -Prompt 'apcuser password (local TSDB)'
+    $creds['PostgresPassword']   = Read-PasswordDialog -Prompt 'postgres superuser password (local TSDB, Step 2)'
     Write-Log INFO "Credentials collected (values redacted)."
     return $creds
 }
@@ -298,6 +299,7 @@ function Main {
     }
     $state['SiteDBPassword']      = $creds.SiteDBPassword
     $state['APCUserPassword']     = $creds.APCUserPassword
+    $state['PostgresPassword']    = $creds.PostgresPassword
     Save-ConfigState -State $state
 
     $phases = @(

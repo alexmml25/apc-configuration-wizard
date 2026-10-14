@@ -406,10 +406,13 @@ $xamlText = @'
                            Text="Needed only when TimescaleDB (step 2) runs. In memory only - never written to disk or logs."/>
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                  <Grid.RowDefinitions><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                   <TextBlock Grid.Row="0" Text="apcuser (local)" Style="{StaticResource Label}"
                              ToolTip="Password for the local TimescaleDB apcuser role created in Step 2 (must be the standard APC password)."/>
-                  <PasswordBox x:Name="PwdAPCUser" Grid.Row="0" Grid.Column="1" Style="{StaticResource Pwd}" Margin="0"/>
+                  <PasswordBox x:Name="PwdAPCUser" Grid.Row="0" Grid.Column="1" Style="{StaticResource Pwd}"/>
+                  <TextBlock Grid.Row="1" Text="postgres (local)" Style="{StaticResource Label}" Margin="0,0,12,0"
+                             ToolTip="Password of the local PostgreSQL superuser postgres, set at installation. Step 2 logs in with it to create apcuser and the TimescaleDB database."/>
+                  <PasswordBox x:Name="PwdPostgres" Grid.Row="1" Grid.Column="1" Style="{StaticResource Pwd}" Margin="0"/>
                 </Grid>
               </StackPanel>
             </Border>
@@ -1813,6 +1816,9 @@ function Start-ConfigurationRun {
     if (2 -in $runSteps -and -not $controls['PwdAPCUser'].Password) {
         Show-Warning "Enter the apcuser (local) password on the Sign in page - TimescaleDB (step 2) needs it." 'Password Required'; return $false
     }
+    if (2 -in $runSteps -and -not $controls['PwdPostgres'].Password) {
+        Show-Warning "Enter the postgres (local) password on the Sign in page - TimescaleDB (step 2) logs in with it." 'Password Required'; return $false
+    }
     $license = $controls['TxtLicense'].Text.Trim()
     if (7 -in $runSteps -and -not $license) {
         Show-Warning "Enter the CNCnetPDM license key or tick 'Use default perpetual license'."; return $false
@@ -1860,7 +1866,10 @@ function Start-ConfigurationRun {
     foreach ($c in $controls['PwdAPCUser'].Password.ToCharArray()) { $apcPwd.AppendChar($c) }
     $sdbPwd = New-Object System.Security.SecureString
     foreach ($c in $controls['PwdSiteDB'].Password.ToCharArray()) { $sdbPwd.AppendChar($c) }
+    $suPwd = New-Object System.Security.SecureString
+    foreach ($c in $controls['PwdPostgres'].Password.ToCharArray()) { $suPwd.AppendChar($c) }
     $Script:AutoState['APCUserPassword']     = $apcPwd
+    $Script:AutoState['PostgresPassword']    = $suPwd
     $Script:AutoState['SiteDBPassword']      = $sdbPwd
 
     $runLog = @("$($Script:ConfigTypes[$type].Name) - $($Script:RunModeName): steps $($runSteps -join ', ')", "Run folder: $runRoot")

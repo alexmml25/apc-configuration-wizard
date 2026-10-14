@@ -77,7 +77,8 @@ function Invoke-Verification {
         $bin = Join-Path $pg.BinDir 'psql.exe'
         if (-not (Test-Path $bin)) { throw "psql.exe not found at $bin" }
         # -w: never prompt. Without a password psql waited for one on the console and Step 13 hung
-        # (wizard run 2026-10-14). The password is the one Step 2 uses, when this run has it.
+        # (wizard run 2026-10-14). Logs in as apcuser (a superuser, so the catalog queries work) with
+        # this run's apcuser password.
         $pgPwd = ''
         if ($State.ContainsKey('APCUserPassword') -and $State['APCUserPassword'] -is [System.Security.SecureString]) {
             $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($State['APCUserPassword'])
@@ -85,11 +86,11 @@ function Invoke-Verification {
             finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
         }
         $env:PGPASSWORD = $pgPwd
-        try { $result = & $bin -h localhost -p 5432 -U postgres -d $Db -w -t -A -c $Query 2>&1 }
+        try { $result = & $bin -h localhost -p $pg.DefaultPort -U $pg.LocalUser -d $Db -w -t -A -c $Query 2>&1 }
         finally { $env:PGPASSWORD = ''; $pgPwd = '' }
         $text = ($result -join "`n").Trim()
         if ($text -match 'no password supplied|password authentication failed') {
-            throw "psql could not log in as postgres: $(if ($text -match 'no password') { 'no password in this run (enter the apcuser password in the wizard)' } else { 'password rejected' })"
+            throw "psql could not log in as $($pg.LocalUser): $(if ($text -match 'no password') { 'no password in this run (enter the apcuser password in the wizard)' } else { 'password rejected' })"
         }
         return $text
     }
@@ -361,8 +362,10 @@ function Invoke-Verification {
 
     # Item 1 - pg_hba.conf host entry
     Check 'TSDB' 'pg_hba.conf host connection entry' {
+        # Whitespace-insensitive: Step 2 writes the entry in the file's column layout
+        $want  = ($pg.HbaEntry.Trim() -split '\s+') -join ' '
         $lines = [System.IO.File]::ReadAllLines($pg.PgHbaFile)
-        $found = $lines | Where-Object { $_ -match [regex]::Escape($pg.HbaEntry) }
+        $found = $lines | Where-Object { (($_.Trim() -split '\s+') -join ' ') -eq $want }
         if (-not $found) { throw "Entry '$($pg.HbaEntry)' not in $($pg.PgHbaFile)" }
         "Entry present: $($pg.HbaEntry)"
     } '' 4 1
@@ -376,21 +379,21 @@ function Invoke-Verification {
 
     # Item 3 - apcuser role exists
     Check 'TSDB' 'apcuser login role exists' {
-        $r = PsqlQuery "SELECT usename FROM pg_user WHERE usename='apcuser';" 'postgres'
+        $r = PsqlQuery "SELECT usename FROM pg_user WHERE usename='apcuser';"
         if ($r -ne 'apcuser') { throw "User 'apcuser' not found in pg_user" }
         "User apcuser exists"
     } '' 4 3
 
     # Item 4 - apcuser privileges
     Check 'TSDB' 'apcuser privileges (superuser, createdb)' {
-        $r = PsqlQuery "SELECT usesuper,usecreatedb FROM pg_user WHERE usename='apcuser';" 'postgres'
+        $r = PsqlQuery "SELECT usesuper,usecreatedb FROM pg_user WHERE usename='apcuser';"
         if ($r -notmatch 't\|t') { throw "Missing required privileges: $r" }
         "superuser=t, createdb=t"
     } '' 4 4
 
     # Item 5 - TimescaleDB database exists, owner = apcuser
     Check 'TSDB' 'TimescaleDB database exists (owner=apcuser)' {
-        $r = PsqlQuery "SELECT pg_catalog.pg_get_userbyid(d.datdba) FROM pg_catalog.pg_database d WHERE d.datname='TimescaleDB';" 'postgres'
+        $r = PsqlQuery "SELECT pg_catalog.pg_get_userbyid(d.datdba) FROM pg_catalog.pg_database d WHERE d.datname='TimescaleDB';"
         if (-not $r) { throw "Database 'TimescaleDB' not found" }
         if ($r -ne 'apcuser') { throw "Owner: $r  expected: apcuser" }
         "Database TimescaleDB owner: apcuser"
@@ -409,15 +412,17 @@ function Invoke-Verification {
 
     # Item 9 - APC schema executed (check for any APC tables)
     Check 'TSDB' 'APC schema tables present' {
-        $r = PsqlQuery "SELECT count(*) FROM information_schema.tables WHERE table_schema='public';"
+        # 'conditions' is the SOP's validation hypertable, not part of the APC schema
+        $r = PsqlQuery "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name <> 'conditions';"
         $n = [int]$r
-        if ($n -eq 0) { throw "No tables in public schema" }
-        "$n table(s) in public schema"
+        if ($n -eq 0) { throw "No APC tables in public schema" }
+        "$n APC table(s)/view(s) in public schema"
     } '' 4 9
 
     # Item 10 - Schema tables (ODBC DSN also validates DB access)
     Check 'TSDB' 'ODBC DSN PostgreSQL30 configured' {
-        $dsnPath = 'HKLM:\SOFTWARE\ODBC\ODBC.INI\PostgreSQL30'
+        # 32-bit System DSN (SOP: PostgreSQL ANSI (x86)), written by Step 2
+        $dsnPath = "HKLM:\SOFTWARE\WOW6432Node\ODBC\ODBC.INI\$($pg.OdbcDsn)"
         if (-not (Test-Path $dsnPath)) { throw "Registry key not found: $dsnPath" }
         $props = Get-ItemProperty $dsnPath
         "DSN: $($props.Servername):$($props.Port) db=$($props.Database)"
