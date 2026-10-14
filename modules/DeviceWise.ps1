@@ -329,11 +329,15 @@ function Invoke-DwImport {
             $replace = @($Xml.DocumentElement.SelectNodes("exportcontent[@type='device']") | ForEach-Object { $_.GetAttribute('name') })
             if ($replace.Count) {
                 $existing = @{}
-                try { $existing = Get-DwDeviceStates -Paths $Paths } catch { }
+                try { $existing = Get-DwDeviceStates -Paths $Paths }
+                catch { Write-Log WARN "Could not read the device states before the import: $($_.Exception.Message)" }
+                Write-Log INFO ("Devices in the import: " + (($replace | ForEach-Object { "$_=$(if ($existing.ContainsKey($_)) { $existing[$_] } else { 'new' })" }) -join ', '))
                 $running = @($replace | Where-Object { $existing.ContainsKey($_) -and $existing[$_] -ne 2 })
                 if ($running.Count) {
-                    Set-DwDeviceState -Paths $Paths -Names $running -State 2
-                    Write-Log INFO "Stopped for the re-import: $($running -join ', ')"
+                    try {
+                        Set-DwDeviceState -Paths $Paths -Names $running -State 2
+                        Write-Log INFO "Stopped for the re-import: $($running -join ', ')"
+                    } catch { Write-Log WARN "Could not stop $($running -join ', ') for the re-import: $($_.Exception.Message)" }
                 }
             }
             Copy-Item $staged $target
