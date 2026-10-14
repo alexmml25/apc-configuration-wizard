@@ -338,6 +338,27 @@ public static class DwSqlite {
     if ([DwSqlite]::LoadLibrary($Paths.Sqlite) -eq [IntPtr]::Zero) { throw "Cannot load $($Paths.Sqlite)" }
 }
 
+function Set-DwPersistence {
+    <#
+        Writes DWUSER.db persistence rows of one group (dwcore must be stopped). The gateway stores
+        each value with a leading marker byte (0x01 on 23.04.08); the marker is copied from a row
+        already in the group, or from the 'system' group, so new rows look like the gateway's own.
+    #>
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$Group,
+          [Parameter(Mandatory)] [System.Collections.IDictionary]$Values)
+    if ((Get-Service 'dwcore').Status -ne 'Stopped') { throw 'dwcore must be stopped before writing DWUSER.db.' }
+    Initialize-DwSqlite -Paths $Paths
+    $h = [DwSqlite]::Open((Join-Path $Paths.Db 'DWUSER.db'), $true)
+    try {
+        $sample = [DwSqlite]::Query($h, "SELECT value FROM persistence WHERE grp = ? OR grp = 'system' ORDER BY (grp = ?) DESC LIMIT 1", $Group, $Group)
+        $marker = ''
+        if ($sample.Count -and $sample[0][0] -and [int][char]$sample[0][0][0] -lt 32) { $marker = [string]$sample[0][0][0] }
+        foreach ($k in $Values.Keys) {
+            [void][DwSqlite]::Query($h, 'INSERT OR REPLACE INTO persistence (name, grp, value) VALUES (?, ?, ?)', [string]$k, $Group, $marker + [string]$Values[$k])
+        }
+    } finally { [DwSqlite]::Close($h) }
+}
+
 function Get-DwPersistence {
     # Reads DWUSER.db persistence rows of one group (read-only; dwcore may be running).
     param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$Group)

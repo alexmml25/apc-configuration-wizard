@@ -111,6 +111,24 @@ function Invoke-DeviceWiseBase {
 
     #endregion
 
+    #region -- 2b. OPC UA server: switched on, SOP security policies ----------------
+
+    # The import brings the endpoint settings but not the 'switched on' flags that Workbench's Start
+    # button writes (enable / status in DWUSER.db, group opcua_server_v3 - compared with a gateway
+    # set up in Workbench, 2026-10-13). It also stored the two AES policies the wrong way round
+    # (file: Aes128Sha256RsaOeap; stored: aes128 false / aes256 true), so the policy flags are written too.
+    $policyKeys = [ordered]@{
+        Basic128Rsa15 = 'security_basic128rsa15'; Basic256 = 'security_basic256'; Basic256Sha256 = 'security_basic256sha256'
+        Aes128Sha256RsaOeap = 'security_aes128sha256'; Aes256Sha256RsaPss = 'security_aes256sha256'
+    }
+    $ua = [ordered]@{ enable = 'Yes'; status = 'Started' }
+    foreach ($p in $policyKeys.Keys) { $ua[$policyKeys[$p]] = ([string](@($dw.OpcUaSecurityPolicies) -contains $p)).ToLower() }
+    Restart-DwCore -WhileStopped { Set-DwPersistence -Paths $paths -Group 'opcua_server_v3' -Values $ua }
+    Add-Result -Phase $phase -Check 'OPC UA server switched on' -Status PASS `
+        -Detail ("enable=Yes, status=Started; policies: {0}" -f (@($dw.OpcUaSecurityPolicies) -join ', '))
+
+    #endregion
+
     #region -- 3. Checks ------------------------------------------------------------
 
     $port = [int]$dw.OpcUaEndpointPort
@@ -129,6 +147,15 @@ function Invoke-DeviceWiseBase {
         Add-Result -Phase $phase -Check 'Gateway name' -Status $(if ($name -eq $gateway) { 'PASS' } else { 'WARN' }) -Detail "module.name = $name"
     } catch {
         Add-Result -Phase $phase -Check 'Gateway name' -Status WARN -Detail "could not read DWUSER.db: $($_.Exception.Message)"
+    }
+
+    try {
+        $stored = Get-DwPersistence -Paths $paths -Group 'opcua_server_v3'
+        $diff = @($ua.Keys | Where-Object { (([string]$stored[$_]) -replace '[\x00-\x1F]', '') -ne $ua[$_] })
+        Add-Result -Phase $phase -Check 'OPC UA server settings stored' -Status $(if ($diff.Count) { 'WARN' } else { 'PASS' }) `
+            -Detail $(if ($diff.Count) { "differs: $($diff -join ', ')" } else { 'enable, status and security policies as written' })
+    } catch {
+        Add-Result -Phase $phase -Check 'OPC UA server settings stored' -Status WARN -Detail "could not read DWUSER.db: $($_.Exception.Message)"
     }
 
     foreach ($c in $cncs) {
