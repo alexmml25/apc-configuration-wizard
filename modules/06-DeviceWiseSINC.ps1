@@ -103,8 +103,11 @@ function Invoke-DeviceWiseSINC {
     }
     [void](Add-DwImportResults -Phase $phase -Result $res -Summary 'SINC import')
 
-    Add-Result -Phase $phase -Check 'CNC_SETTING rows' -Status PASS `
-        -Detail (($rows | ForEach-Object { "{0} = {1} ({2})" -f $_[0], $_[@($table.Columns).IndexOf('CNC_ASSET')], $_[@($table.Columns).IndexOf('CNC_TYPE')] }) -join '; ')
+    $rowItem = @($res.Items | Where-Object { $_.Type -eq 'dbtabledata' -and $_.Item -eq 'CNC_SETTING' }) | Select-Object -First 1
+    $rowsOk  = $rowItem -and $rowItem.Status -eq 0
+    Add-Result -Phase $phase -Check 'CNC_SETTING rows' -Status $(if ($rowsOk) { 'PASS' } else { 'FAIL' }) `
+        -Detail ("{0}{1}" -f $(if ($rowsOk) { '' } else { "not imported (status $(if ($rowItem) { $rowItem.Status } else { 'missing' })): " }),
+                 (($rows | ForEach-Object { "{0} = {1} ({2})" -f $_[0], $_[@($table.Columns).IndexOf('CNC_ASSET')], $_[@($table.Columns).IndexOf('CNC_TYPE')] }) -join '; '))
     Add-Result -Phase $phase -Check 'SINC EMAIL_TO' -Status $(if ($email) { 'PASS' } else { 'WARN' }) `
         -Detail $(if ($email) { $email } else { 'no SINC email list entered - SINC alert emails go nowhere' })
 
@@ -120,7 +123,13 @@ function Invoke-DeviceWiseSINC {
         $states  = Get-DwTriggerStates -Paths $paths -Project 'SINC'
         $stopped = @($states.Keys | Where-Object { $states[$_] -ne 1 } | Sort-Object)
         foreach ($name in $stopped) {
-            Add-Result -Phase $phase -Check "Started $name" -Status FAIL -Detail "state $($states[$name]) - start it in Workbench > Projects > SINC"
+            # a file watcher cannot start while its watch folder is missing (state 3, fresh VM 2026-10-14)
+            $why = "start it in Workbench > Projects > SINC"
+            if ($name -match '^2_MonitorNewFileAtWatcher_(CNC\d)$') {
+                $dir = Join-Path $dw.SINCStaging $Matches[1]
+                if (-not (Test-Path $dir)) { $why = "its watch folder $dir is missing - run Step 3, then restart dwcore" }
+            }
+            Add-Result -Phase $phase -Check "Started $name" -Status FAIL -Detail "state $($states[$name]) - $why"
         }
         Add-Result -Phase $phase -Check 'SINC triggers started' -Status $(if ($stopped.Count -or -not $states.Count) { 'FAIL' } else { 'PASS' }) `
             -Detail ("{0} of {1} trigger(s) started" -f ($states.Count - $stopped.Count), $states.Count)

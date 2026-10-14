@@ -95,6 +95,15 @@ function New-DwImportFromBaseline {
         if (& $Keep $type $name) { $items.Add("$type/$name") } else { [void]$xml.DocumentElement.RemoveChild($ec) }
     }
     foreach ($v in @($xml.SelectNodes("//exportcontent[@type='license.pool']//PersistenceEntry[@name='voucher']"))) { [void]$v.ParentNode.RemoveChild($v) }
+    # Table rows (dbtabledata) must come after their table (dbtable): the baseline has the rows first,
+    # which fails with -7022 on a gateway that does not have the table yet (fresh VM, 2026-10-14)
+    $tables = @($xml.DocumentElement.SelectNodes("exportcontent[@type='dbtable']"))
+    if ($tables.Count) {
+        $after = $tables[-1]
+        foreach ($d in @($xml.DocumentElement.SelectNodes("exportcontent[@type='dbtabledata']"))) {
+            [void]$xml.DocumentElement.InsertAfter($d, $after); $after = $d
+        }
+    }
     return @{ Xml = $xml; Items = [string[]]$items }
 }
 
