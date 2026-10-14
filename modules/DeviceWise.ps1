@@ -24,13 +24,15 @@
 
 function Get-DwPaths {
     param([Parameter(Mandatory)] [object]$Manifest)
-    $root = $Manifest.DeviceWise.GatewayInstallDir
+    $root = [string]$Manifest.DeviceWise.GatewayInstallDir
+    # plain string paths: Join-Path fails when the drive does not exist (gateway not installed / other drive)
+    $sub  = { param($p) $root.TrimEnd('\') + '\' + $p }
     return @{
         Root      = $root
-        ImportDir = Join-Path $root 'staging\system\import'
-        Packages  = Join-Path $root 'dwcore\packages'
-        Db        = Join-Path $root 'db'
-        Sqlite    = Join-Path $root 'dwcore\sqlite3.dll'
+        ImportDir = & $sub 'staging\system\import'
+        Packages  = & $sub 'dwcore\packages'
+        Db        = & $sub 'db'
+        Sqlite    = & $sub 'dwcore\sqlite3.dll'
         # devices that must be Started after every dwcore restart (Restart-DwCore)
         KeepStarted = @(if ($Manifest.DeviceWise.PSObject.Properties['KeepStartedDevices']) { $Manifest.DeviceWise.KeepStartedDevices })
     }

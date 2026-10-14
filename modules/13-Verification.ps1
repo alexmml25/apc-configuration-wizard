@@ -922,14 +922,14 @@ function Invoke-Verification {
 
     #endregion
 
-    #region deviceWise backup reminder (Step 12 cannot back up deviceWise) ------
+    #region deviceWise backup (Step 12 file-level backup; a Workbench backup saved there also counts) ------
 
     $bkRoot = [string]$State['BackupRoot']
     if ($bkRoot -and (Test-Path -LiteralPath $bkRoot)) {
         $dwDir   = Join-Path $bkRoot 'deviceWise'
         $dwFiles = @(Get-ChildItem -LiteralPath $dwDir -Recurse -File -ErrorAction SilentlyContinue | Where-Object Name -ne 'NOT_BACKED_UP.txt')
         if ($dwFiles.Count -eq 0) {
-            Warn 'Backup' 'deviceWise backup NOT done' "Back up each project in Workbench (include Network Settings) into $dwDir - the backup is incomplete until then"
+            Warn 'Backup' 'deviceWise backup NOT done' "Run Step 12 again, or back up each project in Workbench (include Network Settings) into $dwDir - the backup is incomplete until then"
         } else {
             Add-Result -Phase Verification -Check 'Backup: deviceWise backup' -Status PASS -Detail "$($dwFiles.Count) file(s) in $dwDir"
             $checks.Add(@{ Cat='Backup'; Name='deviceWise backup'; Status='PASS'; Detail="$($dwFiles.Count) file(s) in $dwDir"; Note=''; T=-1; I=-1 })

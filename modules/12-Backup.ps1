@@ -13,11 +13,16 @@
                             File Manager, Data Collector, Data Analyzer, CNCNetPDM), without MedtronicExcludeDirs
                             (CNCnetPDM logs)
       CNCnetPDM\            only when CNCnetPDM is installed outside C:\Medtronic
-    deviceWise projects are not backed up automatically yet (no API) - back them up in Workbench.
+      deviceWise\           file-level backup of the gateway, taken with dwcore stopped (DeviceWise.ps1):
+                            db\ (DWCORE, DWAPP, DWUSER, DWTS - configuration, not the log/report databases),
+                            the dwcore / dwjava .properties, dwcore\packages\*.xml, staging\uaserver and
+                            staging\uaclient (OPC UA certificates and device files), plus RESTORE.txt.
+                            Devices are kept started and CNCAsset / CNCType written again after the restart.
 #>
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
 . (Join-Path $PSScriptRoot 'ABB800xA.ps1')
+. (Join-Path $PSScriptRoot 'DeviceWise.ps1')
 
 function Invoke-Backup {
     [CmdletBinding()]
@@ -127,21 +132,67 @@ function Invoke-Backup {
 
     #endregion
 
-    #region -- deviceWise (not automated yet) ----------------------------------
+    #region -- deviceWise (file-level, dwcore stopped) ---------------------------
 
-    # Not automated (no API). A marker file in Backups\deviceWise keeps the gap visible; Step 13 warns until
-    # a real deviceWise backup is saved next to it.
-    $dwDir = Join-Path $destRoot 'deviceWise'
-    try {
-        New-Item -ItemType Directory -Path $dwDir -Force | Out-Null
-        Set-Content -Path (Join-Path $dwDir 'NOT_BACKED_UP.txt') -Encoding ASCII -Value @(
-            'deviceWise is NOT backed up by the wizard (no API). This backup is incomplete until it is done by hand:'
-            '  deviceWise Workbench -> Projects -> right-click each project -> Backup (include Network Settings),'
-            "  save the files into this folder ($dwDir)."
-            'Then delete this file.')
-    } catch { }
-    Add-Result -Phase Backup -Check "deviceWise backup" -Status WARN `
-        -Detail "NOT backed up - the backup is incomplete. In Workbench: Projects -> right-click each project -> Backup (include Network Settings), save to $dwDir"
+    $dwDir   = Join-Path $destRoot 'deviceWise'
+    $dwPaths = Get-DwPaths -Manifest $Manifest
+    $marker  = {
+        param([string]$Why)
+        try {
+            New-Item -ItemType Directory -Path $dwDir -Force | Out-Null
+            Set-Content -Path (Join-Path $dwDir 'NOT_BACKED_UP.txt') -Encoding ASCII -Value @(
+                "deviceWise is NOT backed up by this run: $Why"
+                '  Run Step 12 again, or in deviceWise Workbench: Projects -> right-click each project -> Backup'
+                "  (include Network Settings) and save the files into this folder ($dwDir). Then delete this file.")
+        } catch { }
+        Add-Result -Phase Backup -Check 'deviceWise backup' -Status WARN -Detail "NOT backed up - $Why"
+    }
+    if (-not (Get-Service 'dwcore' -ErrorAction SilentlyContinue) -or -not (Test-Path $dwPaths.Root)) {
+        & $marker 'the deviceWise Gateway is not installed on this VM'
+    } else {
+        try {
+            $gw = $dwPaths.Root
+            Restart-DwCore -Paths $dwPaths -WhileStopped {
+                Save-DwDatabases -Paths $dwPaths -Dest (Join-Path $dwDir 'db')
+                foreach ($sub in 'dwcore', 'dwjava') {
+                    $src = Join-Path $gw $sub
+                    if (Test-Path $src) {
+                        New-Item -ItemType Directory -Path (Join-Path $dwDir $sub) -Force | Out-Null
+                        Get-ChildItem $src -Filter '*.properties' -File | Copy-Item -Destination (Join-Path $dwDir $sub) -Force
+                    }
+                }
+                if (Test-Path $dwPaths.Packages) {
+                    New-Item -ItemType Directory -Path (Join-Path $dwDir 'dwcore\packages') -Force | Out-Null
+                    Get-ChildItem $dwPaths.Packages -Filter '*.xml' -File | Copy-Item -Destination (Join-Path $dwDir 'dwcore\packages') -Force
+                }
+                foreach ($sub in 'staging\uaserver', 'staging\uaclient') {
+                    $src = Join-Path $gw $sub
+                    if (Test-Path $src) { Copy-Item $src (Join-Path $dwDir $sub) -Recurse -Force }
+                }
+            }
+            Set-Content -Path (Join-Path $dwDir 'RESTORE.txt') -Encoding ASCII -Value @(
+                "deviceWise Gateway backup of $($env:COMPUTERNAME), $(Get-Date -Format 'yyyy-MM-dd HH:mm') - file level, taken with dwcore stopped."
+                'To restore on the same gateway version (23.04.08), with the same packages installed:'
+                '  1. Stop the services:   Stop-Service dwcore -Force; Stop-Service dwts -Force'
+                "  2. Copy db\*.db         to $gw\db\  (replace)"
+                "  3. Copy dwcore\*.properties, dwjava\*.properties to the same folders under $gw  (replace)"
+                "  4. Copy staging\uaserver and staging\uaclient to $gw\staging\  (replace)"
+                '  5. Start the services:  Start-Service dwts; Start-Service dwcore'
+                '  6. CNCAsset / CNCType on CNC1-3 are empty after any restart: run the wizard''s deviceWise step or set them in Workbench.'
+                'dwcore\packages\*.xml lists the packages that were installed (install them first if missing).')
+            $files = @(Get-ChildItem $dwDir -Recurse -File)
+            $mb    = [Math]::Round((($files | Measure-Object Length -Sum).Sum) / 1MB, 1)
+            $dbs   = @(Get-ChildItem (Join-Path $dwDir 'db') -Filter '*.db' -File -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+            if (-not ($dbs -contains 'DWCORE.db')) { throw 'DWCORE.db was not copied' }
+            Add-Result -Phase Backup -Check 'deviceWise backup' -Status PASS -Detail "$($files.Count) file(s), $mb MB: $($dbs -join ', '), properties, OPC UA certificates -> $dwDir"
+            $State['BackupDeviceWise'] = $dwDir
+        } catch {
+            & $marker "the copy failed: $($_.Exception.Message)"
+        }
+        # the restart emptied CNCAsset / CNCType on the CNC devices (known limitation)
+        $cncs = Get-AssignedCNCs -State $State -Manifest $Manifest
+        if ($cncs.Count) { Set-DwCncAssetValues -Manifest $Manifest -Cncs $cncs -Phase Backup }
+    }
 
     #endregion
 
