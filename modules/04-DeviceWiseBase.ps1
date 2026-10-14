@@ -42,7 +42,12 @@ function Invoke-DeviceWiseBase {
     foreach ($svc in 'dwcore', 'dwts') {
         if (-not (Get-Service $svc -ErrorAction SilentlyContinue)) { throw "Service $svc not found - is the deviceWise Gateway installed?" }
     }
-    if (-not (Test-Path $paths.ImportDir)) { throw "Import folder not found: $($paths.ImportDir)" }
+    # A deviceWise factory reset removes staging\system\import (seen on SJUM7AAPPS0048); the gateway
+    # only looks for import.dwx in it at startup, so the folder can simply be created
+    if (-not (Test-Path $paths.ImportDir)) {
+        New-Item -ItemType Directory -Path $paths.ImportDir -Force | Out-Null
+        Write-Log INFO "Created the import folder $($paths.ImportDir)"
+    }
 
     $pkgDir   = Get-DwRepoPath -Manifest $Manifest -SubPath $dw.PackagesRepoSubPath
     $basePath = Get-DwRepoPath -Manifest $Manifest -SubPath $dw.BaselineRepoSubPath
