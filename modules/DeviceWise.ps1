@@ -290,6 +290,9 @@ function Invoke-DwImport {
     if (Test-Path $target) { throw "An import.dwx is already waiting in $($Paths.ImportDir)." }
     foreach ($old in $result, "${result}s") { if (Test-Path $old) { Remove-Item $old -Force } }
     $staged = Join-Path $env:TEMP ("dw-{0}-{1}.dwx" -f $Label, (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    # Restart-DwCore has a parameter named $WhileStopped too; inside its block that name would resolve to
+    # Restart-DwCore's own block and call itself endlessly (Step 8, 2026-10-14). Keep ours under its own name.
+    $dwImportExtraAction = $WhileStopped
     Save-DwXml -Xml $Xml -Path $staged
     try {
         Restart-DwCore -WhileStopped {
@@ -297,7 +300,7 @@ function Invoke-DwImport {
                 Save-DwDatabases -Paths $Paths -Dest $SafetyDir
                 Write-Log INFO "Safety copy of the gateway databases: $SafetyDir"
             }
-            if ($WhileStopped) { & $WhileStopped }
+            if ($dwImportExtraAction) { & $dwImportExtraAction }
             Copy-Item $staged $target
         }
         $done = Wait-DwImportFile -Queued $target -ResultFiles @($result, "${result}s") -TimeoutSec $TimeoutSec
