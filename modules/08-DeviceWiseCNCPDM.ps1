@@ -111,23 +111,11 @@ function Invoke-DeviceWiseCNCPDM {
         Add-Result -Phase $phase -Check "CNC$($c.CNCIndex)_PATH machine in CNCnetPDM" -Status $(if ($ok) { 'PASS' } else { 'WARN' }) -Detail $detail
     }
 
-    # Connected (Workbench: CNCnetPDM Instance Management > State Connected) = dwcore holds a TCP connection to
-    # CNCnetPDM's MTC Adapter port ([MTC Adapter] Port in CNCnetPDM.ini, 7889 on the APC VMs; seen 2026-10-14)
-    $mtcPort = 7878   # CNCnetPDM's own default
-    if (Test-Path $ini) {
-        $inMtc = $false
-        foreach ($line in Get-Content $ini) {
-            if ($line -match '^\s*\[(.+)\]') { $inMtc = ($Matches[1] -eq 'MTC Adapter'); continue }
-            if ($inMtc -and $line -match '^\s*Port\s*=\s*(\d+)') { $mtcPort = [int]$Matches[1]; break }
-        }
-    }
-    $dwPid = (Get-CimInstance Win32_Service -Filter "Name='dwcore'" -ErrorAction SilentlyContinue).ProcessId
-    $deadline = (Get-Date).AddSeconds(60); $conn = $null
-    while (-not $conn -and (Get-Date) -lt $deadline) {
-        $conn = Get-NetTCPConnection -RemotePort $mtcPort -State Established -ErrorAction SilentlyContinue |
-                Where-Object { $_.OwningProcess -eq $dwPid } | Select-Object -First 1
-        if (-not $conn) { Start-Sleep -Seconds 5 }
-    }
+    # Connected (Workbench: CNCnetPDM Instance Management > State Connected) = dwcore's TCP connection to
+    # CNCnetPDM's MTC Adapter port (Test-DwCncnetpdmConnected, DeviceWise.ps1)
+    $mtc  = Test-DwCncnetpdmConnected -IniPath $ini -WaitSec 60
+    $conn = $mtc.Connected
+    $mtcPort = $mtc.Port
     Add-Result -Phase $phase -Check 'CNCnetPDM instance connected' -Status $(if ($conn) { 'PASS' } else { 'FAIL' }) `
         -Detail $(if ($conn) { "dwcore connected to CNCnetPDM (MTC Adapter port $mtcPort)" } else { "no dwcore connection to CNCnetPDM port $mtcPort after 60 s - is the CNCnetPDM service running and configured (Step 7)?" })
     # CNCn_PATH started (DWCORE.db devices.state 1 = Started, 2 = Stopped). Right after the import they can be

@@ -295,8 +295,6 @@ function Main {
         StartTime         = $operatorInfo.StartTime
         CompletedPhases   = @()
         CNCMachines       = @()
-        DeviceWisePort    = 0
-        DeviceWiseToken   = ''
     }
     $state['SiteDBPassword']      = $creds.SiteDBPassword
     $state['APCUserPassword']     = $creds.APCUserPassword

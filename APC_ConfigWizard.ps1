@@ -1221,8 +1221,6 @@ function Get-CurrentState {
         StartTime        = (Get-Date -Format 'o')
         CompletedPhases  = @()
         CNCMachines      = @()
-        DeviceWisePort   = 0
-        DeviceWiseToken  = ''
     }
 }
 

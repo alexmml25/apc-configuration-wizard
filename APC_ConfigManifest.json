@@ -80,22 +80,11 @@
   "SchemaScriptsRepoSubPath": "Timescale Database (TSDB)\\Tables",
 
   "DeviceWise": {
-    "GatewayProbePorts": [ 8090, 8080, 8100, 8001 ],
-    "ApiBasePath":       "/api/v2",
     "LicenseManagerHost": "MSPM7AAPPS0342.cfrf.medtronic.com",
     "OpcUaEndpointPort": 48020,
     "SINCStaging":       "C:\\Program Files\\deviceWISE\\Gateway\\staging\\SINC",
     "GatewayInstallDir": "C:\\Program Files\\deviceWISE\\Gateway",
     "OpcUaUser":         "MedtronicSU",
-    "PackagesToInstall": [
-      "OPC UA Server",
-      "OPC UA Client Driver",
-      "FileWatcher",
-      "CNCnetPDM"
-    ],
-    "OpcUaTagsRepoSubPath":   "deviceWise\\4-Projects and OPC UA Tags",
-    "CHMIProjectRepoSubPath": "deviceWise\\4-Projects and OPC UA Tags",
-    "SINCProjectRepoSubPath": "deviceWise\\4-Projects and OPC UA Tags",
     "CNCNodes": [ "CNC1", "CNC2", "CNC3" ],
     "PackagesRepoSubPath":  "APC VM Software Components\\deviceWise\\5-Automation\\Packages",
     "Packages":             [ "dwopcua_server_v3", "dwopcua", "dwfilewatcher", "dwcncnetpdm" ],

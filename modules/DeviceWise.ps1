@@ -714,6 +714,68 @@ function Test-DwDevicesStarted {
     }
 }
 
+function Invoke-DwDbQuery {
+    # Read-only query on one gateway database (DWCORE.db, DWAPP.db, DWUSER.db, DWTS.db); rows as string[]
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$Db, [Parameter(Mandatory)] [string]$Sql, [string[]]$Arguments = @())
+    Initialize-DwSqlite -Paths $Paths
+    $h = [DwSqlite]::Open((Join-Path $Paths.Db $Db), $false)
+    try { return ,@([DwSqlite]::Query($h, $Sql, $Arguments)) } finally { [DwSqlite]::Close($h) }
+}
+
+function Get-DwXml {
+    # The xml column of one row in DWCORE.db triggers / devices, as [xml]; $null when not found
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [ValidateSet('triggers', 'devices')] [string]$Table,
+          [Parameter(Mandatory)] [string]$Name, [string]$Project)
+    $sql  = "SELECT xml FROM $Table WHERE name = ?" + $(if ($Project) { ' AND project = ?' } else { '' })
+    $qArgs = @($Name) + @(if ($Project) { $Project })
+    $rows  = Invoke-DwDbQuery -Paths $Paths -Db 'DWCORE.db' -Sql $sql -Arguments $qArgs
+    if (-not $rows.Count -or -not $rows[0][0]) { return $null }
+    return [xml]$rows[0][0]
+}
+
+function Get-DwLocalTable {
+    <#
+        Rows of a deviceWise local table (e.g. CNC_SETTING) as objects. The table is looked for in every
+        gateway database (localdb.path points at DWAPP.db, not confirmed on a VM). $null when not found.
+    #>
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$Table)
+    foreach ($db in 'DWAPP.db', 'DWCORE.db', 'DWTS.db', 'DWUSER.db') {
+        if (-not (Test-Path (Join-Path $Paths.Db $db))) { continue }
+        $found = Invoke-DwDbQuery -Paths $Paths -Db $db -Sql "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?" -Arguments @($Table)
+        if (-not $found.Count) { continue }
+        $cols = @((Invoke-DwDbQuery -Paths $Paths -Db $db -Sql 'SELECT name FROM pragma_table_info(?)' -Arguments @($Table)) | ForEach-Object { $_[0] })
+        $rows = Invoke-DwDbQuery -Paths $Paths -Db $db -Sql ('SELECT * FROM "{0}"' -f $Table.Replace('"', '""'))
+        $out = foreach ($r in $rows) { $o = [ordered]@{}; for ($i = 0; $i -lt $cols.Count; $i++) { $o[$cols[$i]] = $r[$i] }; [pscustomobject]$o }
+        return [pscustomobject]@{ Db = $db; Rows = @($out) }
+    }
+    return $null
+}
+
+function Test-DwCncnetpdmConnected {
+    <#
+        Workbench's 'Connected' for the CNCnetPDM instance = dwcore holds a TCP connection to CNCnetPDM's MTC
+        Adapter port ([MTC Adapter] Port in CNCnetPDM.ini, 7889 on the APC VMs; CNCnetPDM default 7878).
+        Returns @{ Connected = [bool]; Port = [int] }, waiting up to $WaitSec.
+    #>
+    param([string]$IniPath, [int]$WaitSec = 0)
+    $port = 7878
+    if ($IniPath -and (Test-Path $IniPath)) {
+        $inMtc = $false
+        foreach ($line in Get-Content $IniPath) {
+            if ($line -match '^\s*\[(.+)\]') { $inMtc = ($Matches[1] -eq 'MTC Adapter'); continue }
+            if ($inMtc -and $line -match '^\s*Port\s*=\s*(\d+)') { $port = [int]$Matches[1]; break }
+        }
+    }
+    $dwPid = (Get-CimInstance Win32_Service -Filter "Name='dwcore'" -ErrorAction SilentlyContinue).ProcessId
+    $deadline = (Get-Date).AddSeconds($WaitSec); $conn = $null
+    do {
+        $conn = Get-NetTCPConnection -RemotePort $port -State Established -ErrorAction SilentlyContinue |
+                Where-Object { $_.OwningProcess -eq $dwPid } | Select-Object -First 1
+        if (-not $conn -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 5 }
+    } while (-not $conn -and (Get-Date) -lt $deadline)
+    return @{ Connected = [bool]$conn; Port = $port }
+}
+
 function Get-DwPersistence {
     # Reads DWUSER.db persistence rows of one group (read-only; dwcore may be running).
     param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$Group)

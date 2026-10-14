@@ -13,6 +13,7 @@
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
 . (Join-Path $PSScriptRoot 'ABB800xA.ps1')
+. (Join-Path $PSScriptRoot 'DeviceWise.ps1')
 
 function Invoke-Verification {
     [CmdletBinding()]
@@ -25,8 +26,6 @@ function Invoke-Verification {
     Write-Log STEP "System Verification and Report Generation"
 
     $machines  = Get-AssignedCNCs -State $State -Manifest $Manifest   # CNC n = DOC instance n
-    $dwPort    = $State['DeviceWisePort']
-    $dwToken   = $State['DeviceWiseToken']
     $dw        = $Manifest.DeviceWise
     $pg        = $Manifest.PostgreSQL
     $da        = $Manifest.DataApps
@@ -40,10 +39,6 @@ function Invoke-Verification {
     $reportPath = Join-Path $reportDir "APC_ConfigReport_$ts.html"
 
     $checks = [System.Collections.Generic.List[hashtable]]::new()
-
-    $baseUrl = if ($dwPort -gt 0) { "http://localhost:${dwPort}$($dw.ApiBasePath)" } else { '' }
-    $headers = @{ 'Content-Type' = 'application/json' }
-    if ($dwToken) { $headers['Authorization'] = "Bearer $dwToken" }
 
     # -------------------------------------------------------------------------
     # Inner helpers
@@ -75,12 +70,6 @@ function Invoke-Verification {
         param([string]$Cat, [string]$Name, [string]$Detail)
         Add-Result -Phase Verification -Check "$Cat`: $Name" -Status WARN -Detail $Detail
         $checks.Add(@{ Cat=$Cat; Name=$Name; Status='WARN'; Detail=$Detail; Note=''; T=-1; I=-1 })
-    }
-
-    function DWGet {
-        param([string]$Path)
-        if (-not $baseUrl) { throw "DeviceWise port not available" }
-        Invoke-RestMethod -Uri "$baseUrl$Path" -Method GET -Headers $headers -TimeoutSec 15 -ErrorAction Stop
     }
 
     function PsqlQuery {
@@ -120,137 +109,151 @@ function Invoke-Verification {
     }
 
     #region T3 - deviceWise ---------------------------------------------------
+    # No API: the checks read the gateway's own files and databases (DeviceWise.ps1, read-only), its OPC UA
+    # server (CNCAsset / CNCType) and the dwcore TCP connection to CNCnetPDM - the same sources Steps 4-8 use.
 
-    # Item 1 - Required packages installed
+    $paths   = Get-DwPaths -Manifest $Manifest
+    $nodes   = @(1..[Math]::Max(1, $machines.Count) | ForEach-Object { "CNC$_" } | Select-Object -First $machines.Count)
+    $pdmDir  = @($cncPdm.InstallDir, $cncPdm.FallbackDir) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+    $pdmIni  = if ($pdmDir) { Join-Path $pdmDir $cncPdm.IniFile } else { $null }
+    $clean   = { param($v) ([string]$v) -replace '[\x00-\x1F]', '' }   # persistence values carry a leading marker byte
+    $devStates = $null; $uaSet = @{}; $licSet = @{}
+    try { $devStates = Get-DwDeviceStates -Paths $paths } catch { }
+    try { $uaSet  = Get-DwPersistence -Paths $paths -Group 'opcua_server_v3' } catch { }
+    try { $licSet = Get-DwPersistence -Paths $paths -Group 'license.pool' } catch { }
+
+    # Item 1 - Required packages installed (an installed package leaves dwcore\packages\<key>.xml)
     Check 'deviceWise' 'Required packages installed' {
-        $missing = @()
-        foreach ($pkg in $dw.PackagesToInstall) {
-            try {
-                $s = DWGet "/packages/$([System.Web.HttpUtility]::UrlEncode($pkg))"
-                if ($s.status -ne 'Installed') { $missing += $pkg }
-            } catch { $missing += $pkg }
-        }
-        if ($missing) { throw "Not installed: $($missing -join ', ')" }
-        "All packages present: $($dw.PackagesToInstall -join ', ')"
+        $missing = @($dw.Packages | Where-Object { -not (Test-Path (Join-Path $paths.Packages "$_.xml")) })
+        if ($missing.Count) { throw "Not installed: $($missing -join ', ')" }
+        "Installed: $($dw.Packages -join ', ')"
     } '' 3 1
 
-    # Item 2 - License Client configured
+    # Item 2 - License Client configured (DWUSER.db license.pool; a voucher = licence received)
     Check 'deviceWise' 'License Client configured' {
-        $lic = DWGet '/config/license'
-        if ($lic.address -ne $dw.LicenseManagerHost) { throw "Address: $($lic.address)  expected: $($dw.LicenseManagerHost)" }
-        if (-not $lic.connected -and $lic.state -ne 'True' -and $lic.enabled -ne $true) { throw "Not connected" }
-        "Address: $($lic.address)"
+        if (-not $licSet.Count) { throw 'Cannot read the licence client settings (DWUSER.db)' }
+        $addr = & $clean $licSet['client_server_addr']
+        if ($addr -ne $dw.LicenseManagerHost) { throw "License Manager '$addr', expected $($dw.LicenseManagerHost)" }
+        if ((& $clean $licSet['client_enabled']) -ne 'True') { throw 'License client not enabled' }
+        if (-not (& $clean $licSet['voucher'])) { throw "No licence received from $addr yet" }
+        "$($addr):$(& $clean $licSet['client_server_port']) - licence received"
     } '' 3 2
 
-    # Item 3 - OPC UA tag definitions imported
+    # Item 3 - OPC UA tag definitions imported (the CNCn devices with their structures)
     Check 'deviceWise' 'OPC UA tag definitions imported' {
-        $devices = DWGet '/devices'
-        if (-not $devices -or ($devices | Measure-Object).Count -eq 0) { throw "No devices/tags found" }
-        "Devices visible: $(($devices | Measure-Object).Count)"
+        if ($null -eq $devStates) { throw 'Cannot read the gateway devices (DWCORE.db)' }
+        $missing = @($nodes | Where-Object { -not $devStates.ContainsKey($_) })
+        if ($missing.Count) { throw "Devices missing: $($missing -join ', ')" }
+        "Devices: $($nodes -join ', ')"
     } '' 3 3
 
-    # Item 4 - OPC UA exposed devices (CNC1/2/3)
-    Check 'deviceWise' "OPC UA exposed devices ($($dw.CNCNodes[0..($machines.Count-1)] -join ', '))" {
-        $exposed = DWGet '/opcua/server/devices'
-        $cncNodes = $dw.CNCNodes | Select-Object -First $machines.Count
-        $missing = $cncNodes | Where-Object { $exposed.devices -notcontains $_ -and $exposed -notcontains $_ }
-        if ($missing) { throw "Not exposed: $($missing -join ', ')" }
-        "Exposed: $($cncNodes -join ', ')"
+    # Item 4 - OPC UA exposed devices
+    Check 'deviceWise' "OPC UA exposed devices ($($nodes -join ', '))" {
+        $list = @((& $clean $uaSet['device_list']) -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        $missing = @($nodes | Where-Object { $list -notcontains $_ })
+        if ($missing.Count) { throw "Not exposed: $($missing -join ', ') (device_list: $($list -join ', '))" }
+        "Exposed: $($list -join ', ')"
     } '' 3 4
 
-    # Item 5 - OPC UA endpoint configuration
+    # Item 5 - OPC UA endpoint configuration (running, port, SOP security policies)
     Check 'deviceWise' 'OPC UA endpoint configuration' {
-        $ep = DWGet '/opcua/server/endpoint'
-        if ($ep.port -ne $dw.OpcUaEndpointPort -and $ep.Port -ne $dw.OpcUaEndpointPort) {
-            throw "Port: $($ep.port)  expected: $($dw.OpcUaEndpointPort)"
-        }
-        "Port: $($dw.OpcUaEndpointPort), State: $($ep.state)"
+        $port = [int]$dw.OpcUaEndpointPort
+        if ((& $clean $uaSet['bind_port']) -ne [string]$port) { throw "Port $(& $clean $uaSet['bind_port']), expected $port" }
+        if ((& $clean $uaSet['enable']) -ne 'Yes' -or (& $clean $uaSet['status']) -ne 'Started') { throw 'OPC UA server not switched on' }
+        if (-not (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)) { throw "Nothing listening on port $port" }
+        $keys = @{ Basic128Rsa15 = 'security_basic128rsa15'; Basic256 = 'security_basic256'; Basic256Sha256 = 'security_basic256sha256'
+                   Aes128Sha256RsaOeap = 'security_aes128sha256'; Aes256Sha256RsaPss = 'security_aes256sha256' }
+        $wrong = @($keys.Keys | Where-Object { ((& $clean $uaSet[$keys[$_]]) -eq 'true') -ne (@($dw.OpcUaSecurityPolicies) -contains $_) })
+        if ($wrong.Count) { throw "Security policies differ from the SOP: $($wrong -join ', ')" }
+        "opc.tcp://$($env:COMPUTERNAME):$port listening; policies: $(@($dw.OpcUaSecurityPolicies) -join ', ')"
     } '' 3 5
 
-    # Items 6-8 - CNCAsset and CNCType per CNC
-    for ($ci = 0; $ci -lt 3; $ci++) {
-        $item = 6 + $ci
-        $node = "CNC$($ci + 1)"
-        if ($ci -lt $machines.Count) {
-            $m = $machines[$ci]
-            Check 'deviceWise' "CNCAsset / CNCType for $node" {
-                $av = DWGet "/devices/$node/variables/CNCAsset"
-                $tv = DWGet "/devices/$node/variables/CNCType"
-                $aVal = if ($av.value) { $av.value } else { $av }
-                $tVal = if ($tv.value) { $tv.value } else { $tv }
-                if (-not $aVal) { throw "CNCAsset empty" }
-                "CNCAsset=$aVal, CNCType=$tVal"
-            } '' 3 $item
-        } else {
-            NA 'deviceWise' "CNCAsset / CNCType for $node" "Machine $node not configured for this site" 3 $item
+    # Items 6-8 - CNCAsset and CNCType per CNC, read from the gateway's OPC UA server
+    $uaSession = $null; $uaError = ''
+    if ($machines.Count) { try { $uaSession = Open-DwUaSession -Manifest $Manifest } catch { $uaError = $_.Exception.Message } }
+    try {
+        for ($ci = 0; $ci -lt 3; $ci++) {
+            $item = 6 + $ci
+            $node = "CNC$($ci + 1)"
+            if ($ci -lt $machines.Count) {
+                $m = $machines[$ci]
+                Check 'deviceWise' "CNCAsset / CNCType for $node" {
+                    if (-not $uaSession) { throw "OPC UA read not possible: $uaError" }
+                    $a = [string](Get-DwUaValue -Session $uaSession -Namespace $dw.OpcUaClient.Namespace -Path "$node.CNCAsset").Value
+                    $t = [string](Get-DwUaValue -Session $uaSession -Namespace $dw.OpcUaClient.Namespace -Path "$node.CNCType").Value
+                    if (-not $a -and -not $t) { throw 'Empty - the values are lost at every dwcore restart (known limitation); Steps 4-8 write them' }
+                    if ($a -ne $m.MachineName -or $t -ne $m.CNCType) { throw "CNCAsset='$a', CNCType='$t'; expected '$($m.MachineName)' / '$($m.CNCType)'" }
+                    "CNCAsset=$a, CNCType=$t"
+                } '' 3 $item
+            } else {
+                NA 'deviceWise' "CNCAsset / CNCType for $node" "Machine $node not configured for this site" 3 $item
+            }
         }
+    } finally { if ($uaSession) { [void]$uaSession.Close() } }
+
+    # Items 9-12 - CHMI / SINC projects and their triggers (DWCORE.db triggers.state 1 = Started / Loaded)
+    $trig = @{}
+    foreach ($proj in 'CHMI', 'SINC') { try { $trig[$proj] = Get-DwTriggerStates -Paths $paths -Project $proj } catch { $trig[$proj] = $null } }
+    $projCheck = {
+        param([string]$Proj)
+        if ($null -eq $trig[$Proj]) { throw 'Cannot read the gateway triggers (DWCORE.db)' }
+        if (-not $trig[$Proj].Count) { throw "No $Proj project / triggers in the gateway" }
+        "$Proj project: $($trig[$Proj].Count) trigger(s)"
     }
-
-    # Item 9 - CHMI project imported
-    Check 'deviceWise' 'CHMI project imported' {
-        $projs = DWGet '/projects'
-        $chmi = $projs | Where-Object { $_.name -match 'CHMI' -or $_.id -match 'CHMI' }
-        if (-not $chmi) { throw "No CHMI project found under /projects" }
-        "CHMI project: $($chmi.name)"
-    } '' 3 9
-
-    # Item 10 - CHMI components Loaded/Started
+    $startedCheck = {
+        param([string]$Proj, [string[]]$Names)
+        if ($null -eq $trig[$Proj]) { throw 'Cannot read the gateway triggers (DWCORE.db)' }
+        $bad = @($Names | Where-Object { -not $trig[$Proj].ContainsKey($_) -or $trig[$Proj][$_] -ne 1 })
+        if ($bad.Count) { throw "Not started: $(($bad | Select-Object -First 3) -join ', ')$(if ($bad.Count -gt 3) { " (+$($bad.Count - 3))" })" }
+        "All $($Names.Count) $Proj components Started / Loaded"
+    }
+    Check 'deviceWise' 'CHMI project imported' { & $projCheck 'CHMI' } '' 3 9
     Check 'deviceWise' 'CHMI components Loaded and Started' {
-        $notOk = @()
-        foreach ($comp in $Manifest.CHMIComponents.Started) {
-            try {
-                $s = DWGet "/projects/components/$([System.Web.HttpUtility]::UrlEncode($comp))"
-                if ($s.state -notin @('Started','Loaded')) { $notOk += $comp }
-            } catch { $notOk += $comp }
-        }
-        if ($notOk) { throw "Not Started/Loaded: $($notOk[0..2] -join ', ')$(if($notOk.Count -gt 3){' ...'})"}
-        "All CHMI components Started/Loaded"
+        & $startedCheck 'CHMI' @(@($Manifest.CHMIComponents.Loaded) + @($Manifest.CHMIComponents.Started))
     } '' 3 10
-
-    # Item 11 - SINC project imported
-    Check 'deviceWise' 'SINC project imported' {
-        $projs = DWGet '/projects'
-        $sinc = $projs | Where-Object { $_.name -match 'SINC' -or $_.id -match 'SINC' }
-        if (-not $sinc) { throw "No SINC project found under /projects" }
-        "SINC project: $(($sinc | Select-Object -First 1).name)"
-    } '' 3 11
-
-    # Item 12 - SINC trigger readiness
+    Check 'deviceWise' 'SINC project imported' { & $projCheck 'SINC' } '' 3 11
     Check 'deviceWise' 'SINC triggers Loaded and Started' {
-        $notOk = @()
-        foreach ($comp in $Manifest.SINCComponents) {
-            try {
-                $s = DWGet "/projects/components/$([System.Web.HttpUtility]::UrlEncode($comp))"
-                if ($s.state -notin @('Started','Loaded')) { $notOk += $comp }
-            } catch { $notOk += $comp }
-        }
-        if ($notOk) { throw "Not Started: $($notOk[0..2] -join ', ')$(if($notOk.Count -gt 3){' ...'})"}
-        "All $($Manifest.SINCComponents.Count) SINC components Started/Loaded"
+        & $startedCheck 'SINC' @(@($Manifest.SINCComponents) + @($Manifest.SINCMasterResetComponents))
     } '' 3 12
 
-    # Item 13 - SINC EMAIL_TO configured
+    # Item 13 - SINC EMAIL_TO configured (default of the EMAIL_TO local variable of 0_DefaultConfiguration)
     Check 'deviceWise' 'SINC EMAIL_TO configured' {
-        $s = DWGet "/projects/components/$([System.Web.HttpUtility]::UrlEncode('0_DefaultConfiguration'))"
-        $emailTo = ($s.localVariables | Where-Object { $_.name -eq 'EMAIL_TO' }).value
-        if (-not $emailTo) {
-            $emailTo = ($s.variables | Where-Object { $_.name -eq 'EMAIL_TO' }).value
-        }
-        if (-not $emailTo) { throw "EMAIL_TO variable not found or empty" }
-        "EMAIL_TO: $emailTo"
+        $x = Get-DwXml -Paths $paths -Table triggers -Name '0_DefaultConfiguration' -Project 'SINC'
+        if (-not $x) { throw 'SINC/0_DefaultConfiguration not found' }
+        $v = $x.SelectSingleNode("//VariableInfo[@name='EMAIL_TO']")
+        $email = if ($v) { $v.GetAttribute('default') } else { '' }
+        if (-not $email) { throw 'EMAIL_TO empty' }
+        "EMAIL_TO: $email"
     } '' 3 13
 
-    # Item 14 - CNC_ASSET_Management table
-    Check 'deviceWise' 'CNC_ASSET_Management table populated' {
-        $rows = DWGet '/projects/localdb/CNC_ASSET_Management'
-        if (-not $rows -or ($rows | Measure-Object).Count -eq 0) { throw "Table empty or not found" }
-        "$($($rows | Measure-Object).Count) row(s) in CNC_ASSET_Management"
+    # Items 14-15 - CNC asset mapping and SINC settings. On the gateways the SOP's CNC_ASSET_Management and
+    # CNC_Settings are one local table, CNC_SETTING (ASSET_NAME, alarm settings, CNC_ASSET, CNC_TYPE).
+    $cncSetting = $null; $cncSettingError = ''
+    try { $cncSetting = Get-DwLocalTable -Paths $paths -Table 'CNC_SETTING' } catch { $cncSettingError = $_.Exception.Message }
+    $rowFor = { param($n) @($cncSetting.Rows | Where-Object { $_.ASSET_NAME -eq $n }) | Select-Object -First 1 }
+    Check 'deviceWise' 'CNC asset mapping (CNC_SETTING: CNC_ASSET / CNC_TYPE)' {
+        if (-not $cncSetting) { throw "CNC_SETTING not found$(if ($cncSettingError) { ": $cncSettingError" })" }
+        $bad = foreach ($c in $machines) {
+            $r = & $rowFor "CNC$($c.CNCIndex)"
+            if (-not $r) { "CNC$($c.CNCIndex) has no row" }
+            elseif ($r.CNC_ASSET -ne $c.MachineName -or $r.CNC_TYPE -ne $c.CNCType) { "CNC$($c.CNCIndex) = $($r.CNC_ASSET) / $($r.CNC_TYPE)" }
+        }
+        if (@($bad).Count) { throw "$(@($bad) -join '; ') (expected the Site DB machine name / type)" }
+        "$(@($cncSetting.Rows).Count) row(s) in CNC_SETTING ($($cncSetting.Db))"
     } '' 3 14
-
-    # Item 15 - CNC_Settings table
-    Check 'deviceWise' 'CNC_Settings table populated' {
-        $rows = DWGet '/projects/localdb/CNC_Settings'
-        if (-not $rows -or ($rows | Measure-Object).Count -eq 0) { throw "Table empty or not found" }
-        "$($($rows | Measure-Object).Count) row(s) in CNC_Settings"
+    Check 'deviceWise' 'SINC alarm settings (CNC_SETTING)' {
+        if (-not $cncSetting) { throw "CNC_SETTING not found$(if ($cncSettingError) { ": $cncSettingError" })" }
+        $set = $Manifest.SINCDefaultSettings
+        $bad = foreach ($c in $machines) {
+            $r = & $rowFor "CNC$($c.CNCIndex)"
+            if (-not $r) { continue }
+            foreach ($k in 'ALARM_TAG', 'ALARM_PATH', 'WAIT_TIME', 'RETRY_COUNT') {
+                if ([string]$r.$k -ne [string]$set.$k) { "CNC$($c.CNCIndex) $k = $($r.$k) (expected $($set.$k))" }
+            }
+            if ([double]$r.ALARM_VALUE -ne [double]$set.ALARM_VALUE) { "CNC$($c.CNCIndex) ALARM_VALUE = $($r.ALARM_VALUE)" }
+        }
+        if (@($bad).Count) { throw (@($bad) | Select-Object -First 3) -join '; ' }
+        "Alarm $($set.ALARM_TAG) / $($set.ALARM_PATH), wait $($set.WAIT_TIME) ms, retry $($set.RETRY_COUNT)"
     } '' 3 15
 
     # Item 16 - SINC staging folders
@@ -281,60 +284,61 @@ function Invoke-Verification {
         Add-Result -Phase Verification -Check 'deviceWise: SINC staging folders' -Status FAIL -Detail ($sincMiss -join ', ')
     }
 
-    # Item 17 - CNCnetPDM Connected in deviceWise
-    if ($baseUrl) {
-        Check 'deviceWise' 'CNCnetPDM Connected in deviceWise' {
-            $inst = DWGet '/cncnetpdm/instances'
-            $conn = $inst | Where-Object { $_.status -eq 'Connected' }
-            if (-not $conn) { throw "No Connected instance found" }
-            "Connected instances: $($($conn | Measure-Object).Count)"
-        } '' 3 17
-    } else {
-        Warn 'deviceWise' 'CNCnetPDM Connected' 'DeviceWise port not available'
-    }
+    # Item 17 - CNCnetPDM Connected in deviceWise (dwcore's connection to CNCnetPDM's MTC Adapter port)
+    $mtc = Test-DwCncnetpdmConnected -IniPath $pdmIni -WaitSec 30
+    Check 'deviceWise' 'CNCnetPDM Connected in deviceWise' {
+        if (-not $mtc.Connected) { throw "dwcore has no connection to CNCnetPDM (port $($mtc.Port)) - CNCnetPDM running? Step 8 run?" }
+        "Connected (CNCnetPDM MTC Adapter port $($mtc.Port))"
+    } '' 3 17
 
-    # Item 18 - CNCnetPDM path mapping
+    # Item 18 - CNCnetPDM to deviceWise path mapping (CNCn_PATH: instance + '<DeviceNr> - <name>')
     Check 'deviceWise' 'CNCnetPDM to deviceWise path mapping' {
-        $mappings = DWGet '/cncnetpdm/mappings'
-        $missing  = @()
-        for ($i = 0; $i -lt $machines.Count; $i++) {
-            $expected = "CNC$($i+1)_Path"
-            $found = $mappings | Where-Object { $_.devicePath -match $expected -or $_.path -match $expected }
-            if (-not $found) { $missing += $expected }
+        $instance = if ($pdmDir) { Split-Path $pdmDir -Leaf } else { '' }
+        $bad = foreach ($c in $machines) {
+            $n = "CNC$($c.CNCIndex)_PATH"
+            $x = Get-DwXml -Paths $paths -Table devices -Name $n
+            if (-not $x) { "$n missing"; continue }
+            $prop = { param($p) $node = $x.SelectSingleNode("//Property[@name='$p']"); if ($node) { $node.GetAttribute('value') } }
+            $want = "$($c.DeviceNr) - $($c.MachineName)"
+            if ((& $prop 'machine') -ne $want -or (& $prop 'instance') -ne $instance) { "$n = $(& $prop 'instance') / $(& $prop 'machine') (expected $instance / $want)" }
         }
-        if ($missing) { throw "Unmapped paths: $($missing -join ', ')" }
-        "All $($machines.Count) CNC path(s) mapped"
+        if (@($bad).Count) { throw @($bad) -join '; ' }
+        "$($machines.Count) CNC path(s) mapped to $instance"
     } '' 3 18
 
-    # Item 19 - MedtronicSU user exists
+    # Item 19 - MedtronicSU user exists (DWUSER.db users)
     Check 'deviceWise' "OPC UA user $($dw.OpcUaUser) exists" {
-        $users = DWGet '/security/users'
-        $su = $users | Where-Object { $_.userName -eq $dw.OpcUaUser -or $_.name -eq $dw.OpcUaUser }
-        if (-not $su) { throw "User $($dw.OpcUaUser) not found" }
+        $u = Invoke-DwDbQuery -Paths $paths -Db 'DWUSER.db' -Sql 'SELECT name FROM users WHERE name = ?' -Arguments @($dw.OpcUaUser)
+        if (-not $u.Count) { throw "User $($dw.OpcUaUser) not found" }
         "User $($dw.OpcUaUser) present"
     } '' 3 19
 
-    # Item 20 - External client certificate trusted
-    Check 'deviceWise' 'External client certificate trusted' {
-        $certs = DWGet '/opcua/server/certificates'
-        $trusted = $certs | Where-Object { $_.trusted -eq $true -or $_.status -eq 'Trusted' }
-        if (-not $trusted) { throw "No trusted certificates found" }
-        "Trusted certificates: $($($trusted | Measure-Object).Count)"
-    } '' 3 20
+    # Item 20 - External client certificate trusted (SOP 2.1.2.5). The gateway's OPC UA server keeps client
+    # certificates as files: staging\uaserver\pkiserver\trusted\certs and ...\rejected (pending a Trust).
+    $pki      = Join-Path $paths.Root 'staging\uaserver\pkiserver'
+    $trusted  = @(Get-ChildItem (Join-Path $pki 'trusted\certs') -File -ErrorAction SilentlyContinue)
+    $rejected = @(Get-ChildItem (Join-Path $pki 'rejected') -Recurse -File -ErrorAction SilentlyContinue)
+    if ($rejected.Count) {
+        $d = "Waiting for Trust (Workbench > OPC UA Server > Certificates): $(($rejected | ForEach-Object { $_.BaseName }) -join ', ')"
+        Add-Result -Phase Verification -Check 'deviceWise: External client certificate trusted' -Status FAIL -Detail $d
+        $checks.Add(@{ Cat='deviceWise'; Name='External client certificate trusted'; Status='FAIL'; Detail=$d; Note=''; T=3; I=20 })
+    } elseif ($trusted.Count) {
+        $d = "Trusted: $(($trusted | ForEach-Object { $_.BaseName }) -join ', ')"
+        Add-Result -Phase Verification -Check 'deviceWise: External client certificate trusted' -Status PASS -Detail $d
+        $checks.Add(@{ Cat='deviceWise'; Name='External client certificate trusted'; Status='PASS'; Detail=$d; Note=''; T=3; I=20 })
+    } else {
+        $d = 'No external client (DOC) has connected to the OPC UA server yet - check again after DOC has run'
+        Add-Result -Phase Verification -Check 'deviceWise: External client certificate trusted' -Status WARN -Detail $d
+        $checks.Add(@{ Cat='deviceWise'; Name='External client certificate trusted'; Status='BLANK'; Detail=$d; Note='Complete manually'; T=3; I=20 })
+    }
 
-    # Item 21 - CNCx and CNCx_Path devices Started
+    # Item 21 - CNCx and CNCx_PATH devices Started (DWCORE.db devices.state 1), plus SINC's OPC UA client
     Check 'deviceWise' 'CNCx / CNCx_Path devices State=Started' {
-        $notStarted = @()
-        for ($i = 0; $i -lt $machines.Count; $i++) {
-            foreach ($dev in @("CNC$($i+1)", "CNC$($i+1)_Path")) {
-                try {
-                    $d = DWGet "/devices/$dev"
-                    if ($d.state -ne 'Started') { $notStarted += $dev }
-                } catch { $notStarted += $dev }
-            }
-        }
-        if ($notStarted) { throw "Not Started: $($notStarted -join ', ')" }
-        "All CNC device objects Started"
+        if ($null -eq $devStates) { throw 'Cannot read the gateway devices (DWCORE.db)' }
+        $want = @($machines | ForEach-Object { "CNC$($_.CNCIndex)", "CNC$($_.CNCIndex)_PATH" }) + @($paths.KeepStarted)
+        $bad = @($want | Where-Object { -not $devStates.ContainsKey($_) -or $devStates[$_] -ne 1 })
+        if ($bad.Count) { throw "Not Started: $($bad -join ', ')" }
+        "Started: $($want -join ', ')"
     } '' 3 21
 
     #endregion
@@ -625,17 +629,10 @@ function Invoke-Verification {
     } '' 6 9
 
     # Item 10 - Connected in deviceWise (same as T3-17, share the result)
-    if ($baseUrl) {
-        Check 'CNCnetPDM' 'CNCnetPDM devices Connected in deviceWise' {
-            $inst = DWGet '/cncnetpdm/instances'
-            $conn = $inst | Where-Object { $_.status -eq 'Connected' }
-            if (-not $conn) { throw "No Connected instance" }
-            "Connected"
-        } '' 6 10
-    } else {
-        Warn 'CNCnetPDM' 'Connected check skipped' 'DeviceWise port not available'
-        $checks.Add(@{ Cat='CNCnetPDM'; Name='CNCnetPDM devices Connected'; Status='BLANK'; Detail=''; Note='Verify in Workbench'; T=6; I=10 })
-    }
+    Check 'CNCnetPDM' 'CNCnetPDM devices Connected in deviceWise' {
+        if (-not $mtc.Connected) { throw "dwcore has no connection to CNCnetPDM (port $($mtc.Port))" }
+        "Connected (port $($mtc.Port))"
+    } '' 6 10
 
     # Items 11-12 - manual read/write tests
     Blank 'CNCnetPDM' 'Read access verified via deviceWise' 6 11
