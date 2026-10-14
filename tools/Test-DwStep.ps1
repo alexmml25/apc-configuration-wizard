@@ -63,7 +63,8 @@ $machines = foreach ($c in $Cnc) {
     $dll = if ($p.Count -ge 3 -and $p[2].Trim()) { $p[2].Trim() } else { 'citizenm.dll' }
     $ip  = if ($p.Count -ge 4) { $p[3].Trim() } else { '' }
     if ($Step -eq 7 -and -not $ip) { throw "Step 7 needs the IP address: 'Machine name|CNC type|DLL|IP', got '$c'" }
-    [pscustomobject]@{ MachineName = $p[0].Trim(); CNCType = $p[1].Trim(); AssetFamily = $p[1].Trim(); DLLName = $dll; IPAddress = $ip }
+    # the same fields Step 1 reads from the Site DB; an empty Port means the CNCnetPDM default (683)
+    [pscustomobject]@{ MachineName = $p[0].Trim(); CNCType = $p[1].Trim(); AssetFamily = $p[1].Trim(); DLLName = $dll; IPAddress = $ip; Port = '' }
 }
 
 $manifestPath = Join-Path $root 'APC_ConfigManifest.json'
