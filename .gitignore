@@ -51,3 +51,6 @@ tools/Test-DwHttpApi.ps1
 
 # OPC UA browse output from the VMs - local only
 dw-opcua-*.txt
+
+# gateway DB inspection output from the VMs - local only
+dw-db-*.txt

@@ -92,7 +92,7 @@ function New-DwImportFromBaseline {
     $xml = New-Object Xml.XmlDocument
     $xml.PreserveWhitespace = $true
     $xml.Load($BaselinePath)
-    if ($xml.DocumentElement.Name -ne 'export') { throw "$BaselinePath is not a deviceWise export/backup (root <$($xml.DocumentElement.Name)>)." }
+    if ($xml.DocumentElement.LocalName -ne 'export') { throw "$BaselinePath is not a deviceWise export/backup (root <$($xml.DocumentElement.LocalName)>)." }
     $items = New-Object System.Collections.Generic.List[string]
     foreach ($ec in @($xml.DocumentElement.SelectNodes('exportcontent'))) {
         $type = $ec.GetAttribute('type'); $name = $ec.GetAttribute('name')
@@ -326,7 +326,7 @@ function Remove-DwUnchangedDevices {
         $have = $null
         try { $have = Get-DwXml -Paths $Paths -Table devices -Name $name } catch { Write-Log WARN "Could not read device $name from the gateway: $($_.Exception.Message)" }
         if (-not $have) { continue }
-        $haveDef = if ($have.DocumentElement.Name -eq 'DeviceDefinition') { $have.DocumentElement } else { $have.SelectSingleNode('//DeviceDefinition') }
+        $haveDef = if ($have.DocumentElement.LocalName -eq 'DeviceDefinition') { $have.DocumentElement } else { $have.SelectSingleNode('//DeviceDefinition') }
         if ($haveDef -and (Get-DwDeviceSignature $haveDef) -eq (Get-DwDeviceSignature $mine)) {
             $st = $ec.SelectSingleNode("exportproperty[@key='state']")
             if (-not $st -or $st.GetAttribute('value') -eq 'started') { $start.Add($name) }
