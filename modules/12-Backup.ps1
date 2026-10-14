@@ -13,11 +13,12 @@
                             File Manager, Data Collector, Data Analyzer, CNCNetPDM), without MedtronicExcludeDirs
                             (CNCnetPDM logs)
       CNCnetPDM\            only when CNCnetPDM is installed outside C:\Medtronic
-      deviceWise\           file-level backup of the gateway, taken with dwcore stopped (DeviceWise.ps1):
+      deviceWise\           file-level backup of the gateway, taken while dwcore runs (DeviceWise.ps1):
                             db\ (DWCORE, DWAPP, DWUSER, DWTS - configuration, not the log/report databases),
                             the dwcore / dwjava .properties, dwcore\packages\*.xml, staging\uaserver and
                             staging\uaclient (OPC UA certificates and device files), plus RESTORE.txt.
-                            Devices are kept started and CNCAsset / CNCType written again after the restart.
+                            The databases are copied with SQLite's online backup: no dwcore restart, so
+                            CNCAsset / CNCType (written by Step 8) and the running devices are not touched.
 #>
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
@@ -132,7 +133,7 @@ function Invoke-Backup {
 
     #endregion
 
-    #region -- deviceWise (file-level, dwcore stopped) ---------------------------
+    #region -- deviceWise (file-level, while dwcore runs) -------------------------
 
     $dwDir   = Join-Path $destRoot 'deviceWise'
     $dwPaths = Get-DwPaths -Manifest $Manifest
@@ -152,26 +153,26 @@ function Invoke-Backup {
     } else {
         try {
             $gw = $dwPaths.Root
-            Restart-DwCore -Paths $dwPaths -WhileStopped {
-                Save-DwDatabases -Paths $dwPaths -Dest (Join-Path $dwDir 'db')
-                foreach ($sub in 'dwcore', 'dwjava') {
-                    $src = Join-Path $gw $sub
-                    if (Test-Path $src) {
-                        New-Item -ItemType Directory -Path (Join-Path $dwDir $sub) -Force | Out-Null
-                        Get-ChildItem $src -Filter '*.properties' -File | Copy-Item -Destination (Join-Path $dwDir $sub) -Force
-                    }
-                }
-                if (Test-Path $dwPaths.Packages) {
-                    New-Item -ItemType Directory -Path (Join-Path $dwDir 'dwcore\packages') -Force | Out-Null
-                    Get-ChildItem $dwPaths.Packages -Filter '*.xml' -File | Copy-Item -Destination (Join-Path $dwDir 'dwcore\packages') -Force
-                }
-                foreach ($sub in 'staging\uaserver', 'staging\uaclient') {
-                    $src = Join-Path $gw $sub
-                    if (Test-Path $src) { Copy-Item $src (Join-Path $dwDir $sub) -Recurse -Force }
+            # No dwcore restart: the databases are copied with SQLite's online backup (consistent while the
+            # gateway runs), so CNCAsset / CNCType and the running devices are not touched
+            Backup-DwDatabases -Paths $dwPaths -Dest (Join-Path $dwDir 'db')
+            foreach ($sub in 'dwcore', 'dwjava') {
+                $src = Join-Path $gw $sub
+                if (Test-Path $src) {
+                    New-Item -ItemType Directory -Path (Join-Path $dwDir $sub) -Force | Out-Null
+                    Get-ChildItem $src -Filter '*.properties' -File | Copy-Item -Destination (Join-Path $dwDir $sub) -Force
                 }
             }
+            if (Test-Path $dwPaths.Packages) {
+                New-Item -ItemType Directory -Path (Join-Path $dwDir 'dwcore\packages') -Force | Out-Null
+                Get-ChildItem $dwPaths.Packages -Filter '*.xml' -File | Copy-Item -Destination (Join-Path $dwDir 'dwcore\packages') -Force
+            }
+            foreach ($sub in 'staging\uaserver', 'staging\uaclient') {
+                $src = Join-Path $gw $sub
+                if (Test-Path $src) { Copy-Item $src (Join-Path $dwDir $sub) -Recurse -Force }
+            }
             Set-Content -Path (Join-Path $dwDir 'RESTORE.txt') -Encoding ASCII -Value @(
-                "deviceWise Gateway backup of $($env:COMPUTERNAME), $(Get-Date -Format 'yyyy-MM-dd HH:mm') - file level, taken with dwcore stopped."
+                "deviceWise Gateway backup of $($env:COMPUTERNAME), $(Get-Date -Format 'yyyy-MM-dd HH:mm') - file level, taken while dwcore ran (SQLite online backup of the databases)."
                 'To restore on the same gateway version (23.04.08), with the same packages installed:'
                 '  1. Stop the services:   Stop-Service dwcore -Force; Stop-Service dwts -Force'
                 "  2. Copy db\*.db         to $gw\db\  (replace)"
@@ -189,9 +190,6 @@ function Invoke-Backup {
         } catch {
             & $marker "the copy failed: $($_.Exception.Message)"
         }
-        # the restart emptied CNCAsset / CNCType on the CNC devices (known limitation)
-        $cncs = Get-AssignedCNCs -State $State -Manifest $Manifest
-        if ($cncs.Count) { Set-DwCncAssetAfterRestarts -Manifest $Manifest -State $State -Step 12 -Cncs $cncs -Phase Backup }
     }
 
     #endregion

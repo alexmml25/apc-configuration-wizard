@@ -285,6 +285,75 @@ function Read-DwImportResult {
     return [pscustomobject]@{ Items = $items; Overall = $overall; Lines = @(Get-Content $Path) }
 }
 
+function Backup-DwDatabases {
+    <#
+        Consistent copy of the configuration databases while dwcore runs: SQLite's online backup
+        (sqlite3_backup_*) through the gateway's own sqlite3.dll, so a backup needs no dwcore restart
+        (Step 12; a restart there emptied CNCAsset / CNCType again, user 2026-10-14). Own type name: the
+        wizard's process keeps DwSqlite from earlier steps loaded, and a loaded type cannot be redefined.
+    #>
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$Dest)
+    Initialize-DwSqlite -Paths $Paths   # loads the gateway's sqlite3.dll
+    if (-not ('DwSqliteBackup' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+
+public static class DwSqliteBackup {
+    const string L = "sqlite3.dll";
+    [DllImport(L, CallingConvention = CallingConvention.Cdecl)] static extern int sqlite3_open_v2(byte[] file, out IntPtr db, int flags, IntPtr vfs);
+    [DllImport(L, CallingConvention = CallingConvention.Cdecl)] static extern int sqlite3_close_v2(IntPtr db);
+    [DllImport(L, CallingConvention = CallingConvention.Cdecl)] static extern int sqlite3_busy_timeout(IntPtr db, int ms);
+    [DllImport(L, CallingConvention = CallingConvention.Cdecl)] static extern IntPtr sqlite3_backup_init(IntPtr dst, byte[] dstName, IntPtr src, byte[] srcName);
+    [DllImport(L, CallingConvention = CallingConvention.Cdecl)] static extern int sqlite3_backup_step(IntPtr b, int pages);
+    [DllImport(L, CallingConvention = CallingConvention.Cdecl)] static extern int sqlite3_backup_finish(IntPtr b);
+    [DllImport(L, CallingConvention = CallingConvention.Cdecl)] static extern int sqlite3_errcode(IntPtr db);
+    [DllImport(L, CallingConvention = CallingConvention.Cdecl)] static extern IntPtr sqlite3_errmsg(IntPtr db);
+
+    static byte[] Z(string s) { return Encoding.UTF8.GetBytes(s + "\0"); }
+    static string Err(IntPtr db) { return Marshal.PtrToStringAnsi(sqlite3_errmsg(db)); }
+    static IntPtr Open(string path, int flags) {
+        IntPtr db;
+        int rc = sqlite3_open_v2(Z(path), out db, flags, IntPtr.Zero);
+        if (rc != 0) { string e = Err(db); sqlite3_close_v2(db); throw new Exception("sqlite open " + path + " (" + rc + "): " + e); }
+        sqlite3_busy_timeout(db, 10000);
+        return db;
+    }
+
+    // Copies the whole database src to dst (created or overwritten); retries while the gateway holds a lock
+    public static void Copy(string src, string dst, int timeoutMs) {
+        IntPtr s = Open(src, 1), d = IntPtr.Zero;
+        try {
+            d = Open(dst, 6);   // read/write + create
+            IntPtr b = sqlite3_backup_init(d, Z("main"), s, Z("main"));
+            if (b == IntPtr.Zero) throw new Exception("sqlite backup init: " + Err(d));
+            int rc; var until = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (true) {
+                rc = sqlite3_backup_step(b, -1);
+                if (rc == 101) break;                                   // DONE
+                if ((rc == 5 || rc == 6) && DateTime.UtcNow < until) { Thread.Sleep(250); continue; }   // BUSY / LOCKED
+                if (rc != 0) break;
+            }
+            sqlite3_backup_finish(b);
+            if (rc != 101) throw new Exception("sqlite backup step " + rc + ": " + Err(d));
+        } finally { if (d != IntPtr.Zero) sqlite3_close_v2(d); sqlite3_close_v2(s); }
+    }
+}
+'@
+    }
+    New-Item -ItemType Directory -Path $Dest -Force | Out-Null
+    foreach ($db in 'DWCORE.db', 'DWAPP.db', 'DWUSER.db', 'DWTS.db') {
+        $src = Join-Path $Paths.Db $db
+        if (Test-Path $src) {
+            $dst = Join-Path $Dest $db
+            if (Test-Path $dst) { Remove-Item $dst -Force }
+            [DwSqliteBackup]::Copy($src, $dst, 60000)
+        }
+    }
+}
+
 function Save-DwDatabases {
     # Safety copy of the configuration databases (dwcore must be stopped). Logs/reports are skipped.
     param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$Dest)
@@ -827,7 +896,8 @@ function Set-DwDeviceStarted {
 
 function Test-DwDevicesStarted {
     # One result line per device that must be Started (devices.state 1), waiting up to $WaitSec
-    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string[]]$Names, [Parameter(Mandatory)] [string]$Phase, [int]$WaitSec = 60)
+    # (150 s: Devicewise_OPC_UA_Sinc has taken about 55 s, and once showed state 3 for a while before it started)
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string[]]$Names, [Parameter(Mandatory)] [string]$Phase, [int]$WaitSec = 150)
     try {
         $deadline = (Get-Date).AddSeconds($WaitSec)
         do {
