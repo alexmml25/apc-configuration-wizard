@@ -70,6 +70,34 @@ function Set-DwVariableDefault {
     return $VariablesXml.Substring(0, $m.Index) + $tag + $VariablesXml.Substring($m.Index + $m.Length)
 }
 
+function Get-DwBaseline {
+    # The approved baseline backup (Manifest.DeviceWise.BaselineRepoSubPath) as a FileInfo
+    param([Parameter(Mandatory)] [object]$Manifest)
+    $p = Get-DwRepoPath -Manifest $Manifest -SubPath $Manifest.DeviceWise.BaselineRepoSubPath
+    if (-not (Test-Path $p -PathType Leaf)) { throw "Baseline backup not found: $p" }
+    return Get-Item $p
+}
+
+function New-DwImportFromBaseline {
+    <#
+        Loads the baseline backup and keeps only the <exportcontent> items for which $Keep (param $type,
+        $name) returns true. The licence voucher (lease issued to the source VM) is always removed.
+        Returns @{ Xml = [xml]; Items = [string[]] 'type/name' }.
+    #>
+    param([Parameter(Mandatory)] [string]$BaselinePath, [Parameter(Mandatory)] [scriptblock]$Keep)
+    $xml = New-Object Xml.XmlDocument
+    $xml.PreserveWhitespace = $true
+    $xml.Load($BaselinePath)
+    if ($xml.DocumentElement.Name -ne 'export') { throw "$BaselinePath is not a deviceWise export/backup (root <$($xml.DocumentElement.Name)>)." }
+    $items = New-Object System.Collections.Generic.List[string]
+    foreach ($ec in @($xml.DocumentElement.SelectNodes('exportcontent'))) {
+        $type = $ec.GetAttribute('type'); $name = $ec.GetAttribute('name')
+        if (& $Keep $type $name) { $items.Add("$type/$name") } else { [void]$xml.DocumentElement.RemoveChild($ec) }
+    }
+    foreach ($v in @($xml.SelectNodes("//exportcontent[@type='license.pool']//PersistenceEntry[@name='voucher']"))) { [void]$v.ParentNode.RemoveChild($v) }
+    return @{ Xml = $xml; Items = [string[]]$items }
+}
+
 function New-DwBaseImport {
     <#
         Builds the Step 4 import from the baseline backup:
@@ -89,24 +117,17 @@ function New-DwBaseImport {
     $dw      = $Manifest.DeviceWise
     $types   = @($dw.BaseImportTypes)
     $devices = @($dw.CNCNodes)
-    $xml = New-Object Xml.XmlDocument
-    $xml.PreserveWhitespace = $true
-    $xml.Load($BaselinePath)
-    if ($xml.DocumentElement.Name -ne 'export') { throw "$BaselinePath is not a deviceWise export/backup (root <$($xml.DocumentElement.Name)>)." }
-
-    $changes = New-Object System.Collections.Generic.List[string]
-    $items   = New-Object System.Collections.Generic.List[string]
-    foreach ($ec in @($xml.DocumentElement.SelectNodes('exportcontent'))) {
-        $type = $ec.GetAttribute('type'); $name = $ec.GetAttribute('name')
+    $build = New-DwImportFromBaseline -BaselinePath $BaselinePath -Keep {
+        param($type, $name)
         $keep = $types -contains $type
         if ($keep -and $type -eq 'device') { $keep = $devices -contains $name }
         if ($keep -and $type -eq 'file')   { $keep = @($devices | Where-Object { $name -eq "/uaserver/devices/$_.json" }).Count -gt 0 }
-        if ($keep) { $items.Add("$type/$name") } else { [void]$xml.DocumentElement.RemoveChild($ec) }
+        $keep
     }
-
-    foreach ($v in @($xml.SelectNodes("//exportcontent[@type='license.pool']//PersistenceEntry[@name='voucher']"))) {
-        [void]$v.ParentNode.RemoveChild($v); $changes.Add('licence voucher of the source VM removed')
-    }
+    $xml     = $build.Xml
+    $items   = $build.Items
+    $changes = New-Object System.Collections.Generic.List[string]
+    $changes.Add('licence voucher of the source VM removed')
 
     $sys = $xml.SelectSingleNode("//exportcontent[@type='system']/exportitem")
     if ($sys) {
@@ -200,6 +221,52 @@ function Save-DwDatabases {
         $src = Join-Path $Paths.Db $db
         if (Test-Path $src) { Copy-Item $src $Dest -Force }
     }
+}
+
+function Invoke-DwImport {
+    <#
+        Imports an export document through the import folder: saves it, stops dwcore (dwts keeps
+        running), optionally copies the gateway databases to $SafetyDir first, queues import.dwx,
+        starts dwcore and waits for import.result. A copy of the result goes to $SafetyDir as
+        <Label>-import.result. Returns Read-DwImportResult's object; throws when no result arrives.
+    #>
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [xml]$Xml, [Parameter(Mandatory)] [string]$Label,
+          [string]$SafetyDir, [switch]$SaveDatabases, [int]$TimeoutSec = 900)
+    if (-not (Test-Path $Paths.ImportDir)) { New-Item -ItemType Directory -Path $Paths.ImportDir -Force | Out-Null }
+    $target = Join-Path $Paths.ImportDir 'import.dwx'
+    $result = Join-Path $Paths.ImportDir 'import.result'
+    if (Test-Path $target) { throw "An import.dwx is already waiting in $($Paths.ImportDir)." }
+    foreach ($old in $result, "${result}s") { if (Test-Path $old) { Remove-Item $old -Force } }
+    $staged = Join-Path $env:TEMP ("dw-{0}-{1}.dwx" -f $Label, (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    Save-DwXml -Xml $Xml -Path $staged
+    try {
+        Restart-DwCore -WhileStopped {
+            if ($SaveDatabases -and $SafetyDir) {
+                Save-DwDatabases -Paths $Paths -Dest $SafetyDir
+                Write-Log INFO "Safety copy of the gateway databases: $SafetyDir"
+            }
+            Copy-Item $staged $target
+        }
+        $done = Wait-DwImportFile -Queued $target -ResultFiles @($result, "${result}s") -TimeoutSec $TimeoutSec
+    } finally { Remove-Item $staged -ErrorAction SilentlyContinue }
+    if (-not $done) { throw "The gateway did not process the import ($Label) within $TimeoutSec s." }
+    if ($SafetyDir) {
+        New-Item -ItemType Directory -Path $SafetyDir -Force | Out-Null
+        Copy-Item $done (Join-Path $SafetyDir "$Label-import.result") -Force
+    }
+    return (Read-DwImportResult -Path $done)
+}
+
+function Add-DwImportResults {
+    # One result line per imported item (status 0 = PASS) plus a summary line; returns the failed count
+    param([Parameter(Mandatory)] [string]$Phase, [Parameter(Mandatory)] $Result, [Parameter(Mandatory)] [string]$Summary)
+    foreach ($i in $Result.Items) {
+        Add-Result -Phase $Phase -Check "Import $($i.Type) $($i.Item)" -Status $(if ($i.Status -eq 0) { 'PASS' } else { 'FAIL' }) -Detail "status $($i.Status)"
+    }
+    $bad = @($Result.Items | Where-Object { $_.Status -ne 0 })
+    Add-Result -Phase $Phase -Check $Summary -Status $(if ($bad.Count) { 'FAIL' } else { 'PASS' }) `
+        -Detail ("{0} item(s), {1} failed, overall status {2}" -f $Result.Items.Count, $bad.Count, $Result.Overall)
+    return $bad.Count
 }
 
 function Get-DwPackagePlan {
@@ -363,6 +430,50 @@ function Set-DwUaValues {
 function Get-DwUaValue {
     param([Parameter(Mandatory)] $Session, [Parameter(Mandatory)] [string]$Namespace, [Parameter(Mandatory)] [string]$Path)
     return $Session.ReadValue((Get-DwUaNodeId -Session $Session -Namespace $Namespace -Path $Path))
+}
+
+function Set-DwCncAssetValues {
+    <#
+        Writes CNCn.CNCAsset (Site DB machine name) and CNCn.CNCType through the gateway's OPC UA server
+        and reads them back; one result line per CNC. The CNC devices do not persist values, so every
+        dwcore restart empties them: each step that restarts dwcore calls this at its end.
+        KNOWN LIMITATION (user, 2026-10-13): empty again after any later dwcore restart.
+        Waits up to $WaitSec for the OPC UA port first. On any OPC UA problem the lines are MANUAL.
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [object[]]$Cncs,
+          [Parameter(Mandatory)] [string]$Phase, [int]$WaitSec = 120)
+    $ua = $Manifest.DeviceWise.OpcUaClient
+    $port = [int]$Manifest.DeviceWise.OpcUaEndpointPort
+    $wanted = [ordered]@{}
+    foreach ($c in $Cncs) {
+        $wanted["CNC$($c.CNCIndex).CNCAsset"] = [string]$c.MachineName
+        $wanted["CNC$($c.CNCIndex).CNCType"]  = [string]$c.CNCType
+    }
+    $session = $null
+    try {
+        $deadline = (Get-Date).AddSeconds($WaitSec)
+        while (-not (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)) {
+            if ((Get-Date) -gt $deadline) { throw "the OPC UA server is not listening on port $port" }
+            Start-Sleep -Seconds 5
+        }
+        $session = Open-DwUaSession -Manifest $Manifest
+        $written = Set-DwUaValues -Session $session -Namespace $ua.Namespace -Values $wanted
+        foreach ($c in $Cncs) {
+            $node = "CNC$($c.CNCIndex)"
+            $got  = @("$node.CNCAsset", "$node.CNCType" | ForEach-Object { [string](Get-DwUaValue -Session $session -Namespace $ua.Namespace -Path $_).Value })
+            $ok   = ($got[0] -eq $wanted["$node.CNCAsset"]) -and ($got[1] -eq $wanted["$node.CNCType"])
+            Add-Result -Phase $Phase -Check "$node CNCAsset / CNCType" -Status $(if ($ok) { 'PASS' } else { 'FAIL' }) `
+                -Detail ("read back '{0}' / '{1}' (write: {2} / {3}); lost on the next dwcore restart (known limitation)" -f `
+                         $got[0], $got[1], $written["$node.CNCAsset"], $written["$node.CNCType"])
+        }
+    } catch {
+        foreach ($c in $Cncs) {
+            Add-Result -Phase $Phase -Check "CNC$($c.CNCIndex) CNCAsset / CNCType" -Status MANUAL `
+                -Detail "OPC UA write not possible ($($_.Exception.Message)). Workbench > Devices > CNC$($c.CNCIndex) > Variables: CNCAsset = $($c.MachineName), CNCType = $($c.CNCType)"
+        }
+    } finally {
+        if ($session) { [void]$session.Close() }
+    }
 }
 
 #endregion

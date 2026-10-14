@@ -1,13 +1,23 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Step 5 - Import and configure the CHMI deviceWise project.
+    Step 5 - deviceWise CHMI integration (SOP D01555607 2.1.1, deviceWise - CHMI Integration).
 .DESCRIPTION
-    - Imports the approved CHMI .dwx project file from the repository
-    - Verifies all required Scheduled and Monitor components are present and Loaded
-    - Verifies all required SubTrigger/OnDemand components are Started
-    - Starts any component not already in the Started state
+    No Workbench and no API: imports the CHMI part of the approved baseline backup through the
+    gateway's import folder (DeviceWise.ps1), as the SOP's Projects > Import of the CHMI project:
+      - project CHMI and its triggers (CHMI/*; saved as started in the baseline)
+      - the transactions the CHMI triggers use (Manifest.DeviceWise.CHMIImport.Transactions) and
+        their database connection (CHMIImport.Transports: TimescaleDB = local apcuser@localhost:5432).
+        The connection's password is stored encrypted in the baseline, so the local apcuser
+        password must be the one used on the baseline gateway.
+    Checks: every imported item status 0, and every component the SOP lists (Manifest.CHMIComponents
+    Loaded / Started) present in the import. Their runtime Loaded / Started state is a Workbench
+    check for now. The CNCn_PATH monitors also need the CNCnetPDM devices of Step 8.
+    dwcore restarts for the import, which empties CNCAsset / CNCType, so they are written again.
 #>
+
+. (Join-Path $PSScriptRoot 'Common.ps1')
+. (Join-Path $PSScriptRoot 'DeviceWise.ps1')
 
 function Invoke-DeviceWiseCHMI {
     [CmdletBinding()]
@@ -17,108 +27,55 @@ function Invoke-DeviceWiseCHMI {
         [switch]$NonInteractive
     )
 
-    Write-Log STEP "deviceWise CHMI Integration"
+    Write-Log STEP 'deviceWise CHMI Integration'
+    $dw    = $Manifest.DeviceWise
+    $paths = Get-DwPaths -Manifest $Manifest
+    $phase = 'deviceWise CHMI'
+    $cfg   = $dw.CHMIImport
 
-    $dw       = $Manifest.DeviceWise
-    $dwPort   = $State['DeviceWisePort']
-    $dwToken  = $State['DeviceWiseToken']
-    $repoPath = Join-Path $Manifest.APC.RepositoryRoot $dw.CHMIProjectRepoSubPath
+    $cncs = Get-AssignedCNCs -State $State -Manifest $Manifest   # already an array (return ,$result); @() would nest it
+    if (-not $cncs.Count) { throw 'No CNC machines in the state. Run Step 1 first.' }
+    if (-not (Test-Path (Join-Path $paths.Packages 'dwopcua_server_v3.xml'))) { throw 'The deviceWise base platform is not set up. Run Step 4 first.' }
 
-    if ($dwPort -eq 0) { throw "DeviceWisePort not set. Run Step 4 first." }
-
-    $baseUrl = "http://localhost:${dwPort}$($dw.ApiBasePath)"
-    $headers = @{ 'Content-Type' = 'application/json' }
-    if ($dwToken) { $headers['Authorization'] = "Bearer $dwToken" }
-
-    function Invoke-DW {
-        param([string]$Method, [string]$Path, [object]$Body = $null, [string]$Desc = '')
-        $params = @{ Uri = "$baseUrl$Path"; Method = $Method; Headers = $headers; TimeoutSec = 60 }
-        if ($Body) { $params['Body'] = ($Body | ConvertTo-Json -Depth 10) }
-        try { return Invoke-RestMethod @params -ErrorAction Stop }
-        catch { Write-Log WARN "$Desc failed: $_"; return $null }
-    }
-
-    #region -- Import CHMI project --------------------------------------------
-
-    $chmiFile = Get-ChildItem $repoPath -Filter '*CHMI*.dwx' -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $chmiFile) {
-        # Fallback: any .dwx file with 'CHMI' in name anywhere under repo
-        $chmiFile = Get-ChildItem $Manifest.APC.RepositoryRoot -Filter '*CHMI*.dwx' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    }
-
-    if (-not $chmiFile) {
-        Add-Result -Phase DeviceWise -Check "CHMI project file" -Status WARN `
-            -Detail "No CHMI .dwx file found under $repoPath  -  import manually in Workbench -> Projects -> Import"
-    } else {
-        Write-Log INFO "Importing CHMI project: $($chmiFile.FullName)"
-        try {
-            $form        = [System.Net.Http.MultipartFormDataContent]::new()
-            $fileBytes   = [System.IO.File]::ReadAllBytes($chmiFile.FullName)
-            $fileContent = [System.Net.Http.ByteArrayContent]::new($fileBytes)
-            $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('application/octet-stream')
-            $form.Add($fileContent, 'file', $chmiFile.Name)
-
-            $client = [System.Net.Http.HttpClient]::new()
-            if ($dwToken) { $client.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $dwToken) }
-            $resp = $client.PostAsync("$baseUrl/projects/import", $form).Result
-            $client.Dispose()
-
-            if ($resp.IsSuccessStatusCode) {
-                Add-Result -Phase DeviceWise -Check "CHMI project import" -Status PASS -Detail $chmiFile.Name
-            } else {
-                Add-Result -Phase DeviceWise -Check "CHMI project import" -Status WARN -Detail "HTTP $($resp.StatusCode.value__)  -  verify in Workbench"
-            }
-        } catch {
-            Add-Result -Phase DeviceWise -Check "CHMI project import" -Status WARN -Detail $_
-        }
-
-        # Brief pause for project to load
-        Start-Sleep -Seconds 10
-    }
-
-    #endregion
-
-    #region -- Verify Loaded components (CNC monitors) -------------------------
-
-    $machines = $State['CNCMachines']
-    $cncCount = [math]::Min($machines.Count, 3)
-
-    # Build expected loaded component list dynamically from manifest  -  only for deployed CNC count
-    $loadedComponents = $Manifest.CHMIComponents.Loaded | Where-Object {
-        $cncNum = if ($_ -match 'CNC(\d)') { [int]$Matches[1] } else { 1 }
-        $cncNum -le $cncCount
-    }
-
-    foreach ($comp in $loadedComponents) {
-        $status = Invoke-DW -Method GET -Path "/projects/components/$([System.Web.HttpUtility]::UrlEncode($comp))" -Desc "Component status $comp"
-        if ($status -and $status.state -eq 'Loaded') {
-            Add-Result -Phase DeviceWise -Check "CHMI component: $comp" -Status PASS -Detail "Loaded"
-        } elseif ($status) {
-            # Try to load
-            Invoke-DW -Method POST -Path "/projects/components/$([System.Web.HttpUtility]::UrlEncode($comp))/load" -Desc "Load $comp" | Out-Null
-            Add-Result -Phase DeviceWise -Check "CHMI component: $comp" -Status PASS -Detail "Load triggered"
-        } else {
-            Add-Result -Phase DeviceWise -Check "CHMI component: $comp" -Status WARN -Detail "Not found  -  verify in Workbench -> Projects"
+    $baseline = Get-DwBaseline -Manifest $Manifest
+    Write-Log INFO "Baseline: $($baseline.FullName)"
+    $projects = @($cfg.Projects)
+    $build = New-DwImportFromBaseline -BaselinePath $baseline.FullName -Keep {
+        param($type, $name)
+        switch ($type) {
+            'project'     { $projects -contains $name }
+            'trigger'     { @($projects | Where-Object { $name -like "$_/*" }).Count -gt 0 }
+            'transaction' { @($cfg.Transactions) -contains $name }
+            'transport'   { @($cfg.Transports) -contains $name }
+            default       { $false }
         }
     }
+    Write-Log INFO ("Import: {0} item(s) - projects {1}, transactions {2}, transports {3}" -f `
+        $build.Items.Count, ($projects -join ', '), (@($cfg.Transactions) -join ', '), (@($cfg.Transports) -join ', '))
 
-    #endregion
+    $safety = Join-Path (Get-RunDir -State $State -Name Backups -Manifest $Manifest) 'deviceWise-before-step5'
+    try {
+        $res = Invoke-DwImport -Paths $paths -Xml $build.Xml -Label 'step5-chmi' -SafetyDir $safety -SaveDatabases -TimeoutSec $dw.ImportTimeoutSec
+    } catch {
+        Add-Result -Phase $phase -Check 'CHMI import' -Status FAIL -Detail $_.Exception.Message
+        throw
+    }
+    [void](Add-DwImportResults -Phase $phase -Result $res -Summary 'CHMI import')
 
-    #region -- Verify Started components (triggers) ---------------------------
-
-    foreach ($comp in $Manifest.CHMIComponents.Started) {
-        $status = Invoke-DW -Method GET -Path "/projects/components/$([System.Web.HttpUtility]::UrlEncode($comp))" -Desc "Component status $comp"
-        if ($status -and $status.state -eq 'Started') {
-            Add-Result -Phase DeviceWise -Check "CHMI trigger: $comp" -Status PASS -Detail "Started"
-        } elseif ($status) {
-            Invoke-DW -Method POST -Path "/projects/components/$([System.Web.HttpUtility]::UrlEncode($comp))/start" -Desc "Start $comp" | Out-Null
-            Add-Result -Phase DeviceWise -Check "CHMI trigger: $comp" -Status PASS -Detail "Start triggered"
-        } else {
-            Add-Result -Phase DeviceWise -Check "CHMI trigger: $comp" -Status WARN -Detail "Not found  -  verify in Workbench"
+    # The SOP's component lists: present = imported with status 0
+    $imported = @($res.Items | Where-Object { $_.Type -eq 'trigger' -and $_.Status -eq 0 } | ForEach-Object { ($_.Item -split '/', 2)[-1] })
+    foreach ($list in 'Loaded', 'Started') {
+        foreach ($comp in @($Manifest.CHMIComponents.$list)) {
+            $ok = $imported -contains $comp
+            Add-Result -Phase $phase -Check "Component $comp" -Status $(if ($ok) { 'PASS' } else { 'FAIL' }) `
+                -Detail $(if ($ok) { "imported (SOP: $list)" } else { "not imported (SOP: $list)" })
         }
     }
+    Add-Result -Phase $phase -Check 'CHMI components Loaded / Started' -Status MANUAL `
+        -Detail 'Workbench > Projects > CHMI: Scheduled and SubTrigger components Status = Loaded, State = Started (CNCn_PATH monitors after Step 8)'
+    Add-Result -Phase $phase -Check 'TimescaleDB connection' -Status MANUAL `
+        -Detail "Uses the baseline's stored apcuser password; it works only if this VM's apcuser password (Step 2) is the same"
 
-    #endregion
-
-    Write-Log PASS "deviceWise CHMI integration complete."
+    Set-DwCncAssetValues -Manifest $Manifest -Cncs $cncs -Phase $phase
+    Write-Log PASS 'deviceWise CHMI integration complete.'
 }

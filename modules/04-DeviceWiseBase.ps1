@@ -88,34 +88,13 @@ function Invoke-DeviceWiseBase {
     Write-Log INFO "Import: $($build.Items.Count) item(s) from $($baseline.Name)"
     $build.Changes | ForEach-Object { Write-Log INFO "  $_" }
 
-    $target  = Join-Path $paths.ImportDir 'import.dwx'
-    $result  = Join-Path $paths.ImportDir 'import.result'
-    if (Test-Path $target) { throw "An import.dwx is already waiting in $($paths.ImportDir)." }
-    foreach ($old in $result, "${result}s") { if (Test-Path $old) { Remove-Item $old -Force } }
-    $staged = Join-Path $env:TEMP ("dw-step4-{0}.dwx" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
-    Save-DwXml -Xml $build.Xml -Path $staged
-
-    Restart-DwCore -WhileStopped {
-        if (-not $saved) { Save-DwDatabases -Paths $paths -Dest $safety; Write-Log INFO "Safety copy of the gateway databases: $safety" }
-        Copy-Item $staged $target
+    try {
+        $res = Invoke-DwImport -Paths $paths -Xml $build.Xml -Label 'step4-base' -SafetyDir $safety -SaveDatabases:(-not $saved) -TimeoutSec $dw.ImportTimeoutSec
+    } catch {
+        Add-Result -Phase $phase -Check 'Base configuration import' -Status FAIL -Detail $_.Exception.Message
+        throw
     }
-    $done = Wait-DwImportFile -Queued $target -ResultFiles @($result, "${result}s") -TimeoutSec $dw.ImportTimeoutSec
-    Remove-Item $staged -ErrorAction SilentlyContinue
-    if (-not $done) {
-        Add-Result -Phase $phase -Check 'Base configuration import' -Status FAIL -Detail "no import.result after $($dw.ImportTimeoutSec) s"
-        throw 'The gateway did not process the import.'
-    }
-    New-Item -ItemType Directory -Path $safety -Force | Out-Null
-    Copy-Item $done (Join-Path $safety 'step4-import.result')
-
-    $res = Read-DwImportResult -Path $done
-    foreach ($i in $res.Items) {
-        $status = if ($i.Status -eq 0) { 'PASS' } else { 'FAIL' }
-        Add-Result -Phase $phase -Check "Import $($i.Type) $($i.Item)" -Status $status -Detail "status $($i.Status)"
-    }
-    $bad = @($res.Items | Where-Object { $_.Status -ne 0 })
-    Add-Result -Phase $phase -Check 'Base configuration import' -Status $(if ($bad.Count) { 'FAIL' } else { 'PASS' }) `
-        -Detail ("{0} item(s), {1} failed, overall status {2}" -f $res.Items.Count, $bad.Count, $res.Overall)
+    [void](Add-DwImportResults -Phase $phase -Result $res -Summary 'Base configuration import')
 
     #endregion
 
@@ -170,36 +149,9 @@ function Invoke-DeviceWiseBase {
 
     #region -- 4. CNCAsset / CNCType through the gateway's OPC UA server --------------
 
-    # The CNC devices do not persist values (persist_values=false) and the import does not set them,
-    # so they are written live. KNOWN LIMITATION (user, 2026-10-13): they are empty again after the
-    # next dwcore restart, as on the production gateways today.
-    $uaCfg  = $dw.OpcUaClient
-    $wanted = [ordered]@{}
-    foreach ($c in $cncs) {
-        $wanted["CNC$($c.CNCIndex).CNCAsset"] = [string]$c.MachineName
-        $wanted["CNC$($c.CNCIndex).CNCType"]  = [string]$c.CNCType
-    }
-    $session = $null
-    try {
-        if (-not $listening) { throw "the OPC UA server is not listening on port $port" }
-        $session = Open-DwUaSession -Manifest $Manifest
-        $written = Set-DwUaValues -Session $session -Namespace $uaCfg.Namespace -Values $wanted
-        foreach ($c in $cncs) {
-            $node = "CNC$($c.CNCIndex)"
-            $got  = @("$node.CNCAsset", "$node.CNCType" | ForEach-Object { [string](Get-DwUaValue -Session $session -Namespace $uaCfg.Namespace -Path $_).Value })
-            $ok   = ($got[0] -eq $wanted["$node.CNCAsset"]) -and ($got[1] -eq $wanted["$node.CNCType"])
-            Add-Result -Phase $phase -Check "$node CNCAsset / CNCType" -Status $(if ($ok) { 'PASS' } else { 'FAIL' }) `
-                -Detail ("read back '{0}' / '{1}' (write: {2} / {3}); lost on the next dwcore restart (known limitation)" -f `
-                         $got[0], $got[1], $written["$node.CNCAsset"], $written["$node.CNCType"])
-        }
-    } catch {
-        foreach ($c in $cncs) {
-            Add-Result -Phase $phase -Check "CNC$($c.CNCIndex) CNCAsset / CNCType" -Status MANUAL `
-                -Detail "OPC UA write not possible ($($_.Exception.Message)). Workbench > Devices > CNC$($c.CNCIndex) > Variables: CNCAsset = $($c.MachineName), CNCType = $($c.CNCType)"
-        }
-    } finally {
-        if ($session) { [void]$session.Close() }
-    }
+    # Not in the import and not persisted by the CNC devices: written live (Set-DwCncAssetValues).
+    # Steps 5, 6 and 8 restart dwcore and write them again at their end.
+    Set-DwCncAssetValues -Manifest $Manifest -Cncs $cncs -Phase $phase -WaitSec 30
 
     #endregion
 
