@@ -130,8 +130,30 @@ function Invoke-DeviceWiseCNCPDM {
     }
     Add-Result -Phase $phase -Check 'CNCnetPDM instance connected' -Status $(if ($conn) { 'PASS' } else { 'FAIL' }) `
         -Detail $(if ($conn) { "dwcore connected to CNCnetPDM (MTC Adapter port $mtcPort)" } else { "no dwcore connection to CNCnetPDM port $mtcPort after 60 s - is the CNCnetPDM service running and configured (Step 7)?" })
-    Add-Result -Phase $phase -Check 'CNCn_PATH devices' -Status MANUAL `
-        -Detail 'Workbench > Devices: CNCn_PATH started (device state values still to be mapped)'
+    # CNCn_PATH started (DWCORE.db devices.state 1 = Started, 2 = Stopped). Right after the import they can be
+    # stopped: they start before the CNCnetPDM connection is up (fresh VM 2026-10-14: state 2 after the import,
+    # Started after the next dwcore start). One more dwcore restart, with the instance registered, starts them.
+    $pathStates = {
+        $all = Get-DwDeviceStates -Paths $paths
+        $out = [ordered]@{}; foreach ($n in $wanted) { $out[$n] = if ($all.ContainsKey($n)) { $all[$n] } else { -1 } }
+        $out
+    }
+    try {
+        $st = & $pathStates
+        if (@($st.Values | Where-Object { $_ -ne 1 }).Count -and $conn) {
+            Write-Log INFO ("CNCn_PATH not all started ({0}) - restarting dwcore once more" -f (($st.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))
+            Restart-DwCore -WhileStopped { }
+            $deadline = (Get-Date).AddSeconds(90)
+            do { Start-Sleep -Seconds 5; $st = & $pathStates } while (@($st.Values | Where-Object { $_ -ne 1 }).Count -and (Get-Date) -lt $deadline)
+        }
+        foreach ($n in $wanted) {
+            $v = $st[$n]
+            Add-Result -Phase $phase -Check "$n started" -Status $(if ($v -eq 1) { 'PASS' } else { 'FAIL' }) `
+                -Detail $(switch ($v) { 1 { 'Started' } 2 { 'Stopped - check the CNCnetPDM machine and Workbench > Devices' } -1 { 'not in the gateway' } default { "state $v" } })
+        }
+    } catch {
+        Add-Result -Phase $phase -Check 'CNCn_PATH devices' -Status MANUAL -Detail "could not read DWCORE.db ($($_.Exception.Message)). Workbench > Devices: CNCn_PATH Started"
+    }
 
     Set-DwCncAssetValues -Manifest $Manifest -Cncs $cncs -Phase $phase
     Write-Log PASS 'deviceWise CNCnetPDM integration complete.'

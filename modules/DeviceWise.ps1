@@ -649,6 +649,21 @@ function Get-DwTriggerStates {
     } finally { [DwSqlite]::Close($h) }
 }
 
+function Get-DwDeviceStates {
+    <#
+        Reads the device table of DWCORE.db (read-only; dwcore may be running): @{ name = state }.
+        state 1 = Started, 2 = Stopped in Workbench > Devices (fresh VM, 2026-10-14).
+    #>
+    param([Parameter(Mandatory)] [hashtable]$Paths)
+    Initialize-DwSqlite -Paths $Paths
+    $h = [DwSqlite]::Open((Join-Path $Paths.Db 'DWCORE.db'), $false)
+    try {
+        $out = @{}
+        foreach ($r in [DwSqlite]::Query($h, 'SELECT name, state FROM devices')) { $out[$r[0]] = [int]$r[1] }
+        return $out
+    } finally { [DwSqlite]::Close($h) }
+}
+
 function Get-DwPersistence {
     # Reads DWUSER.db persistence rows of one group (read-only; dwcore may be running).
     param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$Group)
