@@ -282,8 +282,10 @@ function Open-DwUaSession {
     if (-not (Test-Path (Join-Path $ua.StackDir 'Opc.Ua.Client.dll'))) { throw "OPC UA client library not found in $($ua.StackDir)" }
     $Global:DwUaStackSource = $ua.StackDir
     $Global:DwUaStackCopy   = 'C:\APC_Config\OpcUaStack'
-    New-Item -ItemType Directory -Path $Global:DwUaStackCopy -Force | Out-Null
     if (-not ('Opc.Ua.Client.Session' -as [type])) {
+        # start from an empty copy each run, so it always matches 800xA's current stack version
+        if (Test-Path $Global:DwUaStackCopy) { Remove-Item (Join-Path $Global:DwUaStackCopy '*') -Force -ErrorAction SilentlyContinue }
+        New-Item -ItemType Directory -Path $Global:DwUaStackCopy -Force | Out-Null
         # dependencies (e.g. Newtonsoft.Json) are copied and loaded on demand the same way
         [AppDomain]::CurrentDomain.add_AssemblyResolve([ResolveEventHandler]{
             param($sender, $e)

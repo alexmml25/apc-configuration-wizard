@@ -4,7 +4,8 @@
     Read-only: browses the deviceWISE gateway's OPC UA server and prints the CNC devices' variables.
 .DESCRIPTION
     Uses the OPC Foundation .NET stack (Opc.Ua.Core / Opc.Ua.Client) that 800xA installs in
-    C:\Program Files (x86)\ABB 800xA\Base\bin, loaded as is. Connects anonymously with security
+    C:\Program Files (x86)\ABB 800xA\Base\bin, copied to C:\APC_Config\OpcUaStack first (800xA's
+    files are only read). Connects anonymously with security
     mode None (the gateway allows both), browses Objects for the devices matching -Device and prints
     their child nodes down to -Depth levels with NodeIds; CNCAsset / CNCType are also read.
     The client certificate store is C:\APC_Config\pki (created if needed). Nothing on the gateway
@@ -26,20 +27,29 @@ function Out-Line([string]$t) { Write-Host $t; Add-Content -Path $out -Value $t 
 
 Out-Line "OPC UA browse - $env:COMPUTERNAME - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $Endpoint - PowerShell $($PSVersionTable.PSVersion) $(if ([Environment]::Is64BitProcess) { '64-bit' } else { '32-bit' })"
 
-# Resolve the stack's own dependencies (e.g. Newtonsoft.Json) from the same folder
-$Global:DwUaStackDir = $StackDir
+# Same loading as Step 4: the stack is copied to C:\APC_Config\OpcUaStack and loaded from there
+function Write-Log { param($Level, $Message) }
+. (Join-Path (Split-Path -Parent $PSScriptRoot) 'modules\DeviceWise.ps1')
+$Global:DwUaStackSource = $StackDir
+$Global:DwUaStackCopy   = 'C:\APC_Config\OpcUaStack'
+if (Test-Path $Global:DwUaStackCopy) { Remove-Item (Join-Path $Global:DwUaStackCopy '*') -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $Global:DwUaStackCopy -Force | Out-Null
 [AppDomain]::CurrentDomain.add_AssemblyResolve([ResolveEventHandler]{
     param($sender, $e)
     $name = (New-Object Reflection.AssemblyName($e.Name)).Name
-    $file = Join-Path $Global:DwUaStackDir "$name.dll"
-    if (Test-Path $file) { return [Reflection.Assembly]::LoadFrom($file) }
-    return $null
+    $src  = Join-Path $Global:DwUaStackSource "$name.dll"
+    if (-not (Test-Path $src)) { return $null }
+    $dst = Join-Path $Global:DwUaStackCopy "$name.dll"
+    if (-not (Test-Path $dst)) { Copy-Item $src $dst -Force }
+    return [Reflection.Assembly]::LoadFrom($dst)
 })
 foreach ($dll in 'Opc.Ua.Core.dll', 'Opc.Ua.Client.dll') {
     $f = Join-Path $StackDir $dll
     if (-not (Test-Path $f)) { throw "Not found: $f" }
-    $a = [Reflection.Assembly]::LoadFrom($f)
-    Out-Line ("Loaded {0} {1} (file {2})" -f $a.GetName().Name, $a.GetName().Version, (Get-Item $f).VersionInfo.FileVersion)
+    $dst = Join-Path $Global:DwUaStackCopy $dll
+    Copy-Item $f $dst -Force
+    $a = [Reflection.Assembly]::LoadFrom($dst)
+    Out-Line ("Loaded {0} {1} (file {2}, copy in {3})" -f $a.GetName().Name, $a.GetName().Version, (Get-Item $f).VersionInfo.FileVersion, $Global:DwUaStackCopy)
 }
 Get-ChildItem $StackDir -Filter 'Opc.Ua*.dll' | ForEach-Object { Out-Line ("  available: {0}" -f $_.Name) }
 
