@@ -314,7 +314,7 @@ function Remove-DwUnchangedDevices {
         Takes out of the import every device that already exists in the gateway with the same definition
         (Get-DwDeviceSignature), logging it. Returns the names of those meant to be started (exportproperty
         state = started) as Start, and all of them as Kept. Devices that exist with a different definition
-        stay in the import (it reports -6401 for them).
+        stay in the import: CNCnetPDM devices are replaced, Global Variables devices give -6401.
     #>
     param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [xml]$Xml)
     $start = New-Object System.Collections.Generic.List[string]
@@ -341,7 +341,8 @@ function Remove-DwUnchangedDevices {
                 $diff = @(@($a | Where-Object { $b -notcontains $_ }) + @($b | Where-Object { $a -notcontains $_ }) |
                           ForEach-Object { ($_ -split '=', 2)[0] } | Sort-Object -Unique)
             }
-            Write-Log WARN "Device $name exists with a different definition ($($diff -join ', ')); the import cannot replace it (-6401)."
+            # CNCnetPDM devices (CNCn_PATH) are replaced; Global Variables devices (CNC1-3, SINC_SETTING) are not (-6401)
+            Write-Log INFO "Device $name differs from the gateway's ($($diff -join ', ')); re-importing it."
         }
     }
     if ($kept.Count) { Write-Log INFO "Already in the gateway, unchanged (not re-imported): $($kept -join ', ')" }
@@ -425,7 +426,10 @@ function Add-DwImportResults {
         $key = "$($i.Type)/$($i.Item)"
         if ($i.Status -eq 0)                  { Add-Result -Phase $Phase -Check "Import $($i.Type) $($i.Item)" -Status PASS -Detail 'status 0' }
         elseif ($Tolerate.ContainsKey($key))  { Add-Result -Phase $Phase -Check "Import $($i.Type) $($i.Item)" -Status WARN -Detail "status $($i.Status) - $($Tolerate[$key])" }
-        else                                  { Add-Result -Phase $Phase -Check "Import $($i.Type) $($i.Item)" -Status FAIL -Detail "status $($i.Status)" }
+        else {
+            $hint = if ($i.Type -eq 'device' -and $i.Status -eq -6401) { ' - the gateway cannot replace this existing device with a changed definition; delete it in Workbench > Devices (or factory reset) and re-run' } else { '' }
+            Add-Result -Phase $Phase -Check "Import $($i.Type) $($i.Item)" -Status FAIL -Detail "status $($i.Status)$hint"
+        }
     }
     $bad = @($Result.Items | Where-Object { $_.Status -ne 0 -and -not $Tolerate.ContainsKey("$($_.Type)/$($_.Item)") })
     Add-Result -Phase $Phase -Check $Summary -Status $(if ($bad.Count) { 'FAIL' } else { 'PASS' }) `
@@ -860,7 +864,14 @@ function Test-DwCncnetpdmConnected {
             if ($inMtc -and $line -match '^\s*Port\s*=\s*(\d+)') { $port = [int]$Matches[1]; break }
         }
     }
-    $dwPid = (Get-CimInstance Win32_Service -Filter "Name='dwcore'" -ErrorAction SilentlyContinue).ProcessId
+    # dwcore's process id from sc.exe: Get-CimInstance cannot load CimCmdlets in the wizard's step runspace
+    # (wizard run 2026-10-14), and Get-Process cannot tell which process runs the service
+    $dwPid = $null
+    try {
+        $q = @(& sc.exe queryex dwcore 2>$null) | Where-Object { $_ -match '^\s*PID\s*:\s*(\d+)' } | Select-Object -First 1
+        if ($q -and $q -match '^\s*PID\s*:\s*(\d+)' -and [int]$Matches[1] -gt 0) { $dwPid = [int]$Matches[1] }
+    } catch { Write-Log WARN "Could not read the dwcore process id: $($_.Exception.Message)" }
+    if (-not $dwPid) { return @{ Connected = $false; Port = $port } }
     $deadline = (Get-Date).AddSeconds($WaitSec); $conn = $null
     do {
         $conn = Get-NetTCPConnection -RemotePort $port -State Established -ErrorAction SilentlyContinue |
