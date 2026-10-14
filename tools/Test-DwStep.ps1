@@ -2,7 +2,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    TEST VM ONLY. Runs one of the wizard's deviceWise steps (4 base platform, 5 CHMI, 6 SINC, 8 CNCnetPDM) on its own.
+    TEST VM ONLY. Runs one of the wizard's deviceWise steps (4 base platform, 5 CHMI, 6 SINC, 8 CNCnetPDM) or Step 7 (CNCnetPDM) on its own.
 .DESCRIPTION
     Loads the wizard's manifest and the step's module and runs it with the CNCs given here, so
     Step 1 (Site DB) is not needed. Results and the log go to C:\APC_Config\Test-Step0<n>_<ts>\
@@ -16,10 +16,11 @@
     powershell -ExecutionPolicy Bypass -File .\tools\Test-DwStep.ps1 -Step 4 -Cnc 'Citizen 01|CITIZEN_L20X_IV' -Baseline D:\APC_Config\Baseline_Backup.dbk -PackageDir D:\APC_Config\packages
 #>
 param(
-    [ValidateSet(4, 5, 6, 8)] [int]$Step = 4,
+    [ValidateSet(4, 5, 6, 7, 8)] [int]$Step = 4,
     # Step 6: the SINC email list (';' or ',' separated), as entered in the wizard
     [string]$Email = '',
-    # 'Machine name|CNC type' per CNC, in CNC1..CNC3 order (the Site DB f_cnc_asset and type)
+    # 'Machine name|CNC type[|DLL name|IP address]' per CNC, in CNC1..CNC3 order (the Site DB f_cnc_asset,
+    # type, f_dllname, f_ip_address). DLL and IP are needed by Step 7 only (DLL default citizenm.dll).
     [Parameter(Mandatory)] [string[]]$Cnc,
     [string]$PackageDir,
     [string]$Baseline
@@ -32,6 +33,7 @@ $steps = @{
     4 = @{ File = '04-DeviceWiseBase.ps1'; Fn = 'Invoke-DeviceWiseBase'; Name = 'deviceWise base platform' }
     5 = @{ File = '05-DeviceWiseCHMI.ps1'; Fn = 'Invoke-DeviceWiseCHMI'; Name = 'deviceWise CHMI' }
     6 = @{ File = '06-DeviceWiseSINC.ps1'; Fn = 'Invoke-DeviceWiseSINC'; Name = 'deviceWise SINC' }
+    7 = @{ File = '07-CNCnetPDM.ps1';        Fn = 'Invoke-CNCnetPDM';        Name = 'CNCnetPDM configuration' }
     8 = @{ File = '08-DeviceWiseCNCPDM.ps1'; Fn = 'Invoke-DeviceWiseCNCPDM'; Name = 'deviceWise CNCnetPDM' }
 }
 $def  = $steps[$Step]
@@ -57,8 +59,11 @@ function Add-Result {
 $Cnc = @($Cnc | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $machines = foreach ($c in $Cnc) {
     $p = $c -split '\|'
-    if ($p.Count -lt 2 -or -not $p[0].Trim() -or -not $p[1].Trim()) { throw "Use 'Machine name|CNC type', got '$c'" }
-    [pscustomobject]@{ MachineName = $p[0].Trim(); CNCType = $p[1].Trim(); AssetFamily = $p[1].Trim(); DLLName = 'n/a' }
+    if ($p.Count -lt 2 -or -not $p[0].Trim() -or -not $p[1].Trim()) { throw "Use 'Machine name|CNC type[|DLL|IP]', got '$c'" }
+    $dll = if ($p.Count -ge 3 -and $p[2].Trim()) { $p[2].Trim() } else { 'citizenm.dll' }
+    $ip  = if ($p.Count -ge 4) { $p[3].Trim() } else { '' }
+    if ($Step -eq 7 -and -not $ip) { throw "Step 7 needs the IP address: 'Machine name|CNC type|DLL|IP', got '$c'" }
+    [pscustomobject]@{ MachineName = $p[0].Trim(); CNCType = $p[1].Trim(); AssetFamily = $p[1].Trim(); DLLName = $dll; IPAddress = $ip }
 }
 
 $manifestPath = Join-Path $root 'APC_ConfigManifest.json'
