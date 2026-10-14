@@ -295,6 +295,51 @@ function Save-DwDatabases {
     }
 }
 
+function Get-DwDeviceSignature {
+    # A device definition reduced to what makes it the same device: type + every property, with the
+    # VariableInfo default="..." attributes removed (per-VM CNCAsset/CNCType, not applied by the gateway)
+    param([Parameter(Mandatory)] $Definition)
+    $props = foreach ($p in @($Definition.SelectNodes('Properties/Property'))) {
+        $v = [regex]::Replace([string]$p.GetAttribute('value'), '\s+default="[^"]*"', '')
+        $v = [regex]::Replace($v, '>\s+<', '><')          # formatting between elements
+        $v = [regex]::Replace($v, '\s+(/?>)', '$1')        # ' />' vs '/>'
+        $v = [regex]::Replace($v, '\s+', ' ').Trim()
+        "$($p.GetAttribute('name'))=$v"
+    }
+    return "$($Definition.GetAttribute('type'))|" + ((@($props) | Sort-Object) -join '|')
+}
+
+function Remove-DwUnchangedDevices {
+    <#
+        Takes out of the import every device that already exists in the gateway with the same definition
+        (Get-DwDeviceSignature), logging it. Returns the names of those meant to be started (exportproperty
+        state = started) as Start, and all of them as Kept. Devices that exist with a different definition
+        stay in the import (it reports -6401 for them).
+    #>
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [xml]$Xml)
+    $start = New-Object System.Collections.Generic.List[string]
+    $kept  = New-Object System.Collections.Generic.List[string]
+    foreach ($ec in @($Xml.DocumentElement.SelectNodes("exportcontent[@type='device']"))) {
+        $name = $ec.GetAttribute('name')
+        $mine = $ec.SelectSingleNode('.//DeviceDefinition')
+        if (-not $mine) { continue }
+        $have = $null
+        try { $have = Get-DwXml -Paths $Paths -Table devices -Name $name } catch { Write-Log WARN "Could not read device $name from the gateway: $($_.Exception.Message)" }
+        if (-not $have) { continue }
+        $haveDef = if ($have.DocumentElement.Name -eq 'DeviceDefinition') { $have.DocumentElement } else { $have.SelectSingleNode('//DeviceDefinition') }
+        if ($haveDef -and (Get-DwDeviceSignature $haveDef) -eq (Get-DwDeviceSignature $mine)) {
+            $st = $ec.SelectSingleNode("exportproperty[@key='state']")
+            if (-not $st -or $st.GetAttribute('value') -eq 'started') { $start.Add($name) }
+            [void]$Xml.DocumentElement.RemoveChild($ec)
+            $kept.Add($name)
+        } else {
+            Write-Log WARN "Device $name exists with a different definition; the import cannot replace it (-6401)."
+        }
+    }
+    if ($kept.Count) { Write-Log INFO "Already in the gateway, unchanged (not re-imported): $($kept -join ', ')" }
+    return @{ Start = $start.ToArray(); Kept = $kept.ToArray() }
+}
+
 function Invoke-DwImport {
     <#
         Imports an export document through the import folder: saves it, stops dwcore (dwts keeps
@@ -315,6 +360,15 @@ function Invoke-DwImport {
     # Restart-DwCore has a parameter named $WhileStopped too; inside its block that name would resolve to
     # Restart-DwCore's own block and call itself endlessly (Step 8, 2026-10-14). Keep ours under its own name.
     $dwImportExtraAction = $WhileStopped
+    # Existing devices with the same definition are left out: the gateway does not replace an existing
+    # CNC device (-6401, even when stopped; SJUM7AAPPS0048 2026-10-14). They are only (re)started.
+    $unchanged = Remove-DwUnchangedDevices -Paths $Paths -Xml $Xml
+    $dwImportStartDevices = @($unchanged.Start)
+    if (-not $Xml.DocumentElement.SelectNodes('exportcontent').Count) {
+        Write-Log INFO 'Nothing left to import (all items unchanged).'
+        if ($dwImportStartDevices.Count) { Restart-DwCore -Paths $Paths -WhileStopped { Set-DwDeviceState -Paths $Paths -Names $dwImportStartDevices -State 1 } }
+        return [pscustomobject]@{ Items = @(); Overall = 0; Lines = @(); Unchanged = @($unchanged.Kept) }
+    }
     Save-DwXml -Xml $Xml -Path $staged
     try {
         Restart-DwCore -Paths $Paths -WhileStopped {
@@ -323,21 +377,15 @@ function Invoke-DwImport {
                 Write-Log INFO "Safety copy of the gateway databases: $SafetyDir"
             }
             if ($dwImportExtraAction) { & $dwImportExtraAction }
-            # The gateway does not replace a device that is running (-6401; e.g. CNC1-3 on a re-run). Devices the
-            # import is about to replace start Stopped; the import then replaces them and sets the state they
-            # carry in the import (started). Seen on SJUM7AAPPD0017 2026-10-08 and SJUM7AAPPS0048 2026-10-14.
-            $replace = @($Xml.DocumentElement.SelectNodes("exportcontent[@type='device']") | ForEach-Object { $_.GetAttribute('name') })
-            if ($replace.Count) {
-                $existing = @{}
-                try { $existing = Get-DwDeviceStates -Paths $Paths }
-                catch { Write-Log WARN "Could not read the device states before the import: $($_.Exception.Message)" }
-                Write-Log INFO ("Devices in the import: " + (($replace | ForEach-Object { "$_=$(if ($existing.ContainsKey($_)) { $existing[$_] } else { 'new' })" }) -join ', '))
-                $running = @($replace | Where-Object { $existing.ContainsKey($_) -and $existing[$_] -ne 2 })
-                if ($running.Count) {
-                    try {
-                        Set-DwDeviceState -Paths $Paths -Names $running -State 2
-                        Write-Log INFO "Stopped for the re-import: $($running -join ', ')"
-                    } catch { Write-Log WARN "Could not stop $($running -join ', ') for the re-import: $($_.Exception.Message)" }
+            # Devices the import cannot replace were taken out before the restart (Remove-DwUnchangedDevices);
+            # make sure those are Started as the import wanted them
+            if ($dwImportStartDevices.Count) {
+                $st = @{}
+                try { $st = Get-DwDeviceStates -Paths $Paths } catch { }
+                $start = @($dwImportStartDevices | Where-Object { $st.ContainsKey($_) -and $st[$_] -ne 1 })
+                if ($start.Count) {
+                    try { Set-DwDeviceState -Paths $Paths -Names $start -State 1; Write-Log INFO "Started (unchanged devices): $($start -join ', ')" }
+                    catch { Write-Log WARN "Could not start $($start -join ', '): $($_.Exception.Message)" }
                 }
             }
             Copy-Item $staged $target
@@ -349,7 +397,9 @@ function Invoke-DwImport {
         New-Item -ItemType Directory -Path $SafetyDir -Force | Out-Null
         Copy-Item $done (Join-Path $SafetyDir "$Label-import.result") -Force
     }
-    return (Read-DwImportResult -Path $done)
+    $res = Read-DwImportResult -Path $done
+    $res | Add-Member -NotePropertyName Unchanged -NotePropertyValue @($unchanged.Kept)
+    return $res
 }
 
 function Add-DwImportResults {
@@ -360,6 +410,9 @@ function Add-DwImportResults {
     #>
     param([Parameter(Mandatory)] [string]$Phase, [Parameter(Mandatory)] $Result, [Parameter(Mandatory)] [string]$Summary,
           [hashtable]$Tolerate = @{})
+    if ($Result.PSObject.Properties['Unchanged']) {
+        foreach ($n in @($Result.Unchanged)) { Add-Result -Phase $Phase -Check "Import device $n" -Status PASS -Detail 'already in the gateway, unchanged - kept and started' }
+    }
     foreach ($i in $Result.Items) {
         $key = "$($i.Type)/$($i.Item)"
         if ($i.Status -eq 0)                  { Add-Result -Phase $Phase -Check "Import $($i.Type) $($i.Item)" -Status PASS -Detail 'status 0' }
