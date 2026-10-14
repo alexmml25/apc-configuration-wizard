@@ -191,7 +191,7 @@ function Invoke-Backup {
         }
         # the restart emptied CNCAsset / CNCType on the CNC devices (known limitation)
         $cncs = Get-AssignedCNCs -State $State -Manifest $Manifest
-        if ($cncs.Count) { Set-DwCncAssetValues -Manifest $Manifest -Cncs $cncs -Phase Backup }
+        if ($cncs.Count) { Set-DwCncAssetAfterRestarts -Manifest $Manifest -State $State -Step 12 -Cncs $cncs -Phase Backup }
     }
 
     #endregion

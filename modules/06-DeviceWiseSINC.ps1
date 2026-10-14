@@ -150,6 +150,6 @@ function Invoke-DeviceWiseSINC {
     # at every dwcore shutdown, which Restart-DwCore makes up for (manifest DeviceWise.KeepStartedDevices)
     Test-DwDevicesStarted -Paths $paths -Names @($cfg.Devices) -Phase $phase
 
-    Set-DwCncAssetValues -Manifest $Manifest -Cncs $cncs -Phase $phase
+    Set-DwCncAssetAfterRestarts -Manifest $Manifest -State $State -Step 6 -Cncs $cncs -Phase $phase
     Write-Log PASS 'deviceWise SINC integration complete.'
 }

@@ -169,7 +169,7 @@ function Invoke-DeviceWiseBase {
 
     # Not in the import and not persisted by the CNC devices: written live (Set-DwCncAssetValues).
     # Steps 5, 6 and 8 restart dwcore and write them again at their end.
-    Set-DwCncAssetValues -Manifest $Manifest -Cncs $cncs -Phase $phase -WaitSec 30
+    Set-DwCncAssetAfterRestarts -Manifest $Manifest -State $State -Step 4 -Cncs $cncs -Phase $phase -WaitSec 30
 
     #endregion
 

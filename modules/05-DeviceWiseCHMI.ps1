@@ -99,6 +99,6 @@ function Invoke-DeviceWiseCHMI {
             -Detail "Uses the baseline's stored apcuser password; it works only if this VM's apcuser password (Step 2) is the standard one - not confirmed in this run"
     }
 
-    Set-DwCncAssetValues -Manifest $Manifest -Cncs $cncs -Phase $phase
+    Set-DwCncAssetAfterRestarts -Manifest $Manifest -State $State -Step 5 -Cncs $cncs -Phase $phase
     Write-Log PASS 'deviceWise CHMI integration complete.'
 }

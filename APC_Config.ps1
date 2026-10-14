@@ -316,6 +316,9 @@ function Main {
         @{ Number = 13; File = '13-Verification.ps1';     Fn = 'Invoke-Verification'      }
     )
 
+    # CNCAsset / CNCType are written once, by the run's last step that restarts dwcore (Set-DwCncAssetAfterRestarts)
+    $state['RunSteps'] = @($phases | Where-Object { $_.Number -ge $startPhase } | ForEach-Object { $_.Number })
+
     $allPassed = $true
     foreach ($phase in $phases) {
         if ($phase.Number -lt $startPhase) { continue }

@@ -146,6 +146,6 @@ function Invoke-DeviceWiseCNCPDM {
     # Devices that must stay Started across dwcore restarts (SINC's OPC UA client), as left by this step's restarts
     if (@($paths.KeepStarted).Count) { Test-DwDevicesStarted -Paths $paths -Names @($paths.KeepStarted) -Phase $phase }
 
-    Set-DwCncAssetValues -Manifest $Manifest -Cncs $cncs -Phase $phase
+    Set-DwCncAssetAfterRestarts -Manifest $Manifest -State $State -Step 8 -Cncs $cncs -Phase $phase
     Write-Log PASS 'deviceWise CNCnetPDM integration complete.'
 }

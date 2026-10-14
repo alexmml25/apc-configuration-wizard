@@ -1884,6 +1884,8 @@ function Start-ConfigurationRun {
         }
         default { $window.Title = 'APC Configuration Deployment Wizard' }
     }
+    # CNCAsset / CNCType are written once, by the run's last step that restarts dwcore (Set-DwCncAssetAfterRestarts)
+    $Script:AutoState['RunSteps'] = @($runSteps)
     Save-State -State $Script:AutoState
 
     # Step rows: only the type's steps are shown; mode-skipped and earlier-than-start steps show Skipped
@@ -1949,6 +1951,7 @@ foreach ($s in $Script:StepDefs) {
         $Script:RerunIndex = [int]$btn.Tag
         $mod = $Script:StepDefs | Where-Object { $_.Index -eq $Script:RerunIndex }
         Set-StepState -Index $Script:RerunIndex -State 'Running'
+        $Script:AutoState['RunSteps'] = @($Script:RerunIndex)   # a re-run is its own run (writes CNCAsset / CNCType itself)
         Add-LogSection -Title "Step $($mod.Index) -- $($mod.Name) (re-run)"
         Start-ModuleInWindow `
             -ModuleFile   $mod.File `

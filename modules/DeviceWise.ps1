@@ -600,11 +600,30 @@ function Get-DwUaValue {
     return $Session.ReadValue((Get-DwUaNodeId -Session $Session -Namespace $Namespace -Path $Path))
 }
 
+function Set-DwCncAssetAfterRestarts {
+    <#
+        Writes CNCAsset / CNCType (Set-DwCncAssetValues) only when no later step of this run restarts dwcore
+        (State.RunSteps, set by the wizard and APC_Config.ps1; Manifest.DeviceWise.RestartSteps). Without
+        State.RunSteps (a single step, a re-run button, tools\Test-DwStep.ps1) it always writes.
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [hashtable]$State, [Parameter(Mandatory)] [int]$Step,
+          [Parameter(Mandatory)] [object[]]$Cncs, [Parameter(Mandatory)] [string]$Phase, [int]$WaitSec = 120)
+    $restartSteps = @($Manifest.DeviceWise.RestartSteps | ForEach-Object { [int]$_ })
+    $later = @(@($State['RunSteps']) | Where-Object { $null -ne $_ } | ForEach-Object { [int]$_ } |
+               Where-Object { $_ -gt $Step -and $restartSteps -contains $_ })
+    if ($later.Count) {
+        Write-Log INFO ("CNCAsset / CNCType: written once, after the run's last dwcore restart (Step {0})" -f ($later | Measure-Object -Maximum).Maximum)
+        return
+    }
+    Set-DwCncAssetValues -Manifest $Manifest -Cncs $Cncs -Phase $Phase -WaitSec $WaitSec
+}
+
 function Set-DwCncAssetValues {
     <#
         Writes CNCn.CNCAsset (Site DB machine name) and CNCn.CNCType through the gateway's OPC UA server
         and reads them back; one result line per CNC. The CNC devices do not persist values, so every
-        dwcore restart empties them: each step that restarts dwcore calls this at its end.
+        dwcore restart empties them. Steps call Set-DwCncAssetAfterRestarts, which writes them once, after
+        the run's last dwcore restart (user, 2026-10-14).
         KNOWN LIMITATION (user, 2026-10-13): empty again after any later dwcore restart.
         Waits up to $WaitSec for the OPC UA port first. On any OPC UA problem the lines are MANUAL.
     #>

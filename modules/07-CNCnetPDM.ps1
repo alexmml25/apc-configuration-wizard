@@ -11,7 +11,7 @@
     - CNCnetPDM.ini [RS232]: one active entry per CNC (existing active entries replaced)
         {n} = {DeviceNr};19200;8;N;1;{MachineName};{IP};{Port};0;localhost;{n};0;none;none;0;{Site DB DLL}
     - melcfg.ini: one [Machine{nn}] section per CNC (Device=TCP{n}) and TCP{n} = {IP},{Port} in [HOSTS]
-    - Driver ini: {dll}_CNC{n}.ini renamed to {dll}_{DeviceNr}.ini
+    - Driver ini: {dll}_CNC{n}.ini (the install's template) copied to {dll}_{DeviceNr}.ini; checked again after the restart
     - Restarts the CNCnetPDM service, then checks it created {dll}_{DeviceNr}.dll for each CNC
       and that each device connected (per-device log log_{DeviceNr}_{yyMMdd}.txt)
 #>
@@ -266,6 +266,7 @@ function Invoke-CNCnetPDM {
     #region -- Driver files ----------------------------------------------------
 
     Write-Log INFO "Driver directory: $driverDir"
+    $driverIniTemplates = @{}   # <dll>_<DeviceNr>.ini -> the template it was copied from (checked again after the restart)
     if (-not (Test-Path $driverDir)) {
         Add-Result -Phase CNCnetPDM -Check "Driver directory" -Status FAIL -Detail "Not found: $driverDir"
     } else {
@@ -277,26 +278,50 @@ function Invoke-CNCnetPDM {
             }
         }
 
-        # Per-device driver ini: <dll>_CNC{n}.ini -> <dll>_<DeviceNr>.ini
-        # (the per-device <dll>_<DeviceNr>.dll is created by CNCnetPDM when the service starts)
+        # Per-device driver ini: copied (not renamed) from the template <dll>_CNC{n}.ini that the CNCnetPDM install
+        # ships; the three templates are the same file (user, 2026-10-14). Renaming used them up: after a DeviceNr
+        # change there was nothing left to rename and CNCnetPDM made 4 KB default inis instead of the 43 KB
+        # configured ones (SJUM7AAPPS0048, 2026-10-14). Without a template, the largest <dll>_<nr>.ini on the VM
+        # is used (configured ones are about 43 KB, CNCnetPDM's own defaults about 4 KB) and saved as the template.
+        # The per-device <dll>_<DeviceNr>.dll is created by CNCnetPDM when the service starts.
         foreach ($m in $machines) {
             $base    = [System.IO.Path]::GetFileNameWithoutExtension($m.DriverDll)
-            $srcName = "${base}_CNC$($m.CNCIndex).ini"
+            $tplName = "${base}_CNC$($m.CNCIndex).ini"
             $dstName = "${base}_$($m.DeviceNr).ini"
-            $srcPath = Join-Path $driverDir $srcName
+            $tplPath = Join-Path $driverDir $tplName
             $dstPath = Join-Path $driverDir $dstName
-            if (Test-Path $dstPath) {
-                Add-Result -Phase CNCnetPDM -Check "Driver ini $dstName" -Status PASS -Detail "Present"
-            } elseif (Test-Path $srcPath) {
-                try {
-                    Rename-Item $srcPath $dstName -ErrorAction Stop
-                    Add-Result -Phase CNCnetPDM -Check "Driver ini $srcName -> $dstName" -Status PASS
-                } catch {
-                    Add-Result -Phase CNCnetPDM -Check "Driver ini $srcName" -Status FAIL -Detail "Rename failed: $_"
+            $src = $null; $note = ''
+            if (Test-Path $tplPath) { $src = Get-Item $tplPath }
+            else {
+                $src = Get-ChildItem $driverDir -Filter "${base}_CNC*.ini" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                if (-not $src) {
+                    $src = Get-ChildItem $driverDir -Filter "${base}_*.ini" -File -ErrorAction SilentlyContinue |
+                           Where-Object { $_.BaseName -match "^$([regex]::Escape($base))_\d+$" } |
+                           Sort-Object Length, LastWriteTime -Descending | Select-Object -First 1
+                    if ($src) { $note = " (no ${base}_CNC*.ini template: used the largest existing one)" }
                 }
-            } else {
-                Add-Result -Phase CNCnetPDM -Check "Driver ini $dstName" -Status WARN `
-                    -Detail "Neither $srcName nor $dstName found in $driverDir - place/rename manually"
+                if ($src) {
+                    try { Copy-Item $src.FullName $tplPath -Force -ErrorAction Stop; $note += "; saved as template $tplName" }
+                    catch { $note += "; could not save it as $($tplName): $($_.Exception.Message)" }
+                }
+            }
+            if (-not $src) {
+                Add-Result -Phase CNCnetPDM -Check "Driver ini $dstName" -Status FAIL `
+                    -Detail "No $tplName (or any ${base}_*.ini) in $driverDir - copy the driver ini from the CNCnetPDM install as $tplName and re-run"
+                continue
+            }
+            $driverIniTemplates[$dstPath] = $src.FullName
+            try {
+                if ((Test-Path $dstPath) -and (Get-FileHash $dstPath).Hash -eq (Get-FileHash $src.FullName).Hash) {
+                    Add-Result -Phase CNCnetPDM -Check "Driver ini $dstName" -Status $(if ($note) { 'WARN' } else { 'PASS' }) -Detail "Same as $($src.Name)$note"
+                } else {
+                    if (Test-Path $dstPath) { Copy-Item $dstPath "$dstPath.$ts.bak" -Force }
+                    Copy-Item $src.FullName $dstPath -Force -ErrorAction Stop
+                    Add-Result -Phase CNCnetPDM -Check "Driver ini $dstName" -Status $(if ($note) { 'WARN' } else { 'PASS' }) `
+                        -Detail ("Copied from $($src.Name)" + $(if (Test-Path "$dstPath.$ts.bak") { "; previous file kept as $dstName.$ts.bak" } else { '' }) + $note)
+                }
+            } catch {
+                Add-Result -Phase CNCnetPDM -Check "Driver ini $dstName" -Status FAIL -Detail "Copy from $($src.Name) failed: $($_.Exception.Message)"
             }
         }
     }
@@ -350,6 +375,12 @@ function Invoke-CNCnetPDM {
             } else {
                 Add-Result -Phase CNCnetPDM -Check "Driver $dll created" -Status PASS
             }
+        }
+        # The driver inis must still be the copies (CNCnetPDM writes a default ini only when one is missing)
+        foreach ($dst in @($driverIniTemplates.Keys)) {
+            $same = (Test-Path $dst) -and (Get-FileHash $dst).Hash -eq (Get-FileHash $driverIniTemplates[$dst]).Hash
+            Add-Result -Phase CNCnetPDM -Check "Driver ini $(Split-Path $dst -Leaf) after start" -Status $(if ($same) { 'PASS' } else { 'WARN' }) `
+                -Detail $(if ($same) { "Same as $(Split-Path $driverIniTemplates[$dst] -Leaf)" } else { "Differs from $(Split-Path $driverIniTemplates[$dst] -Leaf) after the service start" })
         }
 
         # Device connection, from each device's own log: the latest of
@@ -420,10 +451,11 @@ function Invoke-CNCnetPDM {
                 $mtc = Test-DwCncnetpdmConnected -IniPath $iniPath -WaitSec 60
                 Add-Result -Phase CNCnetPDM -Check 'deviceWise re-read the CNCnetPDM machines' -Status $(if ($mtc.Connected) { 'PASS' } else { 'WARN' }) `
                     -Detail $(if ($mtc.Connected) { "dwcore restarted and reconnected (port $($mtc.Port))" } else { "dwcore restarted but is not connected to CNCnetPDM (port $($mtc.Port))" })
-                Set-DwCncAssetValues -Manifest $Manifest -Cncs $machines -Phase CNCnetPDM
             } else {
                 Write-Log INFO 'This CNCnetPDM folder is not registered in deviceWise yet - Step 8 registers it.'
             }
+            # also without the restart: Steps 4-6 leave the write to the run's last deviceWise step, which can be this one
+            Set-DwCncAssetAfterRestarts -Manifest $Manifest -State $State -Step 7 -Cncs $machines -Phase CNCnetPDM
         } catch {
             Add-Result -Phase CNCnetPDM -Check 'deviceWise re-read the CNCnetPDM machines' -Status WARN `
                 -Detail "Restart dwcore (or remove and add the instance in Workbench) so deviceWise sees the changes: $($_.Exception.Message)"
