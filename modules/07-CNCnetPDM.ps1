@@ -17,6 +17,7 @@
 #>
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
+. (Join-Path $PSScriptRoot 'DeviceWise.ps1')
 
 function Invoke-CNCnetPDM {
     [CmdletBinding()]
@@ -400,6 +401,34 @@ function Invoke-CNCnetPDM {
     } catch {
         Add-Result -Phase CNCnetPDM -Check "CNCnetPDM service restart" -Status WARN -Detail "$_"
     } }
+
+    #endregion
+
+    #region -- deviceWise: re-read the CNCnetPDM machines -------------------------
+
+    # deviceWise reads CNCnetPDM's machine list when it connects; after a CNCnetPDM change the instance had
+    # to be removed and added again in Workbench (user, 2026-10-14). Restarting dwcore makes it reconnect.
+    # Only when deviceWise is installed and this CNCnetPDM folder is registered as an instance (Step 8).
+    if (-not $State['SandboxRoot'] -and (Get-Service 'dwcore' -ErrorAction SilentlyContinue) -and (Test-Path $Manifest.DeviceWise.GatewayInstallDir)) {
+        try {
+            $dwPaths    = Get-DwPaths -Manifest $Manifest
+            $instances  = Get-DwPersistence -Paths $dwPaths -Group 'cncnetpdm.instances'
+            $registered = @($instances.Keys | Where-Object { (([string]$instances[$_]) -replace '[\x00-\x1F]', '') -eq $cncPdmDir })
+            if ($registered.Count) {
+                Write-Log INFO "Restarting deviceWise Core so it re-reads the CNCnetPDM machines (instance $($registered -join ', '))"
+                Restart-DwCore -Paths $dwPaths -WhileStopped { }
+                $mtc = Test-DwCncnetpdmConnected -IniPath $iniPath -WaitSec 60
+                Add-Result -Phase CNCnetPDM -Check 'deviceWise re-read the CNCnetPDM machines' -Status $(if ($mtc.Connected) { 'PASS' } else { 'WARN' }) `
+                    -Detail $(if ($mtc.Connected) { "dwcore restarted and reconnected (port $($mtc.Port))" } else { "dwcore restarted but is not connected to CNCnetPDM (port $($mtc.Port))" })
+                Set-DwCncAssetValues -Manifest $Manifest -Cncs $machines -Phase CNCnetPDM
+            } else {
+                Write-Log INFO 'This CNCnetPDM folder is not registered in deviceWise yet - Step 8 registers it.'
+            }
+        } catch {
+            Add-Result -Phase CNCnetPDM -Check 'deviceWise re-read the CNCnetPDM machines' -Status WARN `
+                -Detail "Restart dwcore (or remove and add the instance in Workbench) so deviceWise sees the changes: $($_.Exception.Message)"
+        }
+    }
 
     #endregion
 
