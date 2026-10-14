@@ -14,6 +14,7 @@
 . (Join-Path $PSScriptRoot 'Common.ps1')
 . (Join-Path $PSScriptRoot 'ABB800xA.ps1')
 . (Join-Path $PSScriptRoot 'DeviceWise.ps1')
+. (Join-Path $PSScriptRoot '02-TimescaleDB.ps1')   # pgAdmin / pgpass helpers for T4 items 7-8
 
 function Invoke-Verification {
     [CmdletBinding()]
@@ -406,9 +407,31 @@ function Invoke-Verification {
         "timescaledb extension present"
     } '' 4 6
 
-    # Items 7-8 - pgAdmin (manual UI steps)
-    Blank 'TSDB' 'pgAdmin server registration' 4 7
-    Blank 'TSDB' 'pgAdmin connection to TimescaleDB' 4 8
+    # Items 7-8 - pgAdmin, for the Windows user running the wizard (Step 2 registers the server with a PassFile)
+    Check 'TSDB' 'pgAdmin server registration' {
+        $vm  = $env:COMPUTERNAME
+        $srv = Get-PgAdminServer -PgAdminDir $pg.PgAdminDir -Name $vm
+        if (-not $srv) { throw "No server '$vm' in pgAdmin for $env:USERDOMAIN\$env:USERNAME" }
+        $bad = @()
+        if ($srv.Host -ne $vm)                   { $bad += "host $($srv.Host)" }
+        if ([int]$srv.Port -ne $pg.DefaultPort)  { $bad += "port $($srv.Port)" }
+        if ($srv.MaintenanceDB -ne $pg.LocalDB)  { $bad += "maintenance DB $($srv.MaintenanceDB)" }
+        if ($srv.Username -ne $pg.LocalUser)     { $bad += "user $($srv.Username)" }
+        if (-not $srv.PassFile)                  { $bad += 'no saved password (PassFile)' }
+        if ($bad) { throw "Server '$vm' differs from the SOP: $($bad -join ', ')" }
+        $script:pgaServer = $srv
+        "Server $vm`: host $vm, port $($srv.Port), maintenance DB $($srv.MaintenanceDB), user $($srv.Username), password from $($srv.PassFile)"
+    } '' 4 7
+    Check 'TSDB' 'pgAdmin connection to TimescaleDB' {
+        $vm = $env:COMPUTERNAME
+        $pf = if ($script:pgaServer) { $script:pgaServer.PassFile } else { Get-PgPassFilePath }
+        if (-not (Test-Path -LiteralPath $pf)) { throw "Password file not found: $pf" }
+        # As pgAdmin connects: by VM name, password only from the pgpass file
+        $conn = @{ Exe = (Join-Path $pg.BinDir 'psql.exe'); Port = $pg.DefaultPort; User = $pg.LocalUser; Database = $pg.LocalDB; Host = $vm; PassFile = $pf }
+        $r = Invoke-PgSql -Conn $conn -Sql "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';"
+        if (-not $r.Ok) { throw (Get-PgError $r.Output) }
+        "$($pg.LocalUser)@$vm`:$($pg.DefaultPort)/$($pg.LocalDB) connected with the saved password: $($r.Output) table(s)/view(s) in public"
+    } '' 4 8
 
     # Item 9 - APC schema executed (check for any APC tables)
     Check 'TSDB' 'APC schema tables present' {

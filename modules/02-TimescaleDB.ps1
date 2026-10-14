@@ -14,8 +14,10 @@
       database has no APC tables yet (the scripts use plain CREATE TABLE / INSERT and are not re-runnable)
     - PostgreSQL ODBC driver (psqlodbc-setup.exe from the share when no 32-bit PostgreSQL ANSI driver is
       installed) and the 32-bit System DSN PostgreSQL30, tested from a 32-bit process
-    - pgAdmin: the VM's server registered for the signed-in Windows user (pgAdmin setup.py load-servers);
-      saving the password in pgAdmin stays a manual step
+    - the schema checked against the tables/views the scripts create
+    - pgAdmin: the VM's server registered for the Windows user running the wizard (pgAdmin setup.py
+      load-servers) with its password in that user's %APPDATA%\postgresql\pgpass.conf (PassFile), then a
+      login the way pgAdmin connects (by VM name, password only from that file)
     Logs in as postgres with State.PostgresPassword (entered on the Sign in page).
 #>
 
@@ -221,6 +223,25 @@ SELECT create_hypertable('conditions', by_range('time'), if_not_exists => TRUE);
         if ($after -eq 0) { $failed = $true }
     }
 
+    # SOP: "verify that all required tables, views, and database objects are created in the public schema"
+    if (Test-ShareServerReachable $scriptsDir) {
+        $present = @((Invoke-PgSql -Conn $apc -Sql "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public';").Output -split "`n" | ForEach-Object { $_.Trim() })
+        foreach ($name in @($Manifest.SchemaScripts)) {
+            $src = Join-Path $scriptsDir $name
+            if (-not (Test-Path -LiteralPath $src)) { continue }
+            $want    = @(Get-SqlCreatedObjects -Path $src)
+            $missing = @($want | Where-Object { $_ -notin $present })
+            if ($missing) {
+                $failed = $true
+                Add-Result -Phase TSDB -Check "Schema objects of $name" -Status FAIL -Detail "$($missing.Count) of $($want.Count) missing in $dbName.public: $($missing -join ', ')"
+            } else {
+                Add-Result -Phase TSDB -Check "Schema objects of $name" -Status PASS -Detail "All $($want.Count) tables/views it creates are in $dbName.public"
+            }
+        }
+    } else {
+        Add-Result -Phase TSDB -Check "Schema objects" -Status WARN -Detail "Not compared with the scripts: $scriptsDir not reachable"
+    }
+
     #endregion
 
     #region -- ODBC driver and DSN (32-bit) -----------------------------------
@@ -287,19 +308,40 @@ SELECT create_hypertable('conditions', by_range('time'), if_not_exists => TRUE);
 
     #region -- pgAdmin server registration ------------------------------------
 
-    $vm = $env:COMPUTERNAME
-    $reg = Register-PgAdminServer -PgAdminDir $pg.PgAdminDir -Name $vm -HostName $vm -Port $pg.DefaultPort -Database $dbName -User $dbUser
+    # SOP: Name and Host = VM name, port, maintenance DB TimescaleDB, apcuser, "Save password". The password
+    # goes in the user's pgpass.conf (user decision 2026-10-14; the SOP's ODBC DSN keeps it in the registry
+    # the same way) and the server's PassFile points at it, so pgAdmin connects without asking.
+    $vm  = $env:COMPUTERNAME
     $who = "$env:USERDOMAIN\$env:USERNAME"
+    $passFile = Get-PgPassFilePath
+    try {
+        $pp = Set-PgPassEntry -Path $passFile -Hosts @($vm, 'localhost') -Port $pg.DefaultPort -User $dbUser -Password $apcPwd
+        Add-Result -Phase TSDB -Check "pgpass.conf ($who)" -Status PASS -Detail "$pp`: $passFile ($dbUser on $vm and localhost, port $($pg.DefaultPort))"
+    } catch {
+        $failed = $true
+        Add-Result -Phase TSDB -Check "pgpass.conf ($who)" -Status FAIL -Detail "$_"
+    }
+
+    $reg = Register-PgAdminServer -PgAdminDir $pg.PgAdminDir -Name $vm -HostName $vm -Port $pg.DefaultPort -Database $dbName -User $dbUser -PassFile $passFile
     switch ($reg.Status) {
-        'Present'    { Add-Result -Phase TSDB -Check "pgAdmin server $vm" -Status PASS -Detail "Already registered for $who" }
-        'Registered' { Add-Result -Phase TSDB -Check "pgAdmin server $vm" -Status PASS -Detail "Registered for $who`: host $vm, port $($pg.DefaultPort), maintenance DB $dbName, user $dbUser" }
+        'Present'    { Add-Result -Phase TSDB -Check "pgAdmin server $vm" -Status PASS -Detail "Already registered for $who, password from pgpass.conf" }
+        'Registered' { Add-Result -Phase TSDB -Check "pgAdmin server $vm" -Status PASS -Detail "Registered for $who`: host $vm, port $($pg.DefaultPort), maintenance DB $dbName, user $dbUser, password from pgpass.conf" }
+        'Updated'    { Add-Result -Phase TSDB -Check "pgAdmin server $vm" -Status PASS -Detail "Was registered for $who; now takes the password from pgpass.conf" }
         default {
-            Add-Result -Phase TSDB -Check "pgAdmin server $vm" -Status WARN `
-                -Detail "Not registered automatically ($($reg.Detail)). In pgAdmin: Servers > Register > Server; Name and Host $vm, port $($pg.DefaultPort), maintenance DB $dbName, user $dbUser"
+            $failed = $true
+            Add-Result -Phase TSDB -Check "pgAdmin server $vm" -Status FAIL -Detail $reg.Detail
         }
     }
-    Add-Result -Phase TSDB -Check "pgAdmin: save the $dbUser password" -Status MANUAL `
-        -Detail "Open pgAdmin 4, connect to server $vm, enter the $dbUser password and tick 'Save password'; confirm the APC tables show under $dbName > Schemas > public > Tables"
+
+    # What pgAdmin does: connect by VM name (through the pg_hba entry) with the password from pgpass.conf only
+    $viaPassFile = @{ Exe = $psqlExe; Port = $pg.DefaultPort; User = $dbUser; Database = $dbName; Host = $vm; PassFile = $passFile }
+    $r = Invoke-PgSql -Conn $viaPassFile -Sql "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';"
+    if ($r.Ok) {
+        Add-Result -Phase TSDB -Check "pgAdmin connection to $dbName" -Status PASS -Detail "$dbUser@$vm`:$($pg.DefaultPort) with the password from pgpass.conf: $($r.Output) table(s)/view(s) in public"
+    } else {
+        $failed = $true
+        Add-Result -Phase TSDB -Check "pgAdmin connection to $dbName" -Status FAIL -Detail (Get-PgError $r.Output)
+    }
 
     #endregion
 
@@ -327,21 +369,25 @@ function Get-RepoPath {
 function Invoke-PgSql {
     <#
         Runs SQL (-Sql, sent on stdin so passwords never show on a command line) or a file (-File) with psql.
+        Conn: Exe, Port, User, Password or PassFile, optional Database (postgres) and Host (localhost).
         -w: never prompt; ON_ERROR_STOP: a failing statement fails the run (and with -SingleTransaction
         rolls everything back). Returns @{ Ok; Output } - Output trimmed, tuples only, unaligned.
     #>
     param([Parameter(Mandatory)] [hashtable]$Conn, [string]$Sql, [string]$File, [switch]$SingleTransaction)
     $db   = if ($Conn.Database) { $Conn.Database } else { 'postgres' }
-    $pgArgs = @('-h', 'localhost', '-p', "$($Conn.Port)", '-U', $Conn.User, '-d', $db, '-w', '-X', '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1')
+    $hst  = if ($Conn.Host) { $Conn.Host } else { 'localhost' }
+    $pgArgs = @('-h', $hst, '-p', "$($Conn.Port)", '-U', $Conn.User, '-d', $db, '-w', '-X', '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1')
     if ($SingleTransaction) { $pgArgs += '-1' }
     $ErrorActionPreference = 'Continue'
     $OutputEncoding = New-Object Text.UTF8Encoding $false
+    # With PassFile (and no Password) the password comes only from that pgpass file, as for pgAdmin
     $env:PGPASSWORD = $Conn.Password
+    if ($Conn.PassFile) { $env:PGPASSFILE = $Conn.PassFile }
     try {
         if ($File) { $out = & $Conn.Exe @pgArgs -f $File 2>&1 }
         else       { $out = $Sql | & $Conn.Exe @pgArgs -f - 2>&1 }
         $code = $LASTEXITCODE
-    } finally { $env:PGPASSWORD = '' }
+    } finally { $env:PGPASSWORD = ''; Remove-Item Env:\PGPASSFILE -ErrorAction SilentlyContinue }
     return @{ Ok = ($code -eq 0); Output = ((@($out) | ForEach-Object { "$_" }) -join "`n").Trim() }
 }
 
@@ -440,52 +486,152 @@ function Register-PgAdminServer {
     <#
         Registers the server in pgAdmin 4 (desktop mode) for the Windows user running the wizard, with
         pgAdmin's own setup.py: dump-servers to see whether a server of that name is there, load-servers to add it.
-        pgAdmin 8+ uses sub-commands (load-servers), older versions options (--load-servers); both are tried.
-        No password is stored (pgAdmin saves it when the user ticks 'Save password').
-        Returns @{ Status = Present | Registered | Failed; Detail }.
+        The server gets PassFile (pgAdmin connects with the password from that pgpass file, no prompt). A server
+        already there without it is updated in pgAdmin's database (load-servers cannot change a server).
+        Returns @{ Status = Present | Registered | Updated | Failed; Detail }.
     #>
-    param([string]$PgAdminDir, [string]$Name, [string]$HostName, [int]$Port, [string]$Database, [string]$User)
+    param([string]$PgAdminDir, [string]$Name, [string]$HostName, [int]$Port, [string]$Database, [string]$User, [string]$PassFile)
     $py    = Join-Path $PgAdminDir 'python\python.exe'
     $setup = Join-Path $PgAdminDir 'web\setup.py'
     if (-not (Test-Path $py) -or -not (Test-Path $setup)) { return @{ Status = 'Failed'; Detail = "pgAdmin not found under $PgAdminDir" } }
 
-    $ErrorActionPreference = 'Continue'
     $tmp = Join-Path $env:TEMP "apc-pgadmin-$([guid]::NewGuid().ToString('N'))"
     New-Item -ItemType Directory -Path $tmp -Force | Out-Null
     try {
-        $run = {
-            param([string]$Cmd, [string]$File)
-            $out = & $py $setup $Cmd $File 2>&1
-            if ($LASTEXITCODE -ne 0) { $out = & $py $setup "--$Cmd" $File 2>&1 }
-            return @{ Ok = ($LASTEXITCODE -eq 0); Output = ((@($out) | ForEach-Object { "$_" }) -join ' ').Trim() }
+        $existing = Get-PgAdminServer -PgAdminDir $PgAdminDir -Name $Name
+        if ($existing) {
+            if ($existing.PassFile -eq $PassFile) { return @{ Status = 'Present'; Detail = '' } }
+            $u = Set-PgAdminServerPassFile -PgAdminDir $PgAdminDir -Name $Name -PassFile $PassFile
+            if ($u -ne 'OK') { return @{ Status = 'Failed'; Detail = "Registered, but PassFile could not be set: $u" } }
+            $check = Get-PgAdminServer -PgAdminDir $PgAdminDir -Name $Name
+            if ($check.PassFile -ne $PassFile) { return @{ Status = 'Failed'; Detail = "PassFile written, but pgAdmin reports '$($check.PassFile)'" } }
+            return @{ Status = 'Updated'; Detail = '' }
         }
 
-        $dump = Join-Path $tmp 'current.json'
-        $d = & $run 'dump-servers' $dump
-        if ($d.Ok -and (Test-Path $dump)) {
-            $cur = Get-Content $dump -Raw | ConvertFrom-Json
-            if ($cur.Servers) {
-                foreach ($p in $cur.Servers.PSObject.Properties) {
-                    if ($p.Value.Name -eq $Name) { return @{ Status = 'Present'; Detail = '' } }
-                }
-            }
-        }
-
+        # PassFile/SSLMode: pgAdmin before 7; ConnectionParameters: pgAdmin 7+
         $json = @{ Servers = @{ '1' = [ordered]@{
             Name = $Name; Group = 'Servers'; Host = $HostName; Port = $Port
-            MaintenanceDB = $Database; Username = $User; SSLMode = 'prefer'
-        } } } | ConvertTo-Json -Depth 4
+            MaintenanceDB = $Database; Username = $User; SSLMode = 'prefer'; PassFile = $PassFile
+            ConnectionParameters = [ordered]@{ sslmode = 'prefer'; connect_timeout = 10; passfile = $PassFile }
+        } } } | ConvertTo-Json -Depth 5
         $file = Join-Path $tmp 'servers.json'
         [IO.File]::WriteAllText($file, $json, (New-Object Text.UTF8Encoding $false))
-        $l = & $run 'load-servers' $file
-        if ($l.Ok) { return @{ Status = 'Registered'; Detail = '' } }
-        $hint = if (Get-Process -Name 'pgAdmin4' -ErrorAction SilentlyContinue) { ' - pgAdmin is open; close it and re-run' } else { '' }
-        return @{ Status = 'Failed'; Detail = "setup.py load-servers: $($l.Output)$hint" }
+        $l = Invoke-PgAdminSetup -PgAdminDir $PgAdminDir -Command 'load-servers' -File $file
+        if (-not $l.Ok) {
+            $hint = if (Get-Process -Name 'pgAdmin4' -ErrorAction SilentlyContinue) { ' - pgAdmin is open; close it and re-run' } else { '' }
+            return @{ Status = 'Failed'; Detail = "setup.py load-servers: $($l.Output)$hint" }
+        }
+        $check = Get-PgAdminServer -PgAdminDir $PgAdminDir -Name $Name
+        if (-not $check) { return @{ Status = 'Failed'; Detail = "setup.py load-servers ran, but the server is not listed: $($l.Output)" } }
+        if ($check.PassFile -ne $PassFile) {
+            $u = Set-PgAdminServerPassFile -PgAdminDir $PgAdminDir -Name $Name -PassFile $PassFile
+            if ($u -ne 'OK') { return @{ Status = 'Failed'; Detail = "Registered, but PassFile could not be set: $u" } }
+        }
+        return @{ Status = 'Registered'; Detail = '' }
     } catch {
         return @{ Status = 'Failed'; Detail = "$_" }
     } finally {
         Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+
+function Invoke-PgAdminSetup {
+    # pgAdmin's setup.py: sub-command form (pgAdmin 8+) first, then the option form (older versions)
+    param([string]$PgAdminDir, [string]$Command, [string]$File)
+    $ErrorActionPreference = 'Continue'
+    $py    = Join-Path $PgAdminDir 'python\python.exe'
+    $setup = Join-Path $PgAdminDir 'web\setup.py'
+    $out = & $py $setup $Command $File 2>&1
+    if ($LASTEXITCODE -ne 0) { $out = & $py $setup "--$Command" $File 2>&1 }
+    return @{ Ok = ($LASTEXITCODE -eq 0); Output = ((@($out) | ForEach-Object { "$_" }) -join ' ').Trim() }
+}
+
+function Get-PgAdminServer {
+    # The server of that name from pgAdmin's dump-servers: @{ Name; Host; Port; MaintenanceDB; Username; PassFile } or $null
+    param([string]$PgAdminDir, [string]$Name)
+    $dump = Join-Path $env:TEMP "apc-pgadmin-dump-$([guid]::NewGuid().ToString('N')).json"
+    try {
+        $d = Invoke-PgAdminSetup -PgAdminDir $PgAdminDir -Command 'dump-servers' -File $dump
+        if (-not $d.Ok -or -not (Test-Path $dump)) { return $null }
+        $cur = Get-Content $dump -Raw | ConvertFrom-Json
+        if (-not $cur.Servers) { return $null }
+        foreach ($p in $cur.Servers.PSObject.Properties) {
+            $v = $p.Value
+            if ($v.Name -ne $Name) { continue }
+            $pf = if ($v.PSObject.Properties['ConnectionParameters'] -and $v.ConnectionParameters.PSObject.Properties['passfile']) { $v.ConnectionParameters.passfile }
+                  elseif ($v.PSObject.Properties['PassFile']) { $v.PassFile } else { '' }
+            return @{ Name = $v.Name; Host = $v.Host; Port = $v.Port; MaintenanceDB = $v.MaintenanceDB; Username = $v.Username; PassFile = [string]$pf }
+        }
+        return $null
+    } finally { Remove-Item $dump -Force -ErrorAction SilentlyContinue }
+}
+
+function Set-PgAdminServerPassFile {
+    # Sets the passfile of an existing pgAdmin server in the user's pgAdmin database (desktop mode:
+    # %APPDATA%\pgAdmin\pgadmin4.db) with pgAdmin's own Python: connection_params JSON (pgAdmin 7+) or the
+    # passfile column (older). Returns 'OK' or the error.
+    param([string]$PgAdminDir, [string]$Name, [string]$PassFile)
+    $db = Join-Path $env:APPDATA 'pgAdmin\pgadmin4.db'
+    if (-not (Test-Path $db)) { return "pgAdmin database not found: $db" }
+    $py = Join-Path $PgAdminDir 'python\python.exe'
+    $script = @'
+import json, sqlite3, sys
+db, name, pf = sys.argv[1:4]
+c = sqlite3.connect(db, timeout=10)
+cols = [r[1] for r in c.execute("PRAGMA table_info(server)")]
+rows = c.execute("SELECT id FROM server WHERE name = ?", (name,)).fetchall()
+if not rows:
+    print("server not found"); sys.exit(2)
+for (sid,) in rows:
+    if "connection_params" in cols:
+        cp = c.execute("SELECT connection_params FROM server WHERE id = ?", (sid,)).fetchone()[0]
+        d = json.loads(cp) if cp else {}
+        d["passfile"] = pf
+        c.execute("UPDATE server SET connection_params = ? WHERE id = ?", (json.dumps(d), sid))
+    elif "passfile" in cols:
+        c.execute("UPDATE server SET passfile = ? WHERE id = ?", (pf, sid))
+    else:
+        print("no passfile column in this pgAdmin version"); sys.exit(3)
+c.commit()
+print("OK")
+'@
+    $f = Join-Path $env:TEMP "apc-pgadmin-$([guid]::NewGuid().ToString('N')).py"
+    [IO.File]::WriteAllText($f, $script, (New-Object Text.UTF8Encoding $false))
+    $ErrorActionPreference = 'Continue'
+    try { $out = & $py $f $db $Name $PassFile 2>&1 } finally { Remove-Item $f -Force -ErrorAction SilentlyContinue }
+    return ((@($out) | ForEach-Object { "$_" }) -join ' ').Trim()
+}
+
+function Get-PgPassFilePath {
+    # libpq's default password file for the current Windows user
+    return (Join-Path $env:APPDATA 'postgresql\pgpass.conf')
+}
+
+function Set-PgPassEntry {
+    <#
+        Puts host:port:*:user:password lines for each host in a pgpass file (libpq format; ':' and '\' escaped),
+        replacing older lines for the same host/port/user and keeping all others. The file is in the user's
+        profile, so only that user (and administrators) can read it. Returns 'Already present', 'Added' or 'Updated'.
+    #>
+    param([string]$Path, [string[]]$Hosts, [int]$Port, [string]$User, [string]$Password)
+    $esc   = { param($v) $v.Replace('\', '\\').Replace(':', '\:') }
+    $want  = @($Hosts | ForEach-Object { '{0}:{1}:*:{2}:{3}' -f (& $esc $_), $Port, (& $esc $User), (& $esc $Password) })
+    $lines = @(if (Test-Path -LiteralPath $Path) { [IO.File]::ReadAllLines($Path) })
+    if (@($want | Where-Object { $_ -cnotin $lines }).Count -eq 0) { return 'Already present' }
+    $mine  = @($Hosts | ForEach-Object { '{0}:{1}:*:{2}:' -f (& $esc $_), $Port, (& $esc $User) })
+    $keep  = @($lines | Where-Object { $l = $_; -not ($mine | Where-Object { $l.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }) })
+    $state = if ($keep.Count -lt $lines.Count) { 'Updated' } else { 'Added' }
+    New-Item -ItemType Directory -Path (Split-Path $Path) -Force | Out-Null
+    [IO.File]::WriteAllText($Path, ((@($keep) + $want) -join "`r`n") + "`r`n", (New-Object Text.UTF8Encoding $false))
+    return $state
+}
+
+function Get-SqlCreatedObjects {
+    # Names of the tables and views a SQL script creates (comment lines ignored, 'public.' and quotes removed)
+    param([string]$Path)
+    $text = ([IO.File]::ReadAllLines($Path) | Where-Object { $_ -notmatch '^\s*--' }) -join "`n"
+    $rx = '(?i)\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:UNLOGGED\s+)?(?:TABLE|VIEW|MATERIALIZED\s+VIEW)\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"?public"?\.)?"?([A-Za-z0-9_]+)"?'
+    return @([regex]::Matches($text, $rx) | ForEach-Object { $_.Groups[1].Value.ToLower() } | Select-Object -Unique)
 }
 
 #endregion
