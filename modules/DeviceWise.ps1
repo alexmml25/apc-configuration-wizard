@@ -267,6 +267,104 @@ function Install-DwPackages {
 
 #endregion
 
+#region -- OPC UA client (the gateway's own OPC UA server) ---------------------
+
+function Open-DwUaSession {
+    <#
+        Opens an anonymous OPC UA session (security mode None) to the gateway's OPC UA server, using
+        the OPC Foundation .NET stack that 800xA installs (1.4.370 on SJUM7AAPPS0048). The DLLs it needs
+        are copied to C:\APC_Config\OpcUaStack and loaded from there, so 800xA's files are never held
+        open. The client certificate store is C:\APC_Config\pki (not ABB's).
+        Returns the session; close it with $session.Close().
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest)
+    $ua = $Manifest.DeviceWise.OpcUaClient
+    if (-not (Test-Path (Join-Path $ua.StackDir 'Opc.Ua.Client.dll'))) { throw "OPC UA client library not found in $($ua.StackDir)" }
+    $Global:DwUaStackSource = $ua.StackDir
+    $Global:DwUaStackCopy   = 'C:\APC_Config\OpcUaStack'
+    New-Item -ItemType Directory -Path $Global:DwUaStackCopy -Force | Out-Null
+    if (-not ('Opc.Ua.Client.Session' -as [type])) {
+        # dependencies (e.g. Newtonsoft.Json) are copied and loaded on demand the same way
+        [AppDomain]::CurrentDomain.add_AssemblyResolve([ResolveEventHandler]{
+            param($sender, $e)
+            $name = (New-Object Reflection.AssemblyName($e.Name)).Name
+            $src  = Join-Path $Global:DwUaStackSource "$name.dll"
+            if (-not (Test-Path $src)) { return $null }
+            $dst = Join-Path $Global:DwUaStackCopy "$name.dll"
+            if (-not (Test-Path $dst)) { Copy-Item $src $dst -Force }
+            return [Reflection.Assembly]::LoadFrom($dst)
+        })
+        foreach ($dll in 'Opc.Ua.Core.dll', 'Opc.Ua.Client.dll') {
+            $dst = Join-Path $Global:DwUaStackCopy $dll
+            Copy-Item (Join-Path $ua.StackDir $dll) $dst -Force
+            [void][Reflection.Assembly]::LoadFrom($dst)
+        }
+    }
+    $wait = { param($r) if ($r -is [Threading.Tasks.Task]) { $r.GetAwaiter().GetResult() } else { $r } }
+
+    $pki = 'C:\APC_Config\pki'
+    $cfg = New-Object Opc.Ua.ApplicationConfiguration
+    $cfg.ApplicationName = 'APC Config Wizard'
+    $cfg.ApplicationUri  = "urn:$($env:COMPUTERNAME):APCConfigWizard"
+    $cfg.ApplicationType = [Opc.Ua.ApplicationType]::Client
+    $sec = New-Object Opc.Ua.SecurityConfiguration
+    $sec.ApplicationCertificate = New-Object Opc.Ua.CertificateIdentifier
+    $sec.ApplicationCertificate.StoreType = 'Directory'; $sec.ApplicationCertificate.StorePath = "$pki\own"
+    $sec.ApplicationCertificate.SubjectName = 'CN=APC Config Wizard'
+    foreach ($store in @{ TrustedPeerCertificates = 'trusted'; TrustedIssuerCertificates = 'issuer'; RejectedCertificateStore = 'rejected' }.GetEnumerator()) {
+        $s = New-Object Opc.Ua.CertificateTrustList
+        $s.StoreType = 'Directory'; $s.StorePath = Join-Path $pki $store.Value
+        $sec.($store.Key) = $s
+    }
+    $sec.AutoAcceptUntrustedCertificates = $true
+    $cfg.SecurityConfiguration = $sec
+    $cfg.TransportQuotas = New-Object Opc.Ua.TransportQuotas
+    $cfg.TransportQuotas.OperationTimeout = 15000
+    $cfg.ClientConfiguration = New-Object Opc.Ua.ClientConfiguration
+    $cfg.ClientConfiguration.DefaultSessionTimeout = 60000
+    [void](& $wait ($cfg.Validate([Opc.Ua.ApplicationType]::Client)))
+    $cfg.CertificateValidator.add_CertificateValidation([Opc.Ua.CertificateValidationEventHandler]{ param($s, $e) $e.Accept = $true })
+
+    $epDesc = [Opc.Ua.Client.CoreClientUtils]::SelectEndpoint($ua.Endpoint, $false, 15000)
+    $cep    = New-Object Opc.Ua.ConfiguredEndpoint($null, $epDesc, ([Opc.Ua.EndpointConfiguration]::Create($cfg)))
+    return (& $wait ([Opc.Ua.Client.Session]::Create($cfg, $cep, $false, 'APC Config Wizard', 60000, (New-Object Opc.Ua.UserIdentity), $null)))
+}
+
+function Get-DwUaNodeId {
+    # 'CNC1.CNCAsset' -> NodeId in the deviceWise namespace (looked up by URI, not assumed to be 2)
+    param([Parameter(Mandatory)] $Session, [Parameter(Mandatory)] [string]$Namespace, [Parameter(Mandatory)] [string]$Path)
+    $ns = $Session.NamespaceUris.GetIndex($Namespace)
+    if ($ns -lt 0) { throw "Namespace $Namespace not on the OPC UA server." }
+    return New-Object Opc.Ua.NodeId($Path, [uint16]$ns)
+}
+
+function Set-DwUaValues {
+    # Writes string values ('CNC1.CNCAsset' = 'Citizen 01', ...) and returns @{ path = StatusCode text }
+    param([Parameter(Mandatory)] $Session, [Parameter(Mandatory)] [string]$Namespace,
+          [Parameter(Mandatory)] [System.Collections.IDictionary]$Values)
+    $wvc  = New-Object Opc.Ua.WriteValueCollection
+    $keys = @($Values.Keys)
+    foreach ($k in $keys) {
+        $w = New-Object Opc.Ua.WriteValue
+        $w.NodeId      = Get-DwUaNodeId -Session $Session -Namespace $Namespace -Path $k
+        $w.AttributeId = [Opc.Ua.Attributes]::Value
+        $w.Value       = New-Object Opc.Ua.DataValue(New-Object Opc.Ua.Variant([string]$Values[$k]))
+        $wvc.Add($w)
+    }
+    $results = $null; $diag = $null
+    [void]$Session.Write($null, $wvc, [ref]$results, [ref]$diag)
+    $out = [ordered]@{}
+    for ($i = 0; $i -lt $keys.Count; $i++) { $out[$keys[$i]] = [string]$results[$i] }
+    return $out
+}
+
+function Get-DwUaValue {
+    param([Parameter(Mandatory)] $Session, [Parameter(Mandatory)] [string]$Namespace, [Parameter(Mandatory)] [string]$Path)
+    return $Session.ReadValue((Get-DwUaNodeId -Session $Session -Namespace $Namespace -Path $Path))
+}
+
+#endregion
+
 #region -- DWUSER.db through the gateway's sqlite3.dll -------------------------
 
 function Initialize-DwSqlite {

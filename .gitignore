@@ -48,3 +48,6 @@ DWEnterprise_Install*
 tools/Find-DwStrings.ps1
 tools/Inspect-DwGateway.ps1
 tools/Test-DwHttpApi.ps1
+
+# OPC UA browse output from the VMs - local only
+dw-opcua-*.txt

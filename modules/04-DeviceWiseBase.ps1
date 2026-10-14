@@ -15,7 +15,10 @@
          endpoint (48020, security modes/policies, user auth, anonymous; host = this VM), users
          (MedtronicSU) / roles / policy, gateway name = this VM, CNCn CNCAsset / CNCType = the Site DB
          machine name and type (as variable defaults: the devices do not persist values).
-      3. Checks: each imported item status 0, OPC UA endpoint listening, gateway name.
+      3. Checks: each imported item status 0, OPC UA endpoint listening, gateway name, OPC UA flags.
+      4. CNCn CNCAsset / CNCType written live through the gateway's OPC UA server (OPC Foundation stack
+         from 800xA, copied to C:\APC_Config\OpcUaStack) and read back. Known limitation: the CNC
+         devices do not persist values, so these are empty again after the next dwcore restart.
     Projects (CHMI, SINC, TimescaleDB), tables and the CNCn_PATH devices are imported by Steps 5, 6, 8.
     A safety copy of the gateway databases is kept in the run's Backups\deviceWise-before-step4.
 #>
@@ -163,9 +166,39 @@ function Invoke-DeviceWiseBase {
         Add-Result -Phase $phase -Check 'OPC UA server settings stored' -Status WARN -Detail "could not read DWUSER.db: $($_.Exception.Message)"
     }
 
+    #endregion
+
+    #region -- 4. CNCAsset / CNCType through the gateway's OPC UA server --------------
+
+    # The CNC devices do not persist values (persist_values=false) and the import does not set them,
+    # so they are written live. KNOWN LIMITATION (user, 2026-10-13): they are empty again after the
+    # next dwcore restart, as on the production gateways today.
+    $uaCfg  = $dw.OpcUaClient
+    $wanted = [ordered]@{}
     foreach ($c in $cncs) {
-        Add-Result -Phase $phase -Check "CNC$($c.CNCIndex) CNCAsset / CNCType" -Status MANUAL `
-            -Detail "Workbench > Devices > CNC$($c.CNCIndex) > Variables: CNCAsset = $($c.MachineName), CNCType = $($c.CNCType)"
+        $wanted["CNC$($c.CNCIndex).CNCAsset"] = [string]$c.MachineName
+        $wanted["CNC$($c.CNCIndex).CNCType"]  = [string]$c.CNCType
+    }
+    $session = $null
+    try {
+        if (-not $listening) { throw "the OPC UA server is not listening on port $port" }
+        $session = Open-DwUaSession -Manifest $Manifest
+        $written = Set-DwUaValues -Session $session -Namespace $uaCfg.Namespace -Values $wanted
+        foreach ($c in $cncs) {
+            $node = "CNC$($c.CNCIndex)"
+            $got  = @("$node.CNCAsset", "$node.CNCType" | ForEach-Object { [string](Get-DwUaValue -Session $session -Namespace $uaCfg.Namespace -Path $_).Value })
+            $ok   = ($got[0] -eq $wanted["$node.CNCAsset"]) -and ($got[1] -eq $wanted["$node.CNCType"])
+            Add-Result -Phase $phase -Check "$node CNCAsset / CNCType" -Status $(if ($ok) { 'PASS' } else { 'FAIL' }) `
+                -Detail ("read back '{0}' / '{1}' (write: {2} / {3}); lost on the next dwcore restart (known limitation)" -f `
+                         $got[0], $got[1], $written["$node.CNCAsset"], $written["$node.CNCType"])
+        }
+    } catch {
+        foreach ($c in $cncs) {
+            Add-Result -Phase $phase -Check "CNC$($c.CNCIndex) CNCAsset / CNCType" -Status MANUAL `
+                -Detail "OPC UA write not possible ($($_.Exception.Message)). Workbench > Devices > CNC$($c.CNCIndex) > Variables: CNCAsset = $($c.MachineName), CNCType = $($c.CNCType)"
+        }
+    } finally {
+        if ($session) { [void]$session.Close() }
     }
 
     #endregion

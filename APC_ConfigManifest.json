@@ -96,7 +96,12 @@
     "BaselineRepoSubPath":  "APC VM Software Components\\deviceWise\\5-Automation\\Baseline_Backup.dbk",
     "BaseImportTypes":      [ "license.pool", "system", "Devices", "device", "file", "Endpoints", "user", "role", "policy", "alerts", "attention bit", "timesync", "report" ],
     "ImportTimeoutSec":     900,
-    "OpcUaSecurityPolicies": [ "Basic128Rsa15", "Basic256", "Basic256Sha256", "Aes128Sha256RsaOeap" ]
+    "OpcUaSecurityPolicies": [ "Basic128Rsa15", "Basic256", "Basic256Sha256", "Aes128Sha256RsaOeap" ],
+    "OpcUaClient": {
+      "StackDir":  "C:\\Program Files (x86)\\ABB 800xA\\Base\\bin",
+      "Endpoint":  "opc.tcp://localhost:48020",
+      "Namespace": "urn:Telit:deviceWISE"
+    }
   },
 
   "CHMIComponents": {
