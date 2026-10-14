@@ -323,6 +323,19 @@ function Invoke-DwImport {
                 Write-Log INFO "Safety copy of the gateway databases: $SafetyDir"
             }
             if ($dwImportExtraAction) { & $dwImportExtraAction }
+            # The gateway does not replace a device that is running (-6401; e.g. CNC1-3 on a re-run). Devices the
+            # import is about to replace start Stopped; the import then replaces them and sets the state they
+            # carry in the import (started). Seen on SJUM7AAPPD0017 2026-10-08 and SJUM7AAPPS0048 2026-10-14.
+            $replace = @($Xml.DocumentElement.SelectNodes("exportcontent[@type='device']") | ForEach-Object { $_.GetAttribute('name') })
+            if ($replace.Count) {
+                $existing = @{}
+                try { $existing = Get-DwDeviceStates -Paths $Paths } catch { }
+                $running = @($replace | Where-Object { $existing.ContainsKey($_) -and $existing[$_] -ne 2 })
+                if ($running.Count) {
+                    Set-DwDeviceState -Paths $Paths -Names $running -State 2
+                    Write-Log INFO "Stopped for the re-import: $($running -join ', ')"
+                }
+            }
             Copy-Item $staged $target
         }
         $done = Wait-DwImportFile -Queued $target -ResultFiles @($result, "${result}s") -TimeoutSec $TimeoutSec
@@ -686,14 +699,20 @@ function Get-DwDeviceStates {
     } finally { [DwSqlite]::Close($h) }
 }
 
-function Set-DwDeviceStarted {
-    # Marks devices Started in DWCORE.db (devices.state = 1), so the gateway starts them; dwcore must be stopped
-    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string[]]$Names)
+function Set-DwDeviceState {
+    # Sets devices.state in DWCORE.db (1 = Started, 2 = Stopped); the gateway applies it at its next start.
+    # dwcore must be stopped.
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string[]]$Names, [Parameter(Mandatory)] [ValidateSet(1, 2)] [int]$State)
     if ((Get-Service 'dwcore').Status -ne 'Stopped') { throw 'dwcore must be stopped before writing DWCORE.db.' }
     Initialize-DwSqlite -Paths $Paths
     $h = [DwSqlite]::Open((Join-Path $Paths.Db 'DWCORE.db'), $true)
-    try { foreach ($n in $Names) { [void][DwSqlite]::Query($h, 'UPDATE devices SET state = 1 WHERE name = ?', $n) } }
+    try { foreach ($n in $Names) { [void][DwSqlite]::Query($h, 'UPDATE devices SET state = ? WHERE name = ?', [string]$State, $n) } }
     finally { [DwSqlite]::Close($h) }
+}
+
+function Set-DwDeviceStarted {
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string[]]$Names)
+    Set-DwDeviceState -Paths $Paths -Names $Names -State 1
 }
 
 function Test-DwDevicesStarted {

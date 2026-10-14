@@ -48,7 +48,7 @@ $StepDefs = @(
     @{ Index =  5; Name = 'deviceWise CHMI Integration';    File = '05-DeviceWiseCHMI.ps1';   Fn = 'Invoke-DeviceWiseCHMI'    },
     @{ Index =  6; Name = 'deviceWise SINC Integration';    File = '06-DeviceWiseSINC.ps1';   Fn = 'Invoke-DeviceWiseSINC'    },
     @{ Index =  7; Name = 'CNCnetPDM Configuration';        File = '07-CNCnetPDM.ps1';        Fn = 'Invoke-CNCnetPDM'   },
-    @{ Index =  8; Name = 'deviceWise CNCnetPDM Integrate'; File = '08-DeviceWiseCNCPDM.ps1'; Fn = 'Invoke-DeviceWiseCNCPDM'  },
+    @{ Index =  8; Name = 'deviceWise CNCnetPDM Integration'; File = '08-DeviceWiseCNCPDM.ps1'; Fn = 'Invoke-DeviceWiseCNCPDM' },
     @{ Index =  9; Name = 'DOC XML Configuration';          File = '09-DOCConfig.ps1';        Fn = 'Invoke-DOCConfig'         },
     @{ Index = 10; Name = 'Data Applications Config';       File = '10-DataApps.ps1';         Fn = 'Invoke-DataApps'    },
     @{ Index = 11; Name = 'CHMI / APC UI OPC UA';           File = '11-CHMI.ps1';             Fn = 'Invoke-CHMI'        },
