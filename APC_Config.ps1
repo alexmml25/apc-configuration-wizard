@@ -175,8 +175,6 @@ function Get-ConfigCredentials {
     $creds = @{}
     $creds['SiteDBPassword']     = Read-PasswordDialog -Prompt 'Site DB PostgreSQL password'
     $creds['APCUserPassword']    = Read-PasswordDialog -Prompt 'apcuser password (local TSDB)'
-    $creds['MedtronicSUPassword']= Read-PasswordDialog -Prompt 'MedtronicSU password (OPC UA user)'
-    $creds['DeviceWisePassword'] = Read-PasswordDialog -Prompt 'deviceWise admin password'
     Write-Log INFO "Credentials collected (values redacted)."
     return $creds
 }
@@ -302,8 +300,6 @@ function Main {
     }
     $state['SiteDBPassword']      = $creds.SiteDBPassword
     $state['APCUserPassword']     = $creds.APCUserPassword
-    $state['MedtronicSUPassword'] = $creds.MedtronicSUPassword
-    $state['DeviceWisePassword']  = $creds.DeviceWisePassword
     Save-ConfigState -State $state
 
     $phases = @(

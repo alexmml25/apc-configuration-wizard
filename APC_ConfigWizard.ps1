@@ -403,16 +403,13 @@ $xamlText = @'
               <StackPanel>
                 <TextBlock Text="Component passwords" FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,2"/>
                 <TextBlock FontSize="11" Foreground="#92400E" TextWrapping="Wrap" Margin="0,0,0,12"
-                           Text="Needed only when TimescaleDB (step 2) or deviceWise (step 4) runs. In memory only - never written to disk or logs."/>
+                           Text="Needed only when TimescaleDB (step 2) runs. In memory only - never written to disk or logs."/>
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                  <Grid.RowDefinitions><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                   <TextBlock Grid.Row="0" Text="apcuser (local)" Style="{StaticResource Label}"
-                             ToolTip="Password for the local TimescaleDB apcuser role created in Step 2."/>
-                  <PasswordBox x:Name="PwdAPCUser" Grid.Row="0" Grid.Column="1" Style="{StaticResource Pwd}"/>
-                  <TextBlock Grid.Row="1" Text="MedtronicSU" Style="{StaticResource Label}" Margin="0,0,12,0"
-                             ToolTip="Password for the MedtronicSU OPC UA user created in deviceWise Gateway (Step 4)"/>
-                  <PasswordBox x:Name="PwdMedtronicSU" Grid.Row="1" Grid.Column="1" Style="{StaticResource Pwd}" Margin="0"/>
+                             ToolTip="Password for the local TimescaleDB apcuser role created in Step 2 (must be the standard APC password)."/>
+                  <PasswordBox x:Name="PwdAPCUser" Grid.Row="0" Grid.Column="1" Style="{StaticResource Pwd}" Margin="0"/>
                 </Grid>
               </StackPanel>
             </Border>
@@ -1818,9 +1815,6 @@ function Start-ConfigurationRun {
     if (2 -in $runSteps -and -not $controls['PwdAPCUser'].Password) {
         Show-Warning "Enter the apcuser (local) password on the Sign in page - TimescaleDB (step 2) needs it." 'Password Required'; return $false
     }
-    if (4 -in $runSteps -and -not $controls['PwdMedtronicSU'].Password) {
-        Show-Warning "Enter the MedtronicSU password on the Sign in page - deviceWise (step 4) needs it." 'Password Required'; return $false
-    }
     $license = $controls['TxtLicense'].Text.Trim()
     if (7 -in $runSteps -and -not $license) {
         Show-Warning "Enter the CNCnetPDM license key or tick 'Use default perpetual license'."; return $false
@@ -1866,12 +1860,9 @@ function Start-ConfigurationRun {
 
     $apcPwd = New-Object System.Security.SecureString
     foreach ($c in $controls['PwdAPCUser'].Password.ToCharArray()) { $apcPwd.AppendChar($c) }
-    $suPwd  = New-Object System.Security.SecureString
-    foreach ($c in $controls['PwdMedtronicSU'].Password.ToCharArray()) { $suPwd.AppendChar($c) }
     $sdbPwd = New-Object System.Security.SecureString
     foreach ($c in $controls['PwdSiteDB'].Password.ToCharArray()) { $sdbPwd.AppendChar($c) }
     $Script:AutoState['APCUserPassword']     = $apcPwd
-    $Script:AutoState['MedtronicSUPassword'] = $suPwd
     $Script:AutoState['SiteDBPassword']      = $sdbPwd
 
     $runLog = @("$($Script:ConfigTypes[$type].Name) - $($Script:RunModeName): steps $($runSteps -join ', ')", "Run folder: $runRoot")

@@ -278,10 +278,12 @@ function Invoke-DwImport {
         Imports an export document through the import folder: saves it, stops dwcore (dwts keeps
         running), optionally copies the gateway databases to $SafetyDir first, queues import.dwx,
         starts dwcore and waits for import.result. A copy of the result goes to $SafetyDir as
-        <Label>-import.result. Returns Read-DwImportResult's object; throws when no result arrives.
+        <Label>-import.result. $WhileStopped runs after the safety copy, before the import is queued
+        (e.g. a DWUSER.db write that belongs to the same restart). Returns Read-DwImportResult's
+        object; throws when no result arrives.
     #>
     param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [xml]$Xml, [Parameter(Mandatory)] [string]$Label,
-          [string]$SafetyDir, [switch]$SaveDatabases, [int]$TimeoutSec = 900)
+          [string]$SafetyDir, [switch]$SaveDatabases, [int]$TimeoutSec = 900, [scriptblock]$WhileStopped)
     if (-not (Test-Path $Paths.ImportDir)) { New-Item -ItemType Directory -Path $Paths.ImportDir -Force | Out-Null }
     $target = Join-Path $Paths.ImportDir 'import.dwx'
     $result = Join-Path $Paths.ImportDir 'import.result'
@@ -295,6 +297,7 @@ function Invoke-DwImport {
                 Save-DwDatabases -Paths $Paths -Dest $SafetyDir
                 Write-Log INFO "Safety copy of the gateway databases: $SafetyDir"
             }
+            if ($WhileStopped) { & $WhileStopped }
             Copy-Item $staged $target
         }
         $done = Wait-DwImportFile -Queued $target -ResultFiles @($result, "${result}s") -TimeoutSec $TimeoutSec

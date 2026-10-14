@@ -2,7 +2,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    TEST VM ONLY. Runs one of the wizard's deviceWise steps (4 base platform, 5 CHMI, 6 SINC) on its own.
+    TEST VM ONLY. Runs one of the wizard's deviceWise steps (4 base platform, 5 CHMI, 6 SINC, 8 CNCnetPDM) on its own.
 .DESCRIPTION
     Loads the wizard's manifest and the step's module and runs it with the CNCs given here, so
     Step 1 (Site DB) is not needed. Results and the log go to C:\APC_Config\Test-Step0<n>_<ts>\
@@ -16,7 +16,7 @@
     powershell -ExecutionPolicy Bypass -File .\tools\Test-DwStep.ps1 -Step 4 -Cnc 'Citizen 01|CITIZEN_L20X_IV' -Baseline D:\APC_Config\Baseline_Backup.dbk -PackageDir D:\APC_Config\packages
 #>
 param(
-    [ValidateSet(4, 5, 6)] [int]$Step = 4,
+    [ValidateSet(4, 5, 6, 8)] [int]$Step = 4,
     # Step 6: the SINC email list (';' or ',' separated), as entered in the wizard
     [string]$Email = '',
     # 'Machine name|CNC type' per CNC, in CNC1..CNC3 order (the Site DB f_cnc_asset and type)
@@ -32,6 +32,7 @@ $steps = @{
     4 = @{ File = '04-DeviceWiseBase.ps1'; Fn = 'Invoke-DeviceWiseBase'; Name = 'deviceWise base platform' }
     5 = @{ File = '05-DeviceWiseCHMI.ps1'; Fn = 'Invoke-DeviceWiseCHMI'; Name = 'deviceWise CHMI' }
     6 = @{ File = '06-DeviceWiseSINC.ps1'; Fn = 'Invoke-DeviceWiseSINC'; Name = 'deviceWise SINC' }
+    8 = @{ File = '08-DeviceWiseCNCPDM.ps1'; Fn = 'Invoke-DeviceWiseCNCPDM'; Name = 'deviceWise CNCnetPDM' }
 }
 $def  = $steps[$Step]
 $run  = Join-Path 'C:\APC_Config' ("Test-Step{0:D2}_{1}" -f $Step, (Get-Date -Format 'yyyyMMdd-HHmmss'))
