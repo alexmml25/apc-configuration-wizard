@@ -234,8 +234,17 @@ SELECT create_hypertable('conditions', by_range('time'), if_not_exists => TRUE);
             }
             $logDir = Get-RunDir -State $State -Name Logs -Manifest $Manifest
             $ilog   = Join-Path $logDir "psqlodbc-setup_$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
-            Write-Log INFO "Installing the PostgreSQL ODBC driver: $setup"
-            $p = Start-Process -FilePath $setup -ArgumentList '/install', '/quiet', '/norestart', '/log', "`"$ilog`"" -Wait -PassThru
+            # Run a local copy: started from the share (a dotted name, so the Internet zone) Windows shows
+            # "Open File - Security Warning" and waits for a click (VM run 2026-10-14)
+            $localDir = Join-Path $env:TEMP "apc-psqlodbc-$([guid]::NewGuid().ToString('N'))"
+            New-Item -ItemType Directory -Path $localDir -Force | Out-Null
+            $local = Join-Path $localDir (Split-Path $setup -Leaf)
+            Write-Log INFO "Installing the PostgreSQL ODBC driver: $setup (local copy)"
+            try {
+                Copy-Item -LiteralPath $setup -Destination $local -Force -ErrorAction Stop
+                Unblock-File -LiteralPath $local -ErrorAction SilentlyContinue
+                $p = Start-Process -FilePath $local -ArgumentList '/install', '/quiet', '/norestart', '/log', "`"$ilog`"" -Wait -PassThru
+            } finally { Remove-Item -LiteralPath $localDir -Recurse -Force -ErrorAction SilentlyContinue }
             if ($p.ExitCode -notin 0, 3010) { throw "psqlodbc-setup.exe exit code $($p.ExitCode) (log: $ilog)" }
             $driver = Get-PgOdbcDriver -Preferred $pg.OdbcDriver
             if (-not $driver) { throw "psqlodbc-setup.exe finished but no 32-bit PostgreSQL ANSI driver is registered (log: $ilog)" }
