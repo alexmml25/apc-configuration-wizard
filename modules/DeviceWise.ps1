@@ -556,7 +556,14 @@ function Set-DwCncAssetValues {
             Start-Sleep -Seconds 5
         }
         $session = Open-DwUaSession -Manifest $Manifest
-        $written = Set-DwUaValues -Session $session -Namespace $ua.Namespace -Values $wanted
+        # Right after a dwcore start the server can listen before the devices answer (BadCommunicationError on
+        # SJUM7AAPPS0048 2026-10-14): retry the write for up to a minute until every value is Good
+        $retryUntil = (Get-Date).AddSeconds(60)
+        do {
+            $written = Set-DwUaValues -Session $session -Namespace $ua.Namespace -Values $wanted
+            $notGood = @($written.Keys | Where-Object { $written[$_] -notmatch '^Good' })
+            if ($notGood.Count -and (Get-Date) -lt $retryUntil) { Start-Sleep -Seconds 5 }
+        } while ($notGood.Count -and (Get-Date) -lt $retryUntil)
         foreach ($c in $Cncs) {
             $node = "CNC$($c.CNCIndex)"
             $got  = @("$node.CNCAsset", "$node.CNCType" | ForEach-Object { [string](Get-DwUaValue -Session $session -Namespace $ua.Namespace -Path $_).Value })
