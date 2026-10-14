@@ -7,6 +7,8 @@
                    cncnetpdm.instances); without -Group and -Find, lists all groups with their row counts.
     -Find <text>   searches every text column of every table in DWCORE, DWAPP, DWUSER and DWTS
                    for the text (e.g. 'Citizen 01'), and prints table, column and a short excerpt.
+    -Table <name>  prints that table's columns and its rows (first -Max), in -Db (default DWCORE.db);
+                   with -Find, only rows containing the text. Long values are cut to 300 characters.
     Values of columns or names that look like passwords/secrets/keys/vouchers are masked.
     Opens the databases read-only; dwcore can keep running. Nothing is changed.
     Output also saved to C:\APC_Config\Logs\dw-db-<timestamp>.txt
@@ -14,10 +16,15 @@
     powershell -ExecutionPolicy Bypass -File .\tools\Inspect-DwDb.ps1 -Group opcua_server_v3
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Inspect-DwDb.ps1 -Find "Citizen 01"
+.EXAMPLE
+    powershell -ExecutionPolicy Bypass -File .\tools\Inspect-DwDb.ps1 -Table triggers -Find CNC1_Control_PartMachined_Monitor
 #>
 param(
     [string]$Group,
     [string]$Find,
+    [string]$Table,
+    [string]$Db  = 'DWCORE.db',
+    [int]$Max    = 20,
     [string]$GatewayRoot = 'C:\Program Files\deviceWISE\Gateway'
 )
 
@@ -36,7 +43,31 @@ function Mask([string]$name, [string]$value) { if ($name -match $secret) { '<mas
 
 Out-Line "deviceWISE DB inspection - $env:COMPUTERNAME - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 
-if ($Group -or -not $Find) {
+if ($Table) {
+    $h = [DwSqlite]::Open((Join-Path $paths.Db $Db), $false)
+    try {
+        $cols = @([DwSqlite]::Query($h, 'SELECT name, type FROM pragma_table_info(?)', $Table))
+        if (-not $cols.Count) { Out-Line "Table '$Table' not found in $Db. Tables:"; foreach ($t in [DwSqlite]::Query($h, "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")) { Out-Line "  $($t[0])" } }
+        else {
+            Out-Line "`r`n== $Db table $Table : $((@($cols | ForEach-Object { '{0} {1}' -f $_[0], $_[1] })) -join ', ')"
+            $colNames = @($cols | ForEach-Object { $_[0] })
+            $sel = ($colNames | ForEach-Object { 'CAST("{0}" AS TEXT)' -f $_.Replace('"', '""') }) -join ', '
+            $where = if ($Find) { ' WHERE ' + (($colNames | ForEach-Object { 'instr(CAST("{0}" AS TEXT), ?1) > 0' -f $_.Replace('"', '""') }) -join ' OR ') } else { '' }
+            $sql = 'SELECT {0} FROM "{1}"{2} LIMIT {3}' -f $sel, $Table.Replace('"', '""'), $where, $Max
+            $rows = if ($Find) { [DwSqlite]::Query($h, $sql, $Find) } else { [DwSqlite]::Query($h, $sql) }
+            foreach ($r in $rows) {
+                Out-Line '  --'
+                for ($i = 0; $i -lt $colNames.Count; $i++) {
+                    $v = ([string](Mask $colNames[$i] $r[$i])) -replace '[\x00-\x1F]', ' '
+                    if ($v.Length -gt 300) { $v = $v.Substring(0, 300) + '...' }
+                    Out-Line ("  {0} = {1}" -f $colNames[$i], $v)
+                }
+            }
+            Out-Line "  ($(@($rows).Count) row(s) shown)"
+        }
+    } finally { [DwSqlite]::Close($h) }
+}
+elseif ($Group -or -not $Find) {
     $h = [DwSqlite]::Open((Join-Path $paths.Db 'DWUSER.db'), $false)
     try {
         if ($Group) {
@@ -53,7 +84,7 @@ if ($Group -or -not $Find) {
     } finally { [DwSqlite]::Close($h) }
 }
 
-if ($Find) {
+if ($Find -and -not $Table) {
     foreach ($dbName in 'DWCORE.db', 'DWAPP.db', 'DWUSER.db', 'DWTS.db') {
         $file = Join-Path $paths.Db $dbName
         if (-not (Test-Path $file)) { continue }
