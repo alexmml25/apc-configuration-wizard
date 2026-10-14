@@ -91,8 +91,13 @@ function Invoke-DeviceWiseCHMI {
         Add-Result -Phase $phase -Check 'CHMI triggers started' -Status MANUAL `
             -Detail "could not read DWCORE.db ($($_.Exception.Message)). Workbench > Projects > CHMI: State = Started, Status = Loaded"
     }
-    Add-Result -Phase $phase -Check 'TimescaleDB connection' -Status MANUAL `
-        -Detail "Uses the baseline's stored apcuser password; it works only if this VM's apcuser password (Step 2) is the same"
+    # The connection stores the baseline's apcuser password encrypted; Step 2 checks this VM's against the standard one
+    if ($State['APCUserPasswordStandard'] -eq $true) {
+        Add-Result -Phase $phase -Check 'TimescaleDB connection' -Status PASS -Detail 'apcuser password confirmed as the standard one in Step 2'
+    } else {
+        Add-Result -Phase $phase -Check 'TimescaleDB connection' -Status MANUAL `
+            -Detail "Uses the baseline's stored apcuser password; it works only if this VM's apcuser password (Step 2) is the standard one - not confirmed in this run"
+    }
 
     Set-DwCncAssetValues -Manifest $Manifest -Cncs $cncs -Phase $phase
     Write-Log PASS 'deviceWise CHMI integration complete.'

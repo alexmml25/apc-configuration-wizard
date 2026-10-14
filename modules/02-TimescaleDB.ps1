@@ -45,6 +45,7 @@ function Invoke-TimescaleDBSetup {
     # The deviceWise baseline's TimescaleDB connection (Step 5) stores the standard apcuser password
     # encrypted, so a different password here would break it: check against the standard one's hash
     $std = Test-StandardPassword -Password $apcPwd -Check $pg.LocalUserPasswordCheck
+    $State['APCUserPasswordStandard'] = $std   # Step 5 reports the deviceWise TimescaleDB connection from this
     if ($std -eq $false) {
         Add-Result -Phase TSDB -Check 'apcuser password is the standard one' -Status FAIL `
             -Detail 'The entered apcuser password is not the standard APC password; the deviceWise TimescaleDB connection (Step 5) would not work.'
