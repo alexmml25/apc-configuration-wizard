@@ -94,25 +94,43 @@ function Invoke-DeviceWiseBase {
         Add-Result -Phase $phase -Check 'Base configuration import' -Status FAIL -Detail $_.Exception.Message
         throw
     }
-    [void](Add-DwImportResults -Phase $phase -Result $res -Summary 'Base configuration import')
+    # Endpoints fails (-41304) when the OPC UA server is already running (a re-run, or a factory reset that
+    # kept the server's settings - 2026-10-14); section 2b writes all its settings directly anyway
+    [void](Add-DwImportResults -Phase $phase -Result $res -Summary 'Base configuration import' `
+        -Tolerate @{ 'Endpoints/Settings' = 'the OPC UA server was already running; its settings are written directly in the next part' })
 
     #endregion
 
     #region -- 2b. OPC UA server: switched on, SOP security policies ----------------
 
-    # The import brings the endpoint settings but not the 'switched on' flags that Workbench's Start
-    # button writes (enable / status in DWUSER.db, group opcua_server_v3 - compared with a gateway
-    # set up in Workbench, 2026-10-13). It also stored the two AES policies the wrong way round
-    # (file: Aes128Sha256RsaOeap; stored: aes128 false / aes256 true), so the policy flags are written too.
+    # All OPC UA server settings are written to DWUSER.db (group opcua_server_v3), as Workbench does:
+    #  - the import does not bring the 'switched on' flags of Workbench's Start button (enable / status;
+    #    compared with a gateway set up in Workbench, 2026-10-13),
+    #  - it stores the two AES policies the wrong way round (file: Aes128Sha256RsaOeap; stored: aes128
+    #    false / aes256 true),
+    #  - and it does not apply the endpoint settings at all while the server runs (-41304, 2026-10-14).
+    # The values come from the template's endpoint settings (after this VM's patches) and the manifest.
+    $ep  = $build.Xml.SelectSingleNode("//exportcontent[@type='Endpoints']/exportitem").InnerText | ConvertFrom-Json
+    $get = { param($n) if ($ep.PSObject.Properties[$n]) { [string]$ep.$n } else { $null } }
+    $ua  = [ordered]@{ enable = 'Yes'; status = 'Started' }
+    foreach ($m in @{ bind_address = 'group_bind_address'; bind_port = 'group_bind_port'; device_list = 'device_list'
+                      user_authentication = 'group_auth_user_authentication'; anonymous = 'group_auth_anonymous'
+                      include_device_node = 'incude_devices_folder'; should_register_to_gds = 'should_register_to_gds' }.GetEnumerator()) {
+        $v = & $get $m.Value
+        if ($null -ne $v) { $ua[$m.Key] = $v }
+    }
+    $modes = @(([string](& $get 'group_security_security_modes')) -split ',' | ForEach-Object { $_.Trim() })
+    $ua['security_mode_none']            = ([string]($modes -contains 'None')).ToLower()
+    $ua['security_mode_sign']            = ([string]($modes -contains 'Sign')).ToLower()
+    $ua['security_mode_sign_and_encypt'] = ([string]($modes -contains 'Sign And Encrypt')).ToLower()   # (sic) the gateway's own key name
     $policyKeys = [ordered]@{
         Basic128Rsa15 = 'security_basic128rsa15'; Basic256 = 'security_basic256'; Basic256Sha256 = 'security_basic256sha256'
         Aes128Sha256RsaOeap = 'security_aes128sha256'; Aes256Sha256RsaPss = 'security_aes256sha256'
     }
-    $ua = [ordered]@{ enable = 'Yes'; status = 'Started' }
     foreach ($p in $policyKeys.Keys) { $ua[$policyKeys[$p]] = ([string](@($dw.OpcUaSecurityPolicies) -contains $p)).ToLower() }
     Restart-DwCore -WhileStopped { Set-DwPersistence -Paths $paths -Group 'opcua_server_v3' -Values $ua }
     Add-Result -Phase $phase -Check 'OPC UA server switched on' -Status PASS `
-        -Detail ("enable=Yes, status=Started; policies: {0}" -f (@($dw.OpcUaSecurityPolicies) -join ', '))
+        -Detail ("enable=Yes, status=Started; {0}:{1}, devices {2}; policies: {3}" -f $ua['bind_address'], $ua['bind_port'], $ua['device_list'], (@($dw.OpcUaSecurityPolicies) -join ', '))
 
     #endregion
 

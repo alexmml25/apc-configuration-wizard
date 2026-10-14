@@ -308,12 +308,20 @@ function Invoke-DwImport {
 }
 
 function Add-DwImportResults {
-    # One result line per imported item (status 0 = PASS) plus a summary line; returns the failed count
-    param([Parameter(Mandatory)] [string]$Phase, [Parameter(Mandatory)] $Result, [Parameter(Mandatory)] [string]$Summary)
+    <#
+        One result line per imported item (status 0 = PASS) plus a summary line; returns the failed count.
+        $Tolerate: @{ 'type/item' = 'reason' } - a non-zero status there is a WARN (the step makes up
+        for it another way) and does not count as failed.
+    #>
+    param([Parameter(Mandatory)] [string]$Phase, [Parameter(Mandatory)] $Result, [Parameter(Mandatory)] [string]$Summary,
+          [hashtable]$Tolerate = @{})
     foreach ($i in $Result.Items) {
-        Add-Result -Phase $Phase -Check "Import $($i.Type) $($i.Item)" -Status $(if ($i.Status -eq 0) { 'PASS' } else { 'FAIL' }) -Detail "status $($i.Status)"
+        $key = "$($i.Type)/$($i.Item)"
+        if ($i.Status -eq 0)                  { Add-Result -Phase $Phase -Check "Import $($i.Type) $($i.Item)" -Status PASS -Detail 'status 0' }
+        elseif ($Tolerate.ContainsKey($key))  { Add-Result -Phase $Phase -Check "Import $($i.Type) $($i.Item)" -Status WARN -Detail "status $($i.Status) - $($Tolerate[$key])" }
+        else                                  { Add-Result -Phase $Phase -Check "Import $($i.Type) $($i.Item)" -Status FAIL -Detail "status $($i.Status)" }
     }
-    $bad = @($Result.Items | Where-Object { $_.Status -ne 0 })
+    $bad = @($Result.Items | Where-Object { $_.Status -ne 0 -and -not $Tolerate.ContainsKey("$($_.Type)/$($_.Item)") })
     Add-Result -Phase $Phase -Check $Summary -Status $(if ($bad.Count) { 'FAIL' } else { 'PASS' }) `
         -Detail ("{0} item(s), {1} failed, overall status {2}" -f $Result.Items.Count, $bad.Count, $Result.Overall)
     return $bad.Count
