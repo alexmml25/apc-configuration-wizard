@@ -54,7 +54,9 @@ if ($Table) {
             $sel = ($colNames | ForEach-Object { 'CAST("{0}" AS TEXT)' -f $_.Replace('"', '""') }) -join ', '
             $where = if ($Find) { ' WHERE ' + (($colNames | ForEach-Object { 'instr(CAST("{0}" AS TEXT), ?1) > 0' -f $_.Replace('"', '""') }) -join ' OR ') } else { '' }
             $sql = 'SELECT {0} FROM "{1}"{2} LIMIT {3}' -f $sel, $Table.Replace('"', '""'), $where, $Max
-            $rows = if ($Find) { [DwSqlite]::Query($h, $sql, $Find) } else { [DwSqlite]::Query($h, $sql) }
+            # assign directly: through an if-expression a single row would be unrolled into its columns
+            $rows = $null
+            if ($Find) { $rows = [DwSqlite]::Query($h, $sql, $Find) } else { $rows = [DwSqlite]::Query($h, $sql) }
             foreach ($r in $rows) {
                 Out-Line '  --'
                 for ($i = 0; $i -lt $colNames.Count; $i++) {
@@ -63,7 +65,7 @@ if ($Table) {
                     Out-Line ("  {0} = {1}" -f $colNames[$i], $v)
                 }
             }
-            Out-Line "  ($(@($rows).Count) row(s) shown)"
+            Out-Line "  ($($rows.Count) row(s) shown)"
         }
     } finally { [DwSqlite]::Close($h) }
 }

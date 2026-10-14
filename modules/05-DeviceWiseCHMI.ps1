@@ -10,9 +10,10 @@
         their database connection (CHMIImport.Transports: TimescaleDB = local apcuser@localhost:5432).
         The connection's password is stored encrypted in the baseline, so the local apcuser
         password must be the one used on the baseline gateway.
-    Checks: every imported item status 0, and every component the SOP lists (Manifest.CHMIComponents
-    Loaded / Started) present in the import. Their runtime Loaded / Started state is a Workbench
-    check for now. The CNCn_PATH monitors also need the CNCnetPDM devices of Step 8.
+    Checks: every imported item status 0, every component the SOP lists (Manifest.CHMIComponents
+    Loaded / Started) present, and every CHMI trigger started: DWCORE.db triggers.state = 1, which is
+    what Workbench shows as Started / Loaded (fresh VM, 2026-10-13). The CNCn_PATH monitors start
+    before Step 8 too.
     dwcore restarts for the import, which empties CNCAsset / CNCType, so they are written again.
 #>
 
@@ -71,8 +72,25 @@ function Invoke-DeviceWiseCHMI {
                 -Detail $(if ($ok) { "imported (SOP: $list)" } else { "not imported (SOP: $list)" })
         }
     }
-    Add-Result -Phase $phase -Check 'CHMI components Loaded / Started' -Status MANUAL `
-        -Detail 'Workbench > Projects > CHMI: Scheduled and SubTrigger components Status = Loaded, State = Started (CNCn_PATH monitors after Step 8)'
+    # Started: DWCORE.db triggers.state = 1 (what Workbench shows as Started / Loaded)
+    try {
+        $states  = Get-DwTriggerStates -Paths $paths -Project 'CHMI'
+        $sop     = @(@($Manifest.CHMIComponents.Loaded) + @($Manifest.CHMIComponents.Started))
+        $stopped = @()
+        foreach ($name in @($states.Keys | Sort-Object)) {
+            if ($states[$name] -eq 1) {
+                if ($sop -contains $name) { Add-Result -Phase $phase -Check "Started $name" -Status PASS -Detail 'state 1' }
+            } else {
+                $stopped += $name
+                Add-Result -Phase $phase -Check "Started $name" -Status FAIL -Detail "state $($states[$name]) - start it in Workbench > Projects > CHMI"
+            }
+        }
+        Add-Result -Phase $phase -Check 'CHMI triggers started' -Status $(if ($stopped.Count -or -not $states.Count) { 'FAIL' } else { 'PASS' }) `
+            -Detail ("{0} of {1} trigger(s) started" -f ($states.Count - $stopped.Count), $states.Count)
+    } catch {
+        Add-Result -Phase $phase -Check 'CHMI triggers started' -Status MANUAL `
+            -Detail "could not read DWCORE.db ($($_.Exception.Message)). Workbench > Projects > CHMI: State = Started, Status = Loaded"
+    }
     Add-Result -Phase $phase -Check 'TimescaleDB connection' -Status MANUAL `
         -Detail "Uses the baseline's stored apcuser password; it works only if this VM's apcuser password (Step 2) is the same"
 

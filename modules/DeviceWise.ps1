@@ -570,6 +570,21 @@ function Set-DwPersistence {
     } finally { [DwSqlite]::Close($h) }
 }
 
+function Get-DwTriggerStates {
+    <#
+        Reads the trigger table of DWCORE.db (read-only; dwcore may be running): name, project, state.
+        state = 1 for triggers Workbench shows as Started (fresh VM, 2026-10-13). Returns @{ name = state }.
+    #>
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$Project)
+    Initialize-DwSqlite -Paths $Paths
+    $h = [DwSqlite]::Open((Join-Path $Paths.Db 'DWCORE.db'), $false)
+    try {
+        $out = @{}
+        foreach ($r in [DwSqlite]::Query($h, 'SELECT name, state FROM triggers WHERE project = ?', $Project)) { $out[$r[0]] = [int]$r[1] }
+        return $out
+    } finally { [DwSqlite]::Close($h) }
+}
+
 function Get-DwPersistence {
     # Reads DWUSER.db persistence rows of one group (read-only; dwcore may be running).
     param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$Group)

@@ -61,7 +61,13 @@
     "LocalDB":     "TimescaleDB",
     "LocalUser":   "apcuser",
     "OdbcDsn":     "PostgreSQL30",
-    "OdbcDriver":  "PostgreSQL ANSI(x86)"
+    "OdbcDriver":  "PostgreSQL ANSI(x86)",
+    "LocalUserPasswordCheck": {
+      "Description": "PBKDF2-SHA256 of the standard local apcuser password (the one the deviceWise baseline's TimescaleDB connection uses). Made with tools\\New-PasswordCheck.ps1; empty = not checked.",
+      "Iterations":  200000,
+      "Salt":        "",
+      "Hash":        ""
+    }
   },
 
   "SchemaScripts": [

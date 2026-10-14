@@ -10,7 +10,10 @@
     - Enables the timescaledb extension and creates the validation hypertable
     - Runs all approved schema SQL scripts from the repository
     - Configures the PostgreSQL ODBC DSN (PostgreSQL30) via registry
+    The apcuser password is checked first against the standard one (PostgreSQL.LocalUserPasswordCheck).
 #>
+
+. (Join-Path $PSScriptRoot 'Common.ps1')
 
 function Invoke-TimescaleDBSetup {
     [CmdletBinding()]
@@ -38,6 +41,17 @@ function Invoke-TimescaleDBSetup {
         finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
     }
     if (-not $apcPwd) { throw "APCUserPassword not available in session state." }
+
+    # The deviceWise baseline's TimescaleDB connection (Step 5) stores the standard apcuser password
+    # encrypted, so a different password here would break it: check against the standard one's hash
+    $std = Test-StandardPassword -Password $apcPwd -Check $pg.LocalUserPasswordCheck
+    if ($std -eq $false) {
+        Add-Result -Phase TSDB -Check 'apcuser password is the standard one' -Status FAIL `
+            -Detail 'The entered apcuser password is not the standard APC password; the deviceWise TimescaleDB connection (Step 5) would not work.'
+        throw 'The apcuser password is not the standard APC password. Re-enter it on the Sign in page.'
+    }
+    Add-Result -Phase TSDB -Check 'apcuser password is the standard one' -Status $(if ($std) { 'PASS' } else { 'WARN' }) `
+        -Detail $(if ($std) { 'matches the standard password check' } else { 'not checked: manifest PostgreSQL.LocalUserPasswordCheck is empty (tools\New-PasswordCheck.ps1)' })
 
     #endregion
 

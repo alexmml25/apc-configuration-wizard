@@ -251,6 +251,31 @@ function New-SandboxManifest {
     return @{ Manifest = $m; Copied = [string[]]$copied; Missing = [string[]]$missing }
 }
 
+function Get-PasswordHash {
+    <#
+        PBKDF2-SHA256 of a password (string or SecureString) with the given salt; returns base64.
+        Used to check that a typed password is the standard one without storing the password itself
+        (manifest PostgreSQL.LocalUserPasswordCheck, made with tools\New-PasswordCheck.ps1).
+    #>
+    param([Parameter(Mandatory)] $Password, [Parameter(Mandatory)] [byte[]]$Salt, [int]$Iterations = 200000)
+    $plain = $Password
+    if ($Password -is [Security.SecureString]) {
+        $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Password)
+        try { $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    }
+    $kdf = New-Object Security.Cryptography.Rfc2898DeriveBytes([string]$plain, $Salt, $Iterations, [Security.Cryptography.HashAlgorithmName]::SHA256)
+    try { return [Convert]::ToBase64String($kdf.GetBytes(32)) } finally { $kdf.Dispose() }
+}
+
+function Test-StandardPassword {
+    # $true / $false against a { Salt, Hash, Iterations } check; $null when no check is configured
+    param([Parameter(Mandatory)] $Password, $Check)
+    if (-not $Check -or -not $Check.PSObject.Properties['Hash'] -or -not $Check.Hash -or -not $Check.Salt) { return $null }
+    $iter = if ($Check.PSObject.Properties['Iterations'] -and $Check.Iterations) { [int]$Check.Iterations } else { 200000 }
+    $hash = Get-PasswordHash -Password $Password -Salt ([Convert]::FromBase64String($Check.Salt)) -Iterations $iter
+    return ($hash -ceq [string]$Check.Hash)
+}
+
 function Get-RunDir {
     <#
         Folder for this run's Logs / Backups / Reports. The wizard gives each run its own folder,
