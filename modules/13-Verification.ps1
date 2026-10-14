@@ -308,7 +308,7 @@ function Invoke-Verification {
 
     # Item 19 - MedtronicSU user exists (DWUSER.db users)
     Check 'deviceWise' "OPC UA user $($dw.OpcUaUser) exists" {
-        $u = Invoke-DwDbQuery -Paths $paths -Db 'DWUSER.db' -Sql 'SELECT name FROM users WHERE name = ?' -Arguments @($dw.OpcUaUser)
+        $u = Invoke-DwDbQuery -Paths $paths -Database 'DWUSER.db' -Sql 'SELECT name FROM users WHERE name = ?' -Arguments @($dw.OpcUaUser)
         if (-not $u.Count) { throw "User $($dw.OpcUaUser) not found" }
         "User $($dw.OpcUaUser) present"
     } '' 3 19

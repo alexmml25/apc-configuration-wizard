@@ -809,9 +809,10 @@ function Test-DwDevicesStarted {
 
 function Invoke-DwDbQuery {
     # Read-only query on one gateway database (DWCORE.db, DWAPP.db, DWUSER.db, DWTS.db); rows as string[]
-    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$Db, [Parameter(Mandatory)] [string]$Sql, [string[]]$Arguments = @())
+    # (not -Db: every advanced function has -Debug with the alias -db, so a -Db parameter cannot be bound)
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$Database, [Parameter(Mandatory)] [string]$Sql, [string[]]$Arguments = @())
     Initialize-DwSqlite -Paths $Paths
-    $h = [DwSqlite]::Open((Join-Path $Paths.Db $Db), $false)
+    $h = [DwSqlite]::Open((Join-Path $Paths.Db $Database), $false)
     try { return ,@([DwSqlite]::Query($h, $Sql, $Arguments)) } finally { [DwSqlite]::Close($h) }
 }
 
@@ -821,7 +822,7 @@ function Get-DwXml {
           [Parameter(Mandatory)] [string]$Name, [string]$Project)
     $sql  = "SELECT xml FROM $Table WHERE name = ?" + $(if ($Project) { ' AND project = ?' } else { '' })
     $qArgs = @($Name) + @(if ($Project) { $Project })
-    $rows  = Invoke-DwDbQuery -Paths $Paths -Db 'DWCORE.db' -Sql $sql -Arguments $qArgs
+    $rows  = Invoke-DwDbQuery -Paths $Paths -Database 'DWCORE.db' -Sql $sql -Arguments $qArgs
     if (-not $rows.Count -or -not $rows[0][0]) { return $null }
     return [xml]$rows[0][0]
 }
@@ -834,10 +835,10 @@ function Get-DwLocalTable {
     param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string]$Table)
     foreach ($db in 'DWAPP.db', 'DWCORE.db', 'DWTS.db', 'DWUSER.db') {
         if (-not (Test-Path (Join-Path $Paths.Db $db))) { continue }
-        $found = Invoke-DwDbQuery -Paths $Paths -Db $db -Sql "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?" -Arguments @($Table)
+        $found = Invoke-DwDbQuery -Paths $Paths -Database $db -Sql "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?" -Arguments @($Table)
         if (-not $found.Count) { continue }
-        $cols = @((Invoke-DwDbQuery -Paths $Paths -Db $db -Sql 'SELECT name FROM pragma_table_info(?)' -Arguments @($Table)) | ForEach-Object { $_[0] })
-        $rows = Invoke-DwDbQuery -Paths $Paths -Db $db -Sql ('SELECT * FROM "{0}"' -f $Table.Replace('"', '""'))
+        $cols = @((Invoke-DwDbQuery -Paths $Paths -Database $db -Sql 'SELECT name FROM pragma_table_info(?)' -Arguments @($Table)) | ForEach-Object { $_[0] })
+        $rows = Invoke-DwDbQuery -Paths $Paths -Database $db -Sql ('SELECT * FROM "{0}"' -f $Table.Replace('"', '""'))
         $out = foreach ($r in $rows) { $o = [ordered]@{}; for ($i = 0; $i -lt $cols.Count; $i++) { $o[$cols[$i]] = $r[$i] }; [pscustomobject]$o }
         return [pscustomobject]@{ Db = $db; Rows = @($out) }
     }
