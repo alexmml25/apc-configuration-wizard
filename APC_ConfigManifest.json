@@ -108,6 +108,13 @@
       "Transactions": [ "InsertMachineMaintenanceEvent", "InsertToolingChangedEvent" ],
       "Transports":   [ "TimescaleDB" ]
     },
+    "SINCImport": {
+      "Projects":     [ "SINC" ],
+      "Transactions": [ "InsertCNCFileStatus", "InsertCNCTrackerLog", "QueryCNCFileStatus", "QueryCNCSetting", "UpdateCNCFileStatusByID", "UpdateCNCFileStatus_Overwritten" ],
+      "Devices":      [ "SINC_SETTING", "Devicewise_OPC_UA_Sinc" ],
+      "Tables":       [ "CNC_SETTING", "CNC_FILE_STATUS", "CNC_TRACKER_LOG" ],
+      "TablesWithData": [ "CNC_SETTING" ]
+    },
     "OpcUaClient": {
       "StackDir":  "C:\\Program Files (x86)\\ABB 800xA\\Base\\bin",
       "Endpoint":  "opc.tcp://localhost:48020",
@@ -165,7 +172,8 @@
     "9_OPC_DemandWriteTagString",
     "9_OPC_WriteTagString",
     "9_OPC_WriteTagValue",
-    "10_SendEmail",
+    "10_BuildAndSendEmail",
+    "10_SendAlertEmail",
     "11_CheckFolderExists",
     "11_GetLastUpdatedTime"
   ],
@@ -177,12 +185,13 @@
   ],
 
   "SINCDefaultSettings": {
-    "ALARM_TAG":   "1,599",
-    "ALARM_VALUE": 1.0,
+    "Description": "CNC_SETTING row values per CNC (user decision 2026-10-13: as on the production gateways, not the SOP's 1,599 / 15000 / 3 / N/A)",
+    "ALARM_TAG":   "2_599",
+    "ALARM_VALUE": "1.0",
     "ALARM_PATH":  "PATH",
-    "WAIT_TIME":   15000,
-    "RETRY_COUNT": 3,
-    "NOTES":       "N/A"
+    "WAIT_TIME":   18000,
+    "RETRY_COUNT": 5,
+    "NOTES":       "Alarm tag setting"
   },
 
   "CNCnetPDM": {

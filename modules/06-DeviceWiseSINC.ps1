@@ -1,14 +1,31 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Step 6 - Import and configure the SINC deviceWise project.
+    Step 6 - deviceWise SINC integration (SOP D01555607 2.1.1, deviceWise - SINC Integration).
 .DESCRIPTION
-    - Imports the approved SINC .dwx project files from the repository
-    - Configures the EMAIL_TO variable on 0_DefaultConfiguration
-    - Populates the CNC_ASSET_Management local DB table (CNC_NODE, CNC_ASSET, CNC_TYPE)
-    - Populates the CNC_Settings local DB table (alarm parameters per CNC)
-    - Verifies all SINC components and Master Reset triggers are Started
+    No Workbench and no API: imports the SINC part of the approved baseline backup through the
+    gateway's import folder (DeviceWise.ps1), as the SOP's Projects > Import of the SINC project:
+      - project SINC and its triggers (SINC/*; saved as started in the baseline)
+      - its local-DB transactions (Manifest.DeviceWise.SINCImport.Transactions, built-in LOCALDB1)
+      - devices SINC_SETTING (settings) and Devicewise_OPC_UA_Sinc (OPC UA client to this gateway's
+        own server, opc.tcp://localhost:48020, anonymous, security None)
+      - local tables CNC_SETTING, CNC_FILE_STATUS, CNC_TRACKER_LOG; only CNC_SETTING gets rows
+        (user decision 2026-10-13: a new VM starts without the baseline gateway's file history)
+    This VM's values:
+      - CNC_SETTING: one row per assigned CNC - ASSET_NAME CNCn, CNC_ASSET = the CNCnetPDM machine name
+        (Site DB f_cnc_asset), CNC_TYPE, alarm values from Manifest.SINCDefaultSettings (as on the
+        production gateways: 2_599 / 1.0 / PATH / 18000 / 5, user decision 2026-10-13). The SOP's
+        CNC_ASSET_Management + CNC_Settings tables are this one table on the real gateways.
+      - EMAIL_TO (SINC/0_DefaultConfiguration) = the wizard's SINC email list (State.SINCEmail).
+    Checks: every item status 0, the SOP's SINC components imported (Manifest.SINCComponents, with the
+    baseline's 10_BuildAndSendEmail / 10_SendAlertEmail instead of the SOP's 10_SendEmail, and
+    SINCMasterResetComponents), every SINC trigger started (DWCORE.db triggers.state = 1), the
+    staging\SINC\CNCn\Processing / DoneSuccess / DoneError folders (Step 3).
+    dwcore restarts for the import, which empties CNCAsset / CNCType, so they are written again.
 #>
+
+. (Join-Path $PSScriptRoot 'Common.ps1')
+. (Join-Path $PSScriptRoot 'DeviceWise.ps1')
 
 function Invoke-DeviceWiseSINC {
     [CmdletBinding()]
@@ -18,191 +35,108 @@ function Invoke-DeviceWiseSINC {
         [switch]$NonInteractive
     )
 
-    Write-Log STEP "deviceWise SINC Integration"
+    Write-Log STEP 'deviceWise SINC Integration'
+    $dw    = $Manifest.DeviceWise
+    $paths = Get-DwPaths -Manifest $Manifest
+    $phase = 'deviceWise SINC'
+    $cfg   = $dw.SINCImport
 
-    $dw       = $Manifest.DeviceWise
-    $dwPort   = $State['DeviceWisePort']
-    $dwToken  = $State['DeviceWiseToken']
-    $machines = $State['CNCMachines']
-    $repoPath = Join-Path $Manifest.APC.RepositoryRoot $dw.SINCProjectRepoSubPath
+    $cncs = Get-AssignedCNCs -State $State -Manifest $Manifest   # already an array (return ,$result); @() would nest it
+    if (-not $cncs.Count) { throw 'No CNC machines in the state. Run Step 1 first.' }
+    if (-not (Test-Path (Join-Path $paths.Packages 'dwfilewatcher.xml'))) { throw 'The deviceWise base platform is not set up (FileWatcher package missing). Run Step 4 first.' }
 
-    if ($dwPort -eq 0) { throw "DeviceWisePort not set. Run Step 4 first." }
+    # EMAIL_TO: the wizard asks for a ';' separated list; SINC sends to a ',' separated one (as in the baseline)
+    $email = (@(([string]$State['SINCEmail']) -split '[;,]' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) -join ','
+    if ($email.Length -gt 128) { throw "The SINC email list is $($email.Length) characters; EMAIL_TO holds at most 128." }
 
-    $baseUrl = "http://localhost:${dwPort}$($dw.ApiBasePath)"
-    $headers = @{ 'Content-Type' = 'application/json' }
-    if ($dwToken) { $headers['Authorization'] = "Bearer $dwToken" }
-
-    function Invoke-DW {
-        param([string]$Method, [string]$Path, [object]$Body = $null, [string]$Desc = '')
-        $params = @{ Uri = "$baseUrl$Path"; Method = $Method; Headers = $headers; TimeoutSec = 60 }
-        if ($Body) { $params['Body'] = ($Body | ConvertTo-Json -Depth 10) }
-        try { return Invoke-RestMethod @params -ErrorAction Stop }
-        catch { Write-Log WARN "$Desc failed: $_"; return $null }
-    }
-
-    #region -- Import SINC project files -------------------------------------
-
-    $sincFiles = Get-ChildItem $repoPath -Filter '*SINC*.dwx' -ErrorAction SilentlyContinue
-    if (-not $sincFiles) {
-        $sincFiles = Get-ChildItem $Manifest.APC.RepositoryRoot -Filter '*SINC*.dwx' -Recurse -ErrorAction SilentlyContinue
-    }
-
-    if (-not $sincFiles -or $sincFiles.Count -eq 0) {
-        Add-Result -Phase DeviceWise -Check "SINC project files" -Status WARN `
-            -Detail "No SINC .dwx files found  -  import manually in Workbench -> Projects -> Import"
-    } else {
-        foreach ($sincFile in $sincFiles) {
-            Write-Log INFO "Importing SINC project: $($sincFile.Name)"
-            try {
-                $form        = [System.Net.Http.MultipartFormDataContent]::new()
-                $fileBytes   = [System.IO.File]::ReadAllBytes($sincFile.FullName)
-                $fileContent = [System.Net.Http.ByteArrayContent]::new($fileBytes)
-                $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse('application/octet-stream')
-                $form.Add($fileContent, 'file', $sincFile.Name)
-                $client = [System.Net.Http.HttpClient]::new()
-                if ($dwToken) { $client.DefaultRequestHeaders.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer', $dwToken) }
-                $resp = $client.PostAsync("$baseUrl/projects/import", $form).Result
-                $client.Dispose()
-                if ($resp.IsSuccessStatusCode) {
-                    Add-Result -Phase DeviceWise -Check "SINC import: $($sincFile.Name)" -Status PASS
-                } else {
-                    Add-Result -Phase DeviceWise -Check "SINC import: $($sincFile.Name)" -Status WARN -Detail "HTTP $($resp.StatusCode.value__)"
-                }
-            } catch {
-                Add-Result -Phase DeviceWise -Check "SINC import: $($sincFile.Name)" -Status WARN -Detail $_
-            }
-        }
-        Start-Sleep -Seconds 10
-    }
-
-    #endregion
-
-    #region -- Configure EMAIL_TO on 0_DefaultConfiguration ------------------
-
-    $emailTo  = $State['SINCEmail']
-    $compName = '0_DefaultConfiguration'
-    if ($emailTo) {
-        $emailResult = Invoke-DW -Method PUT -Path "/projects/components/$([System.Web.HttpUtility]::UrlEncode($compName))/variables/EMAIL_TO" `
-            -Body @{ value = $emailTo } -Desc "Set EMAIL_TO on $compName"
-        if ($emailResult) {
-            Add-Result -Phase DeviceWise -Check "SINC EMAIL_TO" -Status PASS -Detail $emailTo
-        } else {
-            Add-Result -Phase DeviceWise -Check "SINC EMAIL_TO" -Status WARN `
-                -Detail "Set manually: $compName -> Edit -> Local Variables -> EMAIL_TO = $emailTo"
-        }
-    } else {
-        Add-Result -Phase DeviceWise -Check "SINC EMAIL_TO" -Status WARN -Detail "No email address provided  -  set manually"
-    }
-
-    #endregion
-
-    #region -- Configure CNC_ASSET_Management table ---------------------------
-
-    Write-Log INFO "Configuring CNC_ASSET_Management table..."
-    $settings = $Manifest.SINCDefaultSettings
-
-    for ($i = 0; $i -lt $machines.Count; $i++) {
-        $machine  = $machines[$i]
-        $cncNode  = "CNC$($i + 1)"
-        $cncAsset = $machine.MachineName
-        $cncType  = $machine.CNCType
-
-        $row = @{
-            CNC_NODE  = $cncNode
-            CNC_ASSET = $cncAsset
-            CNC_TYPE  = $cncType
-        }
-        $assetResult = Invoke-DW -Method POST `
-            -Path "/localdb/tables/CNC_ASSET_Management/rows" `
-            -Body $row -Desc "CNC_ASSET_Management: $cncNode"
-
-        if ($assetResult) {
-            Add-Result -Phase DeviceWise -Check "CNC_ASSET_Management: $cncNode" -Status PASS -Detail "$cncAsset | $cncType"
-        } else {
-            # Try PUT (update) if row exists
-            $putResult = Invoke-DW -Method PUT `
-                -Path "/localdb/tables/CNC_ASSET_Management/rows/$cncNode" `
-                -Body $row -Desc "CNC_ASSET_Management update: $cncNode"
-            if ($putResult) {
-                Add-Result -Phase DeviceWise -Check "CNC_ASSET_Management: $cncNode" -Status PASS -Detail "Updated: $cncAsset | $cncType"
-            } else {
-                Add-Result -Phase DeviceWise -Check "CNC_ASSET_Management: $cncNode" -Status WARN `
-                    -Detail "Set manually: Local Database -> CNC_ASSET_Management -> CNC_NODE=$cncNode, CNC_ASSET=$cncAsset, CNC_TYPE=$cncType"
-            }
+    $baseline = Get-DwBaseline -Manifest $Manifest
+    Write-Log INFO "Baseline: $($baseline.FullName)"
+    $projects = @($cfg.Projects)
+    $build = New-DwImportFromBaseline -BaselinePath $baseline.FullName -Keep {
+        param($type, $name)
+        switch ($type) {
+            'project'     { $projects -contains $name }
+            'trigger'     { @($projects | Where-Object { $name -like "$_/*" }).Count -gt 0 }
+            'transaction' { @($cfg.Transactions) -contains $name }
+            'device'      { @($cfg.Devices) -contains $name }
+            'dbtable'     { @($cfg.Tables) -contains $name }
+            'dbtabledata' { @($cfg.TablesWithData) -contains $name }
+            default       { $false }
         }
     }
+    $xml = $build.Xml
 
-    #endregion
-
-    #region -- Configure CNC_Settings table -----------------------------------
-
-    Write-Log INFO "Configuring CNC_Settings table..."
-    for ($i = 0; $i -lt $machines.Count; $i++) {
-        $cncNode = "CNC$($i + 1)"
-        $row = @{
-            ASSET_NAME   = $cncNode
-            ALARM_TAG    = $settings.ALARM_TAG
-            ALARM_VALUE  = $settings.ALARM_VALUE
-            ALARM_PATH   = $settings.ALARM_PATH
-            WAIT_TIME    = $settings.WAIT_TIME
-            RETRY_COUNT  = $settings.RETRY_COUNT
-            NOTES        = $settings.NOTES
+    # CNC_SETTING rows for this VM (column order taken from the baseline's own data)
+    $data = $xml.SelectSingleNode("//exportcontent[@type='dbtabledata' and @name='CNC_SETTING']/exportitem")
+    if (-not $data) { throw 'CNC_SETTING data not found in the baseline.' }
+    $table = ConvertFrom-DwTableData -Base64 $data.InnerText
+    $set   = $Manifest.SINCDefaultSettings
+    $rows  = New-Object System.Collections.Generic.List[object]   # a list: one row would otherwise unroll into its fields
+    foreach ($c in $cncs) {
+        $values = @{
+            ASSET_NAME = "CNC$($c.CNCIndex)"; CNC_ASSET = [string]$c.MachineName; CNC_TYPE = [string]$c.CNCType
+            ALARM_TAG  = [string]$set.ALARM_TAG; ALARM_VALUE = [string]$set.ALARM_VALUE; ALARM_PATH = [string]$set.ALARM_PATH
+            WAIT_TIME  = [string]$set.WAIT_TIME; RETRY_COUNT = [string]$set.RETRY_COUNT; NOTES = [string]$set.NOTES
         }
-        $settingsResult = Invoke-DW -Method POST `
-            -Path "/localdb/tables/CNC_Settings/rows" `
-            -Body $row -Desc "CNC_Settings: $cncNode"
+        $rows.Add([string[]]@($table.Columns | ForEach-Object {
+            if (-not $values.ContainsKey($_)) { throw "CNC_SETTING has a column the wizard does not fill: $_" }
+            $values[$_]
+        }))
+    }
+    $data.InnerText = ConvertTo-DwTableData -Columns $table.Columns -Rows $rows.ToArray()
+    foreach ($r in $rows) { Write-Log INFO ("  CNC_SETTING: " + ($r -join ' | ')) }
 
-        if ($settingsResult) {
-            Add-Result -Phase DeviceWise -Check "CNC_Settings: $cncNode" -Status PASS
-        } else {
-            $putResult = Invoke-DW -Method PUT `
-                -Path "/localdb/tables/CNC_Settings/rows/$cncNode" `
-                -Body $row -Desc "CNC_Settings update: $cncNode"
-            if ($putResult) {
-                Add-Result -Phase DeviceWise -Check "CNC_Settings: $cncNode" -Status PASS -Detail "Updated"
-            } else {
-                Add-Result -Phase DeviceWise -Check "CNC_Settings: $cncNode" -Status WARN `
-                    -Detail "Set manually: Local Database -> CNC_Settings -> ASSET_NAME=$cncNode"
-            }
-        }
+    # EMAIL_TO default of SINC/0_DefaultConfiguration
+    $var = $xml.SelectSingleNode("//exportcontent[@type='trigger' and @name='SINC/0_DefaultConfiguration']//VariableInfo[@name='EMAIL_TO']")
+    if (-not $var) { throw 'EMAIL_TO not found in SINC/0_DefaultConfiguration in the baseline.' }
+    $var.SetAttribute('default', $email)
+    Write-Log INFO "  EMAIL_TO = $(if ($email) { $email } else { '(empty)' })"
+    Write-Log INFO ("Import: {0} item(s) - project {1}, {2} transaction(s), devices {3}, tables {4} (rows only in {5})" -f `
+        $build.Items.Count, ($projects -join ', '), @($cfg.Transactions).Count, (@($cfg.Devices) -join ', '), (@($cfg.Tables) -join ', '), (@($cfg.TablesWithData) -join ', '))
+
+    $safety = Join-Path (Get-RunDir -State $State -Name Backups -Manifest $Manifest) 'deviceWise-before-step6'
+    try {
+        $res = Invoke-DwImport -Paths $paths -Xml $xml -Label 'step6-sinc' -SafetyDir $safety -SaveDatabases -TimeoutSec $dw.ImportTimeoutSec
+    } catch {
+        Add-Result -Phase $phase -Check 'SINC import' -Status FAIL -Detail $_.Exception.Message
+        throw
+    }
+    [void](Add-DwImportResults -Phase $phase -Result $res -Summary 'SINC import')
+
+    Add-Result -Phase $phase -Check 'CNC_SETTING rows' -Status PASS `
+        -Detail (($rows | ForEach-Object { "{0} = {1} ({2})" -f $_[0], $_[@($table.Columns).IndexOf('CNC_ASSET')], $_[@($table.Columns).IndexOf('CNC_TYPE')] }) -join '; ')
+    Add-Result -Phase $phase -Check 'SINC EMAIL_TO' -Status $(if ($email) { 'PASS' } else { 'WARN' }) `
+        -Detail $(if ($email) { $email } else { 'no SINC email list entered - SINC alert emails go nowhere' })
+
+    # The SOP's component lists: present = imported with status 0
+    $imported = @($res.Items | Where-Object { $_.Type -eq 'trigger' -and $_.Status -eq 0 } | ForEach-Object { ($_.Item -split '/', 2)[-1] })
+    foreach ($comp in @($Manifest.SINCComponents) + @($Manifest.SINCMasterResetComponents)) {
+        $ok = $imported -contains $comp
+        Add-Result -Phase $phase -Check "Component $comp" -Status $(if ($ok) { 'PASS' } else { 'FAIL' }) -Detail $(if ($ok) { 'imported' } else { 'not imported' })
     }
 
-    #endregion
-
-    #region -- Verify SINC components are Started -----------------------------
-
-    $cncCount = $machines.Count
-    foreach ($comp in $Manifest.SINCComponents) {
-        # Skip CNC-specific components for CNC instances that don't exist
-        if ($comp -match 'CNC(\d)') {
-            if ([int]$Matches[1] -gt $cncCount) { continue }
+    # Started: DWCORE.db triggers.state = 1 (what Workbench shows as Started / Loaded)
+    try {
+        $states  = Get-DwTriggerStates -Paths $paths -Project 'SINC'
+        $stopped = @($states.Keys | Where-Object { $states[$_] -ne 1 } | Sort-Object)
+        foreach ($name in $stopped) {
+            Add-Result -Phase $phase -Check "Started $name" -Status FAIL -Detail "state $($states[$name]) - start it in Workbench > Projects > SINC"
         }
-
-        $status = Invoke-DW -Method GET -Path "/projects/components/$([System.Web.HttpUtility]::UrlEncode($comp))" -Desc "Status $comp"
-        if ($status -and $status.state -eq 'Started') {
-            Add-Result -Phase DeviceWise -Check "SINC: $comp" -Status PASS -Detail "Started"
-        } elseif ($status) {
-            Invoke-DW -Method POST -Path "/projects/components/$([System.Web.HttpUtility]::UrlEncode($comp))/start" -Desc "Start $comp" | Out-Null
-            Add-Result -Phase DeviceWise -Check "SINC: $comp" -Status PASS -Detail "Start triggered"
-        } else {
-            Add-Result -Phase DeviceWise -Check "SINC: $comp" -Status WARN -Detail "Not found  -  verify in Workbench"
-        }
+        Add-Result -Phase $phase -Check 'SINC triggers started' -Status $(if ($stopped.Count -or -not $states.Count) { 'FAIL' } else { 'PASS' }) `
+            -Detail ("{0} of {1} trigger(s) started" -f ($states.Count - $stopped.Count), $states.Count)
+    } catch {
+        Add-Result -Phase $phase -Check 'SINC triggers started' -Status MANUAL `
+            -Detail "could not read DWCORE.db ($($_.Exception.Message)). Workbench > Projects > SINC: State = Started, Status = Loaded"
     }
 
-    foreach ($comp in $Manifest.SINCMasterResetComponents) {
-        if ($comp -match 'CNC(\d)' -and [int]$Matches[1] -gt $cncCount) { continue }
-        $status = Invoke-DW -Method GET -Path "/projects/components/$([System.Web.HttpUtility]::UrlEncode($comp))" -Desc "Status $comp"
-        if ($status -and $status.state -eq 'Started') {
-            Add-Result -Phase DeviceWise -Check "SINC MasterReset: $comp" -Status PASS
-        } elseif ($status) {
-            Invoke-DW -Method POST -Path "/projects/components/$([System.Web.HttpUtility]::UrlEncode($comp))/start" -Desc "Start $comp" | Out-Null
-            Add-Result -Phase DeviceWise -Check "SINC MasterReset: $comp" -Status PASS -Detail "Start triggered"
-        } else {
-            Add-Result -Phase DeviceWise -Check "SINC MasterReset: $comp" -Status WARN -Detail "Not found"
-        }
+    # SINC folders (made by Step 3) - the file watchers watch staging\SINC\CNCn
+    foreach ($c in $cncs) {
+        $base = Join-Path $dw.SINCStaging "CNC$($c.CNCIndex)"
+        $missing = @('Processing', 'DoneSuccess', 'DoneError' | Where-Object { -not (Test-Path (Join-Path $base $_)) })
+        Add-Result -Phase $phase -Check "SINC folders CNC$($c.CNCIndex)" -Status $(if ($missing.Count) { 'WARN' } else { 'PASS' }) `
+            -Detail $(if ($missing.Count) { "missing in $($base): $($missing -join ', ') - run Step 3" } else { $base })
     }
 
-    #endregion
-
-    Write-Log PASS "deviceWise SINC integration complete."
+    Set-DwCncAssetValues -Manifest $Manifest -Cncs $cncs -Phase $phase
+    Write-Log PASS 'deviceWise SINC integration complete.'
 }

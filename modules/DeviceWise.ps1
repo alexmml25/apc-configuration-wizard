@@ -163,6 +163,47 @@ function New-DwBaseImport {
     return @{ Xml = $xml; Items = [string[]]$items; Changes = [string[]]$changes }
 }
 
+function ConvertFrom-DwTableData {
+    <#
+        Decodes a 'dbtabledata' item: base64 of zlib (78 9C ... Adler-32) of a CSV where every field is
+        wrapped in 0x0B and every row ends in CRLF. Returns @{ Columns = [string[]]; Rows = [string[][]] }.
+    #>
+    param([Parameter(Mandatory)] [string]$Base64)
+    $bytes = [Convert]::FromBase64String($Base64.Trim())
+    # ::new, not New-Object Type(a, b, c - 6): there the comma binds before the minus
+    $in  = [IO.MemoryStream]::new($bytes, 2, $bytes.Length - 6)   # skip the zlib header and the Adler-32
+    $def = [IO.Compression.DeflateStream]::new($in, [IO.Compression.CompressionMode]::Decompress)
+    $out = [IO.MemoryStream]::new()
+    try { $def.CopyTo($out) } finally { $def.Dispose() }
+    $text = [Text.Encoding]::UTF8.GetString($out.ToArray())
+    $vt = [char]0x0B
+    $rows = @(foreach ($line in ($text -split "`r`n")) {
+        if ($line -eq '') { continue }
+        , @([regex]::Matches($line, "$vt([^$vt]*)$vt") | ForEach-Object { $_.Groups[1].Value })
+    })
+    return @{ Columns = [string[]]$rows[0]; Rows = @($rows | Select-Object -Skip 1) }
+}
+
+function ConvertTo-DwTableData {
+    # The reverse of ConvertFrom-DwTableData: columns + rows -> base64 zlib, in the gateway's own format
+    param([Parameter(Mandatory)] [string[]]$Columns, [object[]]$Rows = @())
+    $vt = [char]0x0B
+    $sb = New-Object Text.StringBuilder
+    foreach ($r in @(, $Columns) + @($Rows)) {
+        [void]$sb.Append((@($r | ForEach-Object { "$vt$_$vt" }) -join ',')).Append("`r`n")
+    }
+    $data = [Text.Encoding]::UTF8.GetBytes($sb.ToString())
+    $ms = [IO.MemoryStream]::new()
+    $ms.WriteByte(0x78); $ms.WriteByte(0x9C)
+    $def = [IO.Compression.DeflateStream]::new($ms, [IO.Compression.CompressionMode]::Compress, $true)
+    $def.Write($data, 0, $data.Length); $def.Dispose()
+    [uint32]$a = 1; [uint32]$b = 0
+    foreach ($x in $data) { $a = ($a + $x) % 65521; $b = ($b + $a) % 65521 }
+    $adler = ([uint64]$b -shl 16) -bor $a
+    foreach ($shift in 24, 16, 8, 0) { $ms.WriteByte([byte](($adler -shr $shift) -band 0xFF)) }
+    return [Convert]::ToBase64String($ms.ToArray())
+}
+
 function Save-DwXml {
     param([Parameter(Mandatory)] [xml]$Xml, [Parameter(Mandatory)] [string]$Path)
     $w = New-Object IO.StreamWriter($Path, $false, (New-Object Text.UTF8Encoding($false)))
