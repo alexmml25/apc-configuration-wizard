@@ -115,6 +115,7 @@
       "Tables":       [ "CNC_SETTING", "CNC_FILE_STATUS", "CNC_TRACKER_LOG" ],
       "TablesWithData": [ "CNC_SETTING" ]
     },
+    "KeepStartedDevices": [ "Devicewise_OPC_UA_Sinc" ],
     "OpcUaClient": {
       "StackDir":  "C:\\Program Files (x86)\\ABB 800xA\\Base\\bin",
       "Endpoint":  "opc.tcp://localhost:48020",

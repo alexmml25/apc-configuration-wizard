@@ -128,7 +128,7 @@ function Invoke-DeviceWiseBase {
         Aes128Sha256RsaOeap = 'security_aes128sha256'; Aes256Sha256RsaPss = 'security_aes256sha256'
     }
     foreach ($p in $policyKeys.Keys) { $ua[$policyKeys[$p]] = ([string](@($dw.OpcUaSecurityPolicies) -contains $p)).ToLower() }
-    Restart-DwCore -WhileStopped { Set-DwPersistence -Paths $paths -Group 'opcua_server_v3' -Values $ua }
+    Restart-DwCore -Paths $paths -WhileStopped { Set-DwPersistence -Paths $paths -Group 'opcua_server_v3' -Values $ua }
     Add-Result -Phase $phase -Check 'OPC UA server switched on' -Status PASS `
         -Detail ("enable=Yes, status=Started; {0}:{1}, devices {2}; policies: {3}" -f $ua['bind_address'], $ua['bind_port'], $ua['device_list'], (@($dw.OpcUaSecurityPolicies) -join ', '))
 

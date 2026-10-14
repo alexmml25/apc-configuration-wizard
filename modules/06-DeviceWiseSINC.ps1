@@ -146,6 +146,10 @@ function Invoke-DeviceWiseSINC {
             -Detail $(if ($missing.Count) { "missing in $($base): $($missing -join ', ') - run Step 3" } else { $base })
     }
 
+    # SINC's devices started; Devicewise_OPC_UA_Sinc (its OPC UA client to this gateway) is saved as Stopped
+    # at every dwcore shutdown, which Restart-DwCore makes up for (manifest DeviceWise.KeepStartedDevices)
+    Test-DwDevicesStarted -Paths $paths -Names @($cfg.Devices) -Phase $phase
+
     Set-DwCncAssetValues -Manifest $Manifest -Cncs $cncs -Phase $phase
     Write-Log PASS 'deviceWise SINC integration complete.'
 }

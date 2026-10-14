@@ -31,6 +31,8 @@ function Get-DwPaths {
         Packages  = Join-Path $root 'dwcore\packages'
         Db        = Join-Path $root 'db'
         Sqlite    = Join-Path $root 'dwcore\sqlite3.dll'
+        # devices that must be Started after every dwcore restart (Restart-DwCore)
+        KeepStarted = @(if ($Manifest.DeviceWise.PSObject.Properties['KeepStartedDevices']) { $Manifest.DeviceWise.KeepStartedDevices })
     }
 }
 
@@ -224,12 +226,30 @@ function Save-DwXml {
 #region -- Gateway: services, import folder ------------------------------------
 
 function Restart-DwCore {
-    # Stops dwcore, runs $WhileStopped, starts dwcore again whatever happened. dwts keeps running.
-    param([Parameter(Mandatory)] [scriptblock]$WhileStopped, [int]$StopTimeoutSec = 180)
+    <#
+        Stops dwcore, runs $WhileStopped, starts dwcore again whatever happened. dwts keeps running.
+        With -Paths, devices keep their Started state: the gateway saves a device as Stopped when it stops
+        during the shutdown (SINC's UA client loses the gateway's own OPC UA server, fresh VM 2026-10-14)
+        and restores that at the next start. So the devices Started before the stop, and $Paths.KeepStarted
+        (manifest DeviceWise.KeepStartedDevices), are set back to Started in DWCORE.db before the start.
+    #>
+    param([Parameter(Mandatory)] [scriptblock]$WhileStopped, [hashtable]$Paths, [int]$StopTimeoutSec = 180)
     if ((Get-Service 'dwts').Status -ne 'Running') { Write-Log INFO 'Starting dwts (needed during imports)'; Start-Service 'dwts' }
+    $startedBefore = @()
+    if ($Paths) {
+        try { $b = Get-DwDeviceStates -Paths $Paths; $startedBefore = @($b.Keys | Where-Object { $b[$_] -eq 1 }) }
+        catch { Write-Log WARN "Could not read the device states before the restart: $($_.Exception.Message)" }
+    }
     Write-Log INFO 'Stopping dwcore'
     Stop-Service 'dwcore' -Force -WarningAction SilentlyContinue
     (Get-Service 'dwcore').WaitForStatus('Stopped', [TimeSpan]::FromSeconds($StopTimeoutSec))
+    if ($Paths) {
+        try {
+            $a = Get-DwDeviceStates -Paths $Paths
+            $fix = @(@($startedBefore) + @($Paths.KeepStarted) | Where-Object { $_ -and $a.ContainsKey($_) -and $a[$_] -ne 1 } | Sort-Object -Unique)
+            if ($fix.Count) { Set-DwDeviceStarted -Paths $Paths -Names $fix; Write-Log INFO "Kept started: $($fix -join ', ')" }
+        } catch { Write-Log WARN "Could not keep the devices started: $($_.Exception.Message)" }
+    }
     try { & $WhileStopped }
     finally {
         Write-Log INFO 'Starting dwcore (imports run during startup and can take minutes)'
@@ -295,7 +315,7 @@ function Invoke-DwImport {
     $dwImportExtraAction = $WhileStopped
     Save-DwXml -Xml $Xml -Path $staged
     try {
-        Restart-DwCore -WhileStopped {
+        Restart-DwCore -Paths $Paths -WhileStopped {
             if ($SaveDatabases -and $SafetyDir) {
                 Save-DwDatabases -Paths $Paths -Dest $SafetyDir
                 Write-Log INFO "Safety copy of the gateway databases: $SafetyDir"
@@ -382,7 +402,7 @@ function Install-DwPackages {
     param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [object[]]$Plan, [scriptblock]$BeforeCopy)
     $todo = @($Plan | Where-Object { -not $_.Installed })
     if (-not $todo.Count) { return @() }
-    Restart-DwCore -WhileStopped {
+    Restart-DwCore -Paths $Paths -WhileStopped {
         if ($BeforeCopy) { & $BeforeCopy }
         foreach ($p in $todo) {
             foreach ($c in $p.Copies) {
@@ -662,6 +682,36 @@ function Get-DwDeviceStates {
         foreach ($r in [DwSqlite]::Query($h, 'SELECT name, state FROM devices')) { $out[$r[0]] = [int]$r[1] }
         return $out
     } finally { [DwSqlite]::Close($h) }
+}
+
+function Set-DwDeviceStarted {
+    # Marks devices Started in DWCORE.db (devices.state = 1), so the gateway starts them; dwcore must be stopped
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string[]]$Names)
+    if ((Get-Service 'dwcore').Status -ne 'Stopped') { throw 'dwcore must be stopped before writing DWCORE.db.' }
+    Initialize-DwSqlite -Paths $Paths
+    $h = [DwSqlite]::Open((Join-Path $Paths.Db 'DWCORE.db'), $true)
+    try { foreach ($n in $Names) { [void][DwSqlite]::Query($h, 'UPDATE devices SET state = 1 WHERE name = ?', $n) } }
+    finally { [DwSqlite]::Close($h) }
+}
+
+function Test-DwDevicesStarted {
+    # One result line per device that must be Started (devices.state 1), waiting up to $WaitSec
+    param([Parameter(Mandatory)] [hashtable]$Paths, [Parameter(Mandatory)] [string[]]$Names, [Parameter(Mandatory)] [string]$Phase, [int]$WaitSec = 60)
+    try {
+        $deadline = (Get-Date).AddSeconds($WaitSec)
+        do {
+            $s = Get-DwDeviceStates -Paths $Paths
+            $notYet = @($Names | Where-Object { $s.ContainsKey($_) -and $s[$_] -ne 1 })
+            if ($notYet.Count) { Start-Sleep -Seconds 5 }
+        } while ($notYet.Count -and (Get-Date) -lt $deadline)
+        foreach ($n in $Names) {
+            $v = if ($s.ContainsKey($n)) { $s[$n] } else { -1 }
+            Add-Result -Phase $Phase -Check "$n started" -Status $(if ($v -eq 1) { 'PASS' } else { 'FAIL' }) `
+                -Detail $(switch ($v) { 1 { 'Started' } 2 { 'Stopped - start it in Workbench > Devices' } -1 { 'not in the gateway' } default { "state $v" } })
+        }
+    } catch {
+        foreach ($n in $Names) { Add-Result -Phase $Phase -Check "$n started" -Status MANUAL -Detail "could not read DWCORE.db ($($_.Exception.Message)). Workbench > Devices: $n Started" }
+    }
 }
 
 function Get-DwPersistence {

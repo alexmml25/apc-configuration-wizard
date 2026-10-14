@@ -142,7 +142,7 @@ function Invoke-DeviceWiseCNCPDM {
         $st = & $pathStates
         if (@($st.Values | Where-Object { $_ -ne 1 }).Count -and $conn) {
             Write-Log INFO ("CNCn_PATH not all started ({0}) - restarting dwcore once more" -f (($st.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))
-            Restart-DwCore -WhileStopped { }
+            Restart-DwCore -Paths $paths -WhileStopped { }
             $deadline = (Get-Date).AddSeconds(90)
             do { Start-Sleep -Seconds 5; $st = & $pathStates } while (@($st.Values | Where-Object { $_ -ne 1 }).Count -and (Get-Date) -lt $deadline)
         }
@@ -154,6 +154,9 @@ function Invoke-DeviceWiseCNCPDM {
     } catch {
         Add-Result -Phase $phase -Check 'CNCn_PATH devices' -Status MANUAL -Detail "could not read DWCORE.db ($($_.Exception.Message)). Workbench > Devices: CNCn_PATH Started"
     }
+
+    # Devices that must stay Started across dwcore restarts (SINC's OPC UA client), as left by this step's restarts
+    if (@($paths.KeepStarted).Count) { Test-DwDevicesStarted -Paths $paths -Names @($paths.KeepStarted) -Phase $phase }
 
     Set-DwCncAssetValues -Manifest $Manifest -Cncs $cncs -Phase $phase
     Write-Log PASS 'deviceWise CNCnetPDM integration complete.'
