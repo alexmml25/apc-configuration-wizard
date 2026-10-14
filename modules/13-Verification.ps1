@@ -76,8 +76,22 @@ function Invoke-Verification {
         param([string]$Query, [string]$Db = 'TimescaleDB')
         $bin = Join-Path $pg.BinDir 'psql.exe'
         if (-not (Test-Path $bin)) { throw "psql.exe not found at $bin" }
-        $result = & $bin -h localhost -p 5432 -U postgres -d $Db -t -A -c $Query 2>&1
-        return ($result -join "`n").Trim()
+        # -w: never prompt. Without a password psql waited for one on the console and Step 13 hung
+        # (wizard run 2026-10-14). The password is the one Step 2 uses, when this run has it.
+        $pgPwd = ''
+        if ($State.ContainsKey('APCUserPassword') -and $State['APCUserPassword'] -is [System.Security.SecureString]) {
+            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($State['APCUserPassword'])
+            try { $pgPwd = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr) }
+            finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+        }
+        $env:PGPASSWORD = $pgPwd
+        try { $result = & $bin -h localhost -p 5432 -U postgres -d $Db -w -t -A -c $Query 2>&1 }
+        finally { $env:PGPASSWORD = ''; $pgPwd = '' }
+        $text = ($result -join "`n").Trim()
+        if ($text -match 'no password supplied|password authentication failed') {
+            throw "psql could not log in as postgres: $(if ($text -match 'no password') { 'no password in this run (enter the apcuser password in the wizard)' } else { 'password rejected' })"
+        }
+        return $text
     }
 
     function ReadIni {
@@ -384,10 +398,7 @@ function Invoke-Verification {
 
     # Item 6 - TimescaleDB extension
     Check 'TSDB' 'TimescaleDB extension installed' {
-        $pgBin = Join-Path $pg.BinDir 'psql.exe'
-        if (-not (Test-Path $pgBin)) { throw "psql.exe not found at $pgBin" }
-        $r = & $pgBin -h localhost -p 5432 -U postgres -d TimescaleDB -t -A `
-            -c "SELECT extname FROM pg_extension WHERE extname='timescaledb';" 2>&1
+        $r = PsqlQuery "SELECT extname FROM pg_extension WHERE extname='timescaledb';" 'TimescaleDB'
         if ($r -notmatch 'timescaledb') { throw "Extension not found" }
         "timescaledb extension present"
     } '' 4 6
