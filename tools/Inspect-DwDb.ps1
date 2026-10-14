@@ -8,7 +8,8 @@
     -Find <text>   searches every text column of every table in DWCORE, DWAPP, DWUSER and DWTS
                    for the text (e.g. 'Citizen 01'), and prints table, column and a short excerpt.
     -Table <name>  prints that table's columns and its rows (first -Max), in -Db (default DWCORE.db);
-                   with -Find, only rows containing the text. Long values are cut to 300 characters.
+                   with -Find, only rows containing the text. Long values are cut to 300 characters
+                   unless -Full is given (then the output file holds the whole values).
     Values of columns or names that look like passwords/secrets/keys/vouchers are masked.
     Opens the databases read-only; dwcore can keep running. Nothing is changed.
     Output also saved to C:\APC_Config\Logs\dw-db-<timestamp>.txt
@@ -25,6 +26,7 @@ param(
     [string]$Table,
     [string]$Db  = 'DWCORE.db',
     [int]$Max    = 20,
+    [switch]$Full,
     [string]$GatewayRoot = 'C:\Program Files\deviceWISE\Gateway'
 )
 
@@ -60,8 +62,8 @@ if ($Table) {
             foreach ($r in $rows) {
                 Out-Line '  --'
                 for ($i = 0; $i -lt $colNames.Count; $i++) {
-                    $v = ([string](Mask $colNames[$i] $r[$i])) -replace '[\x00-\x1F]', ' '
-                    if ($v.Length -gt 300) { $v = $v.Substring(0, 300) + '...' }
+                    $v = ([string](Mask $colNames[$i] $r[$i]))
+                    if (-not $Full) { $v = $v -replace '[\x00-\x1F]', ' '; if ($v.Length -gt 300) { $v = $v.Substring(0, 300) + '...' } }
                     Out-Line ("  {0} = {1}" -f $colNames[$i], $v)
                 }
             }

@@ -333,7 +333,15 @@ function Remove-DwUnchangedDevices {
             [void]$Xml.DocumentElement.RemoveChild($ec)
             $kept.Add($name)
         } else {
-            Write-Log WARN "Device $name exists with a different definition; the import cannot replace it (-6401)."
+            # name the differing parts, so a formatting difference can be told from a real one
+            $diff = @()
+            if (-not $haveDef) { $diff = @('(no DeviceDefinition in the gateway)') }
+            else {
+                $a = @((Get-DwDeviceSignature $haveDef) -split '\|'); $b = @((Get-DwDeviceSignature $mine) -split '\|')
+                $diff = @(@($a | Where-Object { $b -notcontains $_ }) + @($b | Where-Object { $a -notcontains $_ }) |
+                          ForEach-Object { ($_ -split '=', 2)[0] } | Sort-Object -Unique)
+            }
+            Write-Log WARN "Device $name exists with a different definition ($($diff -join ', ')); the import cannot replace it (-6401)."
         }
     }
     if ($kept.Count) { Write-Log INFO "Already in the gateway, unchanged (not re-imported): $($kept -join ', ')" }
