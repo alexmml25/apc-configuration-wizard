@@ -26,9 +26,6 @@ decompiled/
 docs/
 Run-Tests.cmd
 
-# Scripts that call ABB internal functions (from the decompiled portal) - local only
-tools/Invoke-800xACreateRoot.ps1
-tools/Probe-800xARootCert.ps1
 
 # deviceWise inspection output (contains the gateway product key) - never commit
 dw-*.txt
