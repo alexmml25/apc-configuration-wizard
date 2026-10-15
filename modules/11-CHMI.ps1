@@ -103,6 +103,7 @@ function Invoke-CHMI {
             0       { Add-Result -Phase CHMI -Check '800xA calculations enabled' -Status PASS -Detail "$summary - report $($c.Report)" }
             5       { Add-Result -Phase CHMI -Check '800xA calculations enabled' -Status FAIL -Detail "Still disabled or in error after Enable - see $($c.Report)" }
             7       { Add-Result -Phase CHMI -Check '800xA calculations enabled' -Status FAIL -Detail "$summary - calculations not readable; see $($c.Report)" }
+            8       { Add-Result -Phase CHMI -Check '800xA calculations enabled' -Status FAIL -Detail "$summary - NOT enabled for safety (type check or count); check the Calculation Status Viewer - see $($c.Report)" }
             default { Add-Result -Phase CHMI -Check '800xA calculations enabled' -Status FAIL -Detail "Could not check (exit $($c.Code)) - see $($c.Report)" }
         }
     }
