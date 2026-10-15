@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Read-only: zips the 800xA service / calculation files needed to automate the D01558132 section 1.4 service
@@ -10,6 +10,7 @@
       - the files behind the COM classes ABB.CalcServiceServer, ABB.AfwAdminServiceProvider, ABB.AfwAdminServiceGroup,
         ABB.AfwServiceProviderIdObj (InprocServer32 / LocalServer32), and the .NET assemblies next to the
         calculation server whose names contain "Calc"
+      - every file with 'Calc' in its name under C:\Program Files*\ABB* (Inform IT Calculations)
       - the newest C:\APC_Config\Logs\chmi-services_*.txt
     Copy the zip to the project folder (the ABB files are git-ignored there).
 .EXAMPLE
@@ -59,6 +60,15 @@ foreach ($progId in 'ABB.CalcServiceServer', 'ABB.AfwAdminServiceProvider', 'ABB
                 }
             }
         }
+    }
+}
+
+# Inform IT Calculations (Calculation Status Viewer): its files are not in the Base bin folder - search the ABB folders
+foreach ($root in 'C:\Program Files (x86)', 'C:\Program Files') {
+    Get-ChildItem -LiteralPath $root -Directory -Filter 'ABB*' -ErrorAction SilentlyContinue | ForEach-Object {
+        Get-ChildItem -LiteralPath $_.FullName -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match 'Calc' -and $_.Extension -in '.dll', '.exe', '.config' } |
+            Select-Object -First 60 | ForEach-Object { Add-File $_.FullName 'calculations (Inform IT Calculations)' }
     }
 }
 
