@@ -66,6 +66,44 @@ try {
     }
 } catch { W "  failed: $($_.Exception.Message)" }
 
+# -- 2b. the server's methods (m:Methods) and their arguments ---------------------------------------------
+W ''; W '== deviceWise OPC UA methods (m:Methods) =='
+if ($session) {
+    try {
+        $mb = New-Object Opc.Ua.Client.Browser($session)
+        $mb.BrowseDirection = [Opc.Ua.BrowseDirection]::Forward
+        $mb.ReferenceTypeId = [Opc.Ua.ReferenceTypeIds]::HierarchicalReferences
+        $mb.IncludeSubtypes = $true
+        $methodsId = Get-DwUaNodeId -Session $session -Namespace $ns -Path 'm:Methods'
+        $queue = New-Object System.Collections.Queue
+        $queue.Enqueue(@($methodsId, 0))
+        while ($queue.Count) {
+            $item = $queue.Dequeue(); $id = $item[0]; $depth = $item[1]
+            foreach ($r in $mb.Browse($id)) {
+                $rid = [Opc.Ua.ExpandedNodeId]::ToNodeId($r.NodeId, $session.NamespaceUris)
+                W ("  {0}{1}   [{2}]  {3}" -f ('  ' * $depth), $r.DisplayName, $r.NodeId, $r.NodeClass)
+                if ("$($r.NodeClass)" -eq 'Method') {
+                    # InputArguments / OutputArguments are properties of the method node
+                    $pb = New-Object Opc.Ua.Client.Browser($session)
+                    $pb.ReferenceTypeId = [Opc.Ua.ReferenceTypeIds]::HasProperty
+                    foreach ($pr in $pb.Browse($rid)) {
+                        $pid2 = [Opc.Ua.ExpandedNodeId]::ToNodeId($pr.NodeId, $session.NamespaceUris)
+                        $val = $session.ReadValue($pid2).Value
+                        $args2 = @(foreach ($a in @($val)) {
+                            $ext = if ($a -is [Opc.Ua.ExtensionObject]) { $a.Body } else { $a }
+                            if ($ext -is [Opc.Ua.Argument]) {
+                                $t = try { [Opc.Ua.TypeInfo]::GetBuiltInType($ext.DataType) } catch { $ext.DataType }
+                                "$($ext.Name):$t$(if ($ext.ValueRank -ge 0) { '[]' })$(if ($ext.Description.Text) { " ($($ext.Description.Text))" })"
+                            } else { "$ext" }
+                        })
+                        W ("  {0}    {1}: {2}" -f ('  ' * $depth), $pr.DisplayName, ($args2 -join ', '))
+                    }
+                } elseif ($depth -lt 3) { $queue.Enqueue(@($rid, $depth + 1)) }
+            }
+        }
+    } catch { W "  failed: $($_.Exception.Message)" }
+}
+
 # -- 3. candidate nodes -----------------------------------------------------------------------------------
 W ''; W "== Reads (CNC$Cnc) =="
 if ($session) {
@@ -75,7 +113,7 @@ if ($session) {
             W ("  {0,-40} value '{1}'  status {2}  source time {3}" -f $p, $v.Value, $v.StatusCode, $v.SourceTimestamp)
         } catch { W ("  {0,-40} FAILED: {1}" -f $p, $_.Exception.Message) }
     }
-    try { $session.Close() } catch { }
+    try { [void]$session.Close() } catch { }
 }
 
 # -- 4. deviceWise listening ports (is there a local gateway API besides OPC UA?) -----------------------
