@@ -1056,7 +1056,7 @@ function Invoke-Verification {
                 }
             }
             if ($issues) { throw ($issues -join '; ') }
-            "$($inst.Drive): " + (($inst.Apps | ForEach-Object { $_.Name }) -join ', ') + $(if ($inst.Missing) { "; not installed: $($inst.Missing -join ', ')" })
+            "On $($inst.Drive) " + (($inst.Apps | ForEach-Object { $_.Name }) -join ', ') + $(if ($inst.Missing) { "; not installed: $($inst.Missing -join ', ')" })
         }
     }
 
