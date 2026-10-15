@@ -525,7 +525,8 @@ function Get-800xACellOpcStates {
     if (-not $Kit) { $Kit = Get-800xAKit -Manifest $Manifest }
     $server = [string]$Manifest.ABB800xA.OpcServer
     $tmpl   = if ($Manifest.CHMI.PSObject.Properties['CellOpcPath'] -and $Manifest.CHMI.CellOpcPath) { [string]$Manifest.CHMI.CellOpcPath } else { 'Root/Medtronic/Cell_{n}/OPC' }
-    foreach ($m in @(Get-AssignedCNCs -State $State -Manifest $Manifest)) {
+    $assigned = Get-AssignedCNCs -State $State -Manifest $Manifest   # assignment unrolls the ,$result it returns (@() would nest it)
+    foreach ($m in $assigned) {
         $path = $tmpl -replace '\{n\}', $m.CNCIndex
         $o = [ordered]@{ Cell = "Cell_$($m.CNCIndex)"; Path = $path; Machine = [string]$m.MachineName; MachineType = [string]$m.CNCType
                          Asset = ''; Type = ''; Good = $true; Exists = $false; Ok = $false; Detail = '' }
