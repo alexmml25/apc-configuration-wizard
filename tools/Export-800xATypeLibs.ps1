@@ -44,6 +44,17 @@ public class ApcTlbSink : ITypeLibImporterNotifySink {
 public static class ApcTlb {
     [DllImport("oleaut32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
     public static extern void LoadTypeLibEx(string file, int regKind, [MarshalAs(UnmanagedType.Interface)] out object typeLib);
+    // load (REGKIND_NONE = 2: never registers) and convert in C#: PowerShell cannot cast the COM object to ITypeLib
+    public static Assembly Convert(string file) {
+        object tlb;
+        LoadTypeLibEx(file, 2, out tlb);
+        string name = "Interop." + Marshal.GetTypeLibName((System.Runtime.InteropServices.ComTypes.ITypeLib)tlb);
+        Assembly a;
+        if (ApcTlbSink.Done.TryGetValue(name, out a)) return a;
+        a = new TypeLibConverter().ConvertTypeLibToAssembly(tlb, name + ".dll", TypeLibImporterFlags.None, new ApcTlbSink(), null, null, name, null);
+        ApcTlbSink.Done[name] = a;
+        return a;
+    }
 }
 '@
 
@@ -57,15 +68,8 @@ foreach ($dll in $Dlls) {
     $path = Join-Path $BinDir $dll
     $name = "Interop.$([IO.Path]::GetFileNameWithoutExtension($dll))"
     try {
-        $tlb = $null
-        [ApcTlb]::LoadTypeLibEx($path, 2, [ref]$tlb)          # 2 = REGKIND_NONE: load only, never register
-        $conv = New-Object System.Runtime.InteropServices.TypeLibConverter
-        $libName = 'Interop.' + [System.Runtime.InteropServices.Marshal]::GetTypeLibName([System.Runtime.InteropServices.ComTypes.ITypeLib]$tlb)
-        if ([ApcTlbSink]::Done.ContainsKey($libName)) { $asm = [ApcTlbSink]::Done[$libName] } else {
-        $asm  = $conv.ConvertTypeLibToAssembly($tlb, "$name.dll", [System.Runtime.InteropServices.TypeLibImporterFlags]::None,
-                                               (New-Object ApcTlbSink), $null, $null, $name, $null) }
-        [ApcTlbSink]::Done[$name] = $asm
-        [ApcTlbSink]::Done[$libName] = $asm      # the name a referencing library asks for
+        $asm  = [ApcTlb]::Convert($path)
+        $name = $asm.GetName().Name
         $cwd = [Environment]::CurrentDirectory
         [Environment]::CurrentDirectory = $stage           # AssemblyBuilder.Save writes to the process directory
         try { $asm.Save("$name.dll") } catch { } finally { [Environment]::CurrentDirectory = $cwd }
