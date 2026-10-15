@@ -282,13 +282,27 @@ function Invoke-CNCnetPDM {
             $tplPath = Join-Path $driverDir $tplName
             $dstPath = Join-Path $driverDir $dstName
             $src = $null; $note = ''
-            if (Test-Path $tplPath) { $src = Get-Item $tplPath }
+            # the largest per-device ini of this driver (configured ones ~43 KB, CNCnetPDM's own defaults ~3.5-4 KB)
+            $largest = Get-ChildItem $driverDir -Filter "${base}_*.ini" -File -ErrorAction SilentlyContinue |
+                       Where-Object { $_.BaseName -match "^$([regex]::Escape($base))_\d+$" } |
+                       Sort-Object Length, LastWriteTime -Descending | Select-Object -First 1
+            if (Test-Path $tplPath) {
+                $src = Get-Item $tplPath
+                # a template that is a CNCnetPDM default (probe 2026-10-15: citizenm_CNC1-3.ini 3485 bytes while
+                # citizenm_1001.ini is 43165) would give every device default driver settings: use the configured one
+                if ($largest -and $largest.Length -gt 2 * $src.Length) {
+                    try {
+                        Copy-Item $tplPath "$tplPath.$ts.bak" -Force
+                        Copy-Item $largest.FullName $tplPath -Force -ErrorAction Stop
+                        $note = " (template $tplName was $($src.Length) bytes, a CNCnetPDM default: replaced with $($largest.Name), $($largest.Length) bytes)"
+                        $src = Get-Item $tplPath
+                    } catch { $note = " (template $tplName looks like a default but could not be replaced: $($_.Exception.Message))" }
+                }
+            }
             else {
                 $src = Get-ChildItem $driverDir -Filter "${base}_CNC*.ini" -File -ErrorAction SilentlyContinue | Select-Object -First 1
                 if (-not $src) {
-                    $src = Get-ChildItem $driverDir -Filter "${base}_*.ini" -File -ErrorAction SilentlyContinue |
-                           Where-Object { $_.BaseName -match "^$([regex]::Escape($base))_\d+$" } |
-                           Sort-Object Length, LastWriteTime -Descending | Select-Object -First 1
+                    $src = $largest
                     if ($src) { $note = " (no ${base}_CNC*.ini template: used the largest existing one)" }
                 }
                 if ($src) {
