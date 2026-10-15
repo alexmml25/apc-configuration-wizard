@@ -162,6 +162,20 @@ function Name-Of($Info) {
 }
 
 # -- 3. check (and re-enable) -------------------------------------------------------------------------
+# diagnostics: what 800xA answers for the first aspects (HasAspectOperation / TryGetAspectOperation)
+Say '== Diagnostics (first 3 aspects) =='
+$mHas = $aosType.GetMethod('HasAspectOperation')
+foreach ($c in $calcs | Select-Object -First 3) {
+    foreach ($id in @($iid, $iid.Trim('{}'), $iid.ToLowerInvariant(), $iid.Trim('{}').ToLowerInvariant())) {
+        $has = try { Invoke-M $mHas $aos @($c.Id, $id) } catch { "error: $($_.Exception.GetBaseException().Message)" }
+        $a3 = @($c.Id, $id, $null)
+        $ret = try { Invoke-M $mOp $aos $a3 } catch { "error: $($_.Exception.GetBaseException().Message)" }
+        $outType = if ($null -ne $a3[2]) { $a3[2].GetType().FullName } else { 'null' }
+        Say "  $(Name-Of $c)  [$id]  HasAspectOperation=$has  TryGetAspectOperation=$ret  out=$outType"
+    }
+    Say "    aspect type $($c.AspectTypeId)  category $($c.AspectCategoryId)  inherited=$($c.IsInherited)"
+}
+Say ''
 Say '== Calculations (Calculation Status Viewer): only problems are listed =='
 $problems = @(); $okCount = 0; $unread = @()
 foreach ($c in $calcs) {
