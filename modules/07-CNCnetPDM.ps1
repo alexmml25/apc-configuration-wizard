@@ -196,6 +196,21 @@ function Invoke-CNCnetPDM {
         Add-Result -Phase CNCnetPDM -Check "CNCnetPDM.ini line $n ($($m.MachineName))" -Status PASS -Detail "DeviceNr $($m.DeviceNr), $($m.IPAddress), $($m.DriverDll)$(if ($m.PdmName -ne $m.MachineName) { ", CNCnetPDM name '$($m.PdmName)' (15 characters max)" })"
     }
 
+    # Log folder, connect.udl and offline file follow the Medtronic install drive (C: or D:, HANDOFF-InstallDrive.md):
+    # PFAD alone is 250-300 MB of logs a day, which is why the Installation Manager may put the apps on D:
+    if ($State['MedtronicDrive']) {
+        for ($i = 0; $i -lt $ini.Count; $i++) {
+            if ($ini[$i] -match '^(\s*(PFAD|UDL_DATEI|FILENAME)\s*=\s*)(.+?)\s*$') {
+                $key = $Matches[2]; $old = $Matches[3]
+                $new = Convert-MedtronicPath -Path $old -Drive $State['MedtronicDrive']
+                if ($new -ne $old) {
+                    $ini[$i] = "$($Matches[1])$new"
+                    Add-Result -Phase CNCnetPDM -Check "CNCnetPDM.ini $key on $($State['MedtronicDrive'])" -Status PASS -Detail "$new (was $old)"
+                }
+            }
+        }
+    }
+
     Write-IniLines $iniPath $ini
     Write-Log INFO "CNCnetPDM.ini saved: $iniPath"
 

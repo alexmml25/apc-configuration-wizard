@@ -1892,6 +1892,19 @@ function Start-ConfigurationRun {
     $Script:AutoState['SiteDBPassword']      = $sdbPwd
 
     $runLog = @("$($Script:ConfigTypes[$type].Name) - $($Script:RunModeName): steps $($runSteps -join ', ')", "Run folder: $runRoot")
+    # The Medtronic apps may be on C: or D: (Installation Manager): find the drive and move the run's
+    # <X>:\Medtronic paths to it. Mixed drives or no app found stop the run (never a silent C:).
+    if (-not $Script:TestMode) {
+        $inst = Find-MedtronicInstall -Manifest $manifest
+        if ($inst.Error) {
+            [System.Windows.MessageBox]::Show("Medtronic install drive:`n$($inst.Error)`n`nFix the installation (Installation Manager) and start again.", "Install drive", "OK", "Error") | Out-Null
+            return $false
+        }
+        $Script:RunManifest = Set-ManifestMedtronicDrive -Manifest $manifest -Drive $inst.Drive
+        Set-StateMedtronicDrive -State $Script:AutoState -Drive $inst.Drive
+        $runLog += "Medtronic apps on $($inst.Drive): " + (($inst.Apps | ForEach-Object { "$($_.Name) ($($_.Source))" }) -join ', ')
+        if ($inst.Missing) { $runLog += "  Not installed: $($inst.Missing -join ', ')" }
+    }
     switch ($runMode) {
         'Reviewed' { $window.Title = 'APC Configuration Deployment Wizard  [REVIEWED STEPS ONLY]' }
         'Verify'   { $window.Title = 'APC Configuration Deployment Wizard  [VERIFICATION ONLY]' }

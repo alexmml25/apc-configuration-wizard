@@ -25,6 +25,7 @@ $ErrorActionPreference = 'Stop'
 $Script:RootDir      = $PSScriptRoot
 $Script:ModulesDir   = Join-Path $Script:RootDir 'modules'
 $Script:ManifestPath = Join-Path $Script:RootDir 'APC_ConfigManifest.json'
+. (Join-Path $Script:ModulesDir 'Common.ps1')    # Find-MedtronicInstall / Set-ManifestMedtronicDrive before the first step
 $Script:StateFile    = $StateFile
 $Script:LogDir       = 'C:\APC_Config\Logs'
 $Script:LogFile      = $null
@@ -279,6 +280,11 @@ function Main {
     Initialize-Log
 
     $manifest = Import-Manifest
+    # Medtronic apps on C: or D: (Installation Manager): the run's <X>:\Medtronic paths follow the found drive
+    $inst = Find-MedtronicInstall -Manifest $manifest
+    if ($inst.Error) { Write-Log FAIL "Medtronic install drive: $($inst.Error)"; throw $inst.Error }
+    $manifest = Set-ManifestMedtronicDrive -Manifest $manifest -Drive $inst.Drive
+    Write-Log INFO ("Medtronic apps on $($inst.Drive): " + (($inst.Apps | ForEach-Object { "$($_.Name) ($($_.Source))" }) -join ', '))
 
     $operatorInfo = Get-OperatorInfo
     $creds        = Get-ConfigCredentials -SiteCode $operatorInfo.SiteCode
@@ -302,6 +308,7 @@ function Main {
     $state['APCUserPassword']     = $creds.APCUserPassword
     $state['PostgresPassword']    = $creds.PostgresPassword
     $state['SvcAccountPassword']  = $creds.SvcAccountPassword
+    $state['MedtronicDrive']      = $inst.Drive
     Save-ConfigState -State $state
 
     $phases = @(

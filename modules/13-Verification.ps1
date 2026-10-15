@@ -1037,6 +1037,31 @@ function Invoke-Verification {
 
     #endregion
 
+    #region Install drive (not a D01555624 row) ---------------------------------
+
+    # The Medtronic apps are on one drive (C: or D:, Installation Manager) and the run used it; CNCnetPDM's
+    # log folder (PFAD, 250-300 MB a day) is on that drive too
+    if (-not $State['SandboxRoot']) {
+        Check 'Install' 'Medtronic apps on one drive, used by this run' {
+            $inst = Find-MedtronicInstall -Manifest $Manifest
+            if ($inst.Error) { throw $inst.Error }
+            $issues = @()
+            if ($State['MedtronicDrive'] -and $State['MedtronicDrive'] -ne $inst.Drive) { $issues += "run used $($State['MedtronicDrive']), apps are on $($inst.Drive)" }
+            $pdmIni = Join-Path ([string]$cncPdm.InstallDir) 'CNCnetPDM.ini'
+            if (Test-Path -LiteralPath $pdmIni) {
+                foreach ($l in [System.IO.File]::ReadAllLines($pdmIni)) {
+                    if ($l -match '^\s*(PFAD|UDL_DATEI|FILENAME)\s*=\s*([A-Za-z]:\\Medtronic\\.*?)\s*$' -and $Matches[2].Substring(0, 2).ToUpper() -ne $inst.Drive) {
+                        $issues += "CNCnetPDM.ini $($Matches[1]) = $($Matches[2])"
+                    }
+                }
+            }
+            if ($issues) { throw ($issues -join '; ') }
+            "$($inst.Drive): " + (($inst.Apps | ForEach-Object { $_.Name }) -join ', ') + $(if ($inst.Missing) { "; not installed: $($inst.Missing -join ', ')" })
+        }
+    }
+
+    #endregion
+
     #region T11 - Network Connectivity ----------------------------------------
 
     # Item 1 - ACW approved (manual)

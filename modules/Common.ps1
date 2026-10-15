@@ -618,6 +618,99 @@ function Get-AccountLocalAppData {
     return $env:LOCALAPPDATA
 }
 
+function Convert-MedtronicPath {
+    # 'C:\Medtronic\...' -> '<Drive>\Medtronic\...' (any drive letter); other paths unchanged
+    param([string]$Path, [Parameter(Mandatory)] [string]$Drive)
+    if (-not $Path) { return $Path }
+    return [regex]::Replace($Path, '^[A-Za-z]:(?=\\Medtronic(\\|$))', $Drive.TrimEnd('\').Substring(0, 2), 'IgnoreCase')
+}
+
+function Find-MedtronicInstall {
+    <#
+        Where the Installation Manager put the Medtronic apps (C: or D:, HANDOFF-InstallDrive.md). Per app in
+        Manifest.MedtronicInstall.Apps, first match wins:
+          1. Programs and Features InstallLocation (DisplayName regex), 2. the service's ImagePath (CNCnetPDM),
+          3. <drive>\Medtronic\<Folder>\<Exe> on each of Manifest.MedtronicInstall.Drives.
+        Only folders under <drive>\Medtronic count. Returns @{ Drive; Apps = @(@{ Name; Folder; Source }); Missing; Error }:
+        Error when no app is found or the apps are on different drives (never a silent C:).
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest)
+    $cfg   = $Manifest.MedtronicInstall
+    $keys  = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+    # (PSObject.Properties: most uninstall entries have no InstallLocation, and APC_Config.ps1 runs in StrictMode)
+    $uninst = @(Get-ItemProperty $keys -ErrorAction SilentlyContinue |
+                Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.PSObject.Properties['InstallLocation'] -and $_.DisplayName -and $_.InstallLocation })
+    $apps = @(); $missing = @()
+    foreach ($a in @($cfg.Apps)) {
+        $count = if ($a.PSObject.Properties['Instances']) { [int]$a.Instances } else { 1 }
+        for ($i = 1; $i -le $count; $i++) {
+            $name   = ([string]$a.Name).Replace('{N}', "$i")
+            $folder = ([string]$a.Folder).Replace('{N}', "$i")
+            $found  = $null
+            $u = $uninst | Where-Object { $_.DisplayName -match ([string]$a.DisplayName).Replace('{N}', "$i") } | Select-Object -First 1
+            if ($u) {
+                $loc = ([string]$u.InstallLocation).Trim('"').TrimEnd('\')
+                if ($loc -match '^[A-Za-z]:\\Medtronic\\') { $found = @{ Name = $name; Folder = $loc; Source = "Programs and Features ($($u.DisplayName))" } }
+            }
+            if (-not $found -and $a.PSObject.Properties['Service'] -and $a.Service) {
+                $svcKey = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$($a.Service)" -ErrorAction SilentlyContinue
+                $img = if ($svcKey -and $svcKey.PSObject.Properties['ImagePath']) { $svcKey.ImagePath } else { $null }
+                if ($img) {
+                    $exe = ([Environment]::ExpandEnvironmentVariables([string]$img) -replace '^"([^"]+)".*$', '$1') -replace '\s+[-/].*$', ''
+                    $dir = Split-Path $exe -Parent
+                    if ($dir -match '^[A-Za-z]:\\Medtronic\\') { $found = @{ Name = $name; Folder = $dir; Source = "service $($a.Service)" } }
+                }
+            }
+            if (-not $found) {
+                foreach ($d in @($cfg.Drives)) {
+                    $dir = "$d\Medtronic\$folder"
+                    # plain string: Join-Path fails on a drive that does not exist (a VM without D:)
+                    if (Test-Path -LiteralPath "$dir\$($a.Exe)" -ErrorAction SilentlyContinue) { $found = @{ Name = $name; Folder = $dir; Source = "$($a.Exe) on $d" }; break }
+                }
+            }
+            if ($found) { $apps += $found } else { $missing += $name }
+        }
+    }
+    $drives = @($apps | ForEach-Object { $_.Folder.Substring(0, 2).ToUpper() } | Select-Object -Unique)
+    $err = if (-not $apps) { 'No Medtronic app found in Programs and Features, the CNCnetPDM service or ' + ((@($cfg.Drives) | ForEach-Object { "$_\Medtronic" }) -join ' / ') }
+           elseif ($drives.Count -gt 1) { 'The Medtronic apps are on different drives: ' + (($apps | ForEach-Object { "$($_.Name) $($_.Folder)" }) -join '; ') }
+           else { '' }
+    return @{ Drive = $(if ($drives.Count -eq 1) { $drives[0] } else { '' }); Apps = $apps; Missing = $missing; Error = $err }
+}
+
+function Set-ManifestMedtronicDrive {
+    # A copy of the manifest with every '<X>:\Medtronic\...' value moved to $Drive (the run uses the copy)
+    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [string]$Drive)
+    $copy = $Manifest | ConvertTo-Json -Depth 30 | ConvertFrom-Json
+    $walk = {
+        param($o)
+        foreach ($p in @($o.PSObject.Properties)) {
+            $v = $p.Value
+            if ($v -is [string]) { $p.Value = Convert-MedtronicPath -Path $v -Drive $Drive }
+            elseif ($v -is [System.Management.Automation.PSCustomObject]) { & $walk $v }
+            elseif ($v -is [System.Array]) {
+                for ($i = 0; $i -lt $v.Count; $i++) {
+                    if ($v[$i] -is [string]) { $v[$i] = Convert-MedtronicPath -Path $v[$i] -Drive $Drive }
+                    elseif ($v[$i] -is [System.Management.Automation.PSCustomObject]) { & $walk $v[$i] }
+                }
+            }
+        }
+    }
+    & $walk $copy
+    return $copy
+}
+
+function Set-StateMedtronicDrive {
+    # The page values that hold Medtronic paths (local data root, instrument Broadcast / local Source paths)
+    param([Parameter(Mandatory)] [hashtable]$State, [Parameter(Mandatory)] [string]$Drive)
+    if ($State['DataAppsLocalRoot']) { $State['DataAppsLocalRoot'] = Convert-MedtronicPath -Path ([string]$State['DataAppsLocalRoot']) -Drive $Drive }
+    foreach ($inst in @($State['DataAppsInstruments'])) {
+        if ($inst -isnot [System.Collections.IDictionary]) { continue }
+        foreach ($k in 'SourcePath', 'ErrorPath', 'BroadcastPath') { if ($inst[$k]) { $inst[$k] = Convert-MedtronicPath -Path ([string]$inst[$k]) -Drive $Drive } }
+    }
+    $State['MedtronicDrive'] = $Drive
+}
+
 function Get-TopFolders {
     # The paths that are not inside another path of the list (a grant on those covers the rest by inheritance)
     param([string[]]$Paths)

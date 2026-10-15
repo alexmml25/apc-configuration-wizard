@@ -250,6 +250,18 @@
     "MitsubishiM.dll": "Mitsubishi"
   },
 
+  "MedtronicInstall": {
+    "Description": "Where the Installation Manager put the Medtronic apps (C: or D:); the run's manifest paths follow that drive",
+    "Drives": [ "C:", "D:" ],
+    "Apps": [
+      { "Name": "CNCnetPDM",      "DisplayName": "^CNCNetPDM",      "Exe": "CNCnetPDM.exe",                 "Folder": "CNCNetPDM", "Service": "CNCnetPDM" },
+      { "Name": "File Manager",   "DisplayName": "^File Manager",   "Exe": "DataCollector_FileManager.exe", "Folder": "File Manager" },
+      { "Name": "Data Collector", "DisplayName": "^Data Collector", "Exe": "DataCollector.exe",             "Folder": "Data Collector" },
+      { "Name": "Data Analyzer",  "DisplayName": "^Data Analyzer",  "Exe": "DataAnalyzer.exe",              "Folder": "Data Analyzer" },
+      { "Name": "DOC-{N}",        "DisplayName": "^DOC-{N} ",       "Exe": "DynamicOffsetCalculation.exe",  "Folder": "DOC-{N}\\DOC_II", "Instances": 3 }
+    ]
+  },
+
   "DOC": {
     "BasePath":           "C:\\Medtronic\\DOC-{N}\\DOC_II",
     "PluginsIQSPath":     "C:\\Medtronic\\DOC-{N}\\DOC_II\\Plugins\\IQS",
