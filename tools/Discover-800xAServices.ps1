@@ -64,17 +64,26 @@ $mAll    = $aosType.GetMethods() | Where-Object { $_.Name -eq 'GetAspects' -and 
 $mInfo   = $aosType.GetMethod('GetAspectInfo')
 $tAspDet = $mInfo.GetParameters()[1].ParameterType
 
+function Invoke-M($Method, $Target, [object[]]$Arguments) {
+    # MethodInfo.Invoke needs plain .NET objects (PowerShell wraps New-Object results in a PSObject)
+    $plain = New-Object object[] $Arguments.Count
+    for ($i = 0; $i -lt $Arguments.Count; $i++) { if ($null -ne $Arguments[$i]) { $plain[$i] = $Arguments[$i].PSObject.BaseObject } }
+    $t = if ($null -ne $Target) { $Target.PSObject.BaseObject } else { $null }
+    $Method.Invoke($t, $plain)
+}
 function Get-Objects([string]$TypeGuid) {
-    $tid = [Activator]::CreateInstance($tTypeId, [object[]]@($TypeGuid))
-    $arr = [Array]::CreateInstance($tTypeId, 1); $arr.SetValue($tid, 0)
+    $tid = [Activator]::CreateInstance($tTypeId, [object[]]@([string]$TypeGuid))
+    $arr = [Array]::CreateInstance($tTypeId, 1); $arr.SetValue($tid.PSObject.BaseObject, 0)
     $q   = New-Object ABB.xA.Base.ObjectQuery
-    $q.ObjectTypeIds = $arr
-    $en  = $mEnum.Invoke($aos, [object[]]@($q, [Enum]::ToObject($tTrack, 0), [Enum]::Parse($tObjDet, 'All')))
+    $q.ObjectTypeIds = $arr.PSObject.BaseObject
+    $en  = Invoke-M $mEnum $aos @($q, [Enum]::ToObject($tTrack, 0), [Enum]::Parse($tObjDet, 'All'))
     try { @($en | ForEach-Object { $_ }) } finally { $en.Dispose() }
 }
 function Show-Aspects($ObjectId, [string]$Indent = '    ') {
-    $refs  = @($mAll.Invoke($aos, [object[]]@($ObjectId)))
-    $infos = @($mInfo.Invoke($aos, [object[]]@($refs, [Enum]::Parse($tAspDet, 'All'))))
+    $refs  = @(Invoke-M $mAll $aos @($ObjectId))
+    $list  = [Activator]::CreateInstance([System.Collections.Generic.List``1].MakeGenericType($refs[0].GetType()))
+    foreach ($r in $refs) { $list.Add($r) }
+    $infos = @(Invoke-M $mInfo $aos @($list, [Enum]::Parse($tAspDet, 'All')))
     foreach ($i in $infos) {
         $cat = try { $i.AspectCategoryId } catch { '' }
         Say "$Indent- '$($i.Name)'  type $($i.AspectTypeId)  category $cat"
@@ -99,7 +108,7 @@ Say ''
 Say '== 2. Objects named like Calculation (all types) and their aspects =='
 try {
     $q = New-Object ABB.xA.Base.ObjectQuery
-    $en = $mEnum.Invoke($aos, [object[]]@($q, [Enum]::ToObject($tTrack, 0), [Enum]::Parse($tObjDet, 'All')))
+    $en = Invoke-M $mEnum $aos @($q, [Enum]::ToObject($tTrack, 0), [Enum]::Parse($tObjDet, 'All'))
     try { $calc = @($en | Where-Object { -not $_.IsDeleted -and $_.Name -match 'Calculation' } | ForEach-Object { $_ }) } finally { $en.Dispose() }
     foreach ($o in $calc | Select-Object -First 20) {
         Say "  $($o.Name)   id $($o.Id)   type $($o.ObjectTypeId)"
@@ -112,8 +121,21 @@ Say ''
 Say '== 3. 800xA bin files and 32-bit COM ProgIDs (services / calculations) =='
 Get-ChildItem -LiteralPath $BinDir -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Calc|SrvProv|ServiceProv|ServiceMgr|SvcMgr|Afw.*Serv' } |
     ForEach-Object { Say "  file $($_.Name)  $($_.VersionInfo.FileVersion)" }
-Get-ChildItem 'Registry::HKEY_CLASSES_ROOT' -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -match '^(Afw|ABB).*(Serv|Calc|SrvProv)' } |
-    Select-Object -First 80 | ForEach-Object { Say "  progid $($_.PSChildName)" }
+Get-ChildItem 'Registry::HKEY_CLASSES_ROOT' -ErrorAction SilentlyContinue |
+    Where-Object { $_.PSChildName -match '^(Afw|ABB)\.?.*(AdminServ|ServiceProv|SrvProv|Calc|ServiceGroup|ServiceMan)' -and $_.PSChildName -notmatch '\.\d+$' } |
+    ForEach-Object { Say "  progid $($_.PSChildName)" }
+Say ''
+
+# -- 4. members of the 800xA service administration COM objects (created only to list their members; nothing is called) --
+Say '== 4. Members of the service administration COM objects (read-only listing) =='
+foreach ($progId in 'ABB.AfwAdminServiceProvider', 'ABB.AfwAdminServiceGroup', 'ABB.AfwAdminService') {
+    try {
+        $o = New-Object -ComObject $progId
+        Say "  $progId"
+        $o | Get-Member | Where-Object { $_.MemberType -match 'Method|Property' } | ForEach-Object { Say "    $($_.MemberType)  $($_.Definition)" }
+        [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($o)
+    } catch { Say "  $progId : $($_.Exception.Message)" }
+}
 
 [System.AppDomain]::CurrentDomain.remove_AssemblyResolve($onResolve)
 Finish 0
