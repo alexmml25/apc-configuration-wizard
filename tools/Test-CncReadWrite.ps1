@@ -13,7 +13,7 @@
     Report: C:\APC_Config\Logs\cnc-readwrite-test_<ts>.txt. 64-bit PowerShell, service account.
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File tools\Test-CncReadWrite.ps1
-    powershell -NoProfile -ExecutionPolicy Bypass -File tools\Test-CncReadWrite.ps1 -Write -TagId 2_597 -TagName 2_597
+    powershell -NoProfile -ExecutionPolicy Bypass -File tools\Test-CncReadWrite.ps1 -Write
 #>
 param(
     [string]$ManifestPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'APC_ConfigManifest.json'),
@@ -86,14 +86,16 @@ if ($TagId -or $TagName) { $combos.Add(@($TagId, $TagName)) } else { $combos.Add
 foreach ($c in $combos) { W ("  TagID='{0}' TagName='{1}'  -> {2}" -f $c[0], $c[1], (Read-Tag $c[0] $c[1])) }
 
 if ($Write) {
-    $id = if ($TagId) { $TagId } else { $Tag }; $nm = if ($PSBoundParameters.ContainsKey('TagName')) { $TagName } else { $Tag }
-    W ''; W "== Write $device $Tag (7_CNC_DemandWriteTagInteger), TagID='$id' TagName='$nm' =="
-    W "  before: $(Read-Tag $id $nm)"
+    # 7_CNC_DemandWriteTagValue / 6_CNC_DemandReadTagValue (Invoke-DwCncTag): the offsets are FLOAT8
+    W ''; W "== Write $device ${Tag}: 10, then 0 (7_CNC_DemandWriteTagValue, read back with 6_CNC_DemandReadTagValue) =="
+    $r = Invoke-DwCncTag -Session $session -Namespace $ns -Device $device -Tag $Tag
+    W "  before: $(if ($r.Ok) { $r.Value } else { $r.Error })"
     foreach ($v in 10, 0) {
-        $r = Invoke-Method '7_CNC_DemandWriteTagInteger' @([string]$device, [string]$id, [string]$nm, [long]$v)
-        W "  write $v -> $(if ($r.Ok) { "ERROR_CODE=$($r.Out[0]) ERROR_MESSAGE='$($r.Out[1])'" } else { "call failed: $($r.Error)" })"
+        $w = Invoke-DwCncTag -Session $session -Namespace $ns -Device $device -Tag $Tag -WriteValue "$v"
+        W "  write $v -> $(if ($w.Ok) { 'OK' } else { $w.Error })"
         Start-Sleep -Seconds 2
-        W "  read back: $(Read-Tag $id $nm)"
+        $r = Invoke-DwCncTag -Session $session -Namespace $ns -Device $device -Tag $Tag
+        W "  read back: $(if ($r.Ok) { $r.Value } else { $r.Error })$(if ($r.Ok -and [double]$r.Value -eq $v) { '  (matches)' } elseif ($r.Ok) { '  (DIFFERENT)' })"
     }
 }
 try { [void]$session.Close() } catch { }

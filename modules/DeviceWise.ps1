@@ -686,6 +686,30 @@ function Get-DwUaValue {
     return $Session.ReadValue((Get-DwUaNodeId -Session $Session -Namespace $Namespace -Path $Path))
 }
 
+function Invoke-DwCncTag {
+    <#
+        Reads or writes a tag on a CNCn_PATH device the way the CHMI does: the CHMI trigger methods deviceWise
+        publishes over OPC UA (CNCn_PATH is not exposed itself). Read: 6_CNC_DemandReadTagValue (Double - the
+        CNC offsets are FLOAT8; the Integer method fails on them). Write: 7_CNC_DemandWriteTagValue (value as text).
+        The trigger uses TagName as the variable; TagID is only logged. Returns @{ Ok; Value; Error }.
+        (VM 2026-10-15: CNC1_PATH 2_597 read 0 with ERROR_CODE 0.)
+    #>
+    param([Parameter(Mandatory)] $Session, [Parameter(Mandatory)] [string]$Namespace, [Parameter(Mandatory)] [string]$Device,
+          [Parameter(Mandatory)] [string]$Tag, [string]$WriteValue)
+    $obj = Get-DwUaNodeId -Session $Session -Namespace $Namespace -Path 'p:CHMI'
+    if ($PSBoundParameters.ContainsKey('WriteValue')) {
+        $mid = Get-DwUaNodeId -Session $Session -Namespace $Namespace -Path 't:CHMI.7_CNC_DemandWriteTagValue'
+        $in  = [object[]]@($Device, $Tag, $Tag, [string]$WriteValue)
+    } else {
+        $mid = Get-DwUaNodeId -Session $Session -Namespace $Namespace -Path 't:CHMI.6_CNC_DemandReadTagValue'
+        $in  = [object[]]@($Device, $Tag, $Tag)
+    }
+    try { $out = @($Session.Call($obj, $mid, $in)) }
+    catch { return @{ Ok = $false; Value = $null; Error = "OPC UA call failed: $($_.Exception.InnerException.Message)$($_.Exception.Message)" } }
+    $code = [long]$out[0]
+    return @{ Ok = ($code -eq 0); Value = $(if ($out.Count -gt 2) { $out[2] }); Error = $(if ($code -ne 0) { "ERROR_CODE $code $($out[1])" } else { '' }) }
+}
+
 function Set-DwCncAssetAfterRestarts {
     <#
         Writes CNCAsset / CNCType (Set-DwCncAssetValues) only when no later step of this run restarts dwcore

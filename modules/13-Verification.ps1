@@ -698,9 +698,59 @@ function Invoke-Verification {
         "Connected (port $($mtc.Port))"
     } '' 6 10
 
-    # Items 11-12 - manual read/write tests
-    Blank 'CNCnetPDM' 'Read access verified via deviceWise' 6 11
-    Blank 'CNCnetPDM' 'Write access verified via deviceWise' 6 12
+    # Items 11-12 - read / write a CNC tag through deviceWise the CHMI way (Invoke-DwCncTag: the CHMI trigger
+    # methods over OPC UA reach CNCn_PATH -> CNCnetPDM -> CNC). Write: TestValue, read back, then RestoreValue
+    # (#597: 10 means nothing to the CNC logic, 0 is idle - user 2026-10-15). CNCnetPDM.ReadWriteTest.
+    $rwt = $cncPdm.ReadWriteTest
+    $rwRead = @(); $rwWrite = @(); $rwErr = ''
+    if ($rwt -and $pdmCNCs.Count) {
+        $rwSession = $null
+        try {
+            $rwSession = Open-DwUaSession -Manifest $Manifest
+            $ns = $dw.OpcUaClient.Namespace
+            foreach ($c in $pdmCNCs) {
+                $dev = "CNC$($c.CNCIndex)_PATH"
+                $r = Invoke-DwCncTag -Session $rwSession -Namespace $ns -Device $dev -Tag $rwt.Tag
+                $rwRead += @{ Dev = $dev; Ok = $r.Ok; Text = $(if ($r.Ok) { "$dev $($rwt.Tag)=$($r.Value)" } else { "$dev $($r.Error)" }) }
+                if (-not $r.Ok -or -not $rwt.Write) { continue }
+                $steps = @()
+                foreach ($v in @($rwt.TestValue, $rwt.RestoreValue)) {
+                    $w = Invoke-DwCncTag -Session $rwSession -Namespace $ns -Device $dev -Tag $rwt.Tag -WriteValue "$v"
+                    if (-not $w.Ok) { $steps += "write $v failed: $($w.Error)"; break }
+                    Start-Sleep -Seconds ([int]$rwt.ReadBackDelaySeconds)
+                    $b = Invoke-DwCncTag -Session $rwSession -Namespace $ns -Device $dev -Tag $rwt.Tag
+                    if (-not $b.Ok) { $steps += "read back after $v failed: $($b.Error)"; break }
+                    if ([double]$b.Value -ne [double]$v) { $steps += "wrote $v, read back $($b.Value)"; break }
+                    $steps += "$v ok"
+                }
+                $rwWrite += @{ Dev = $dev; Ok = ($steps.Count -eq 2 -and $steps[-1] -like '* ok'); Text = "$dev $($rwt.Tag): $($steps -join ', ')" }
+            }
+        } catch { $rwErr = $_.Exception.Message }
+        finally { if ($rwSession) { try { [void]$rwSession.Close() } catch { } } }
+    }
+    if (-not $rwt) {
+        Blank 'CNCnetPDM' 'Read access verified via deviceWise' 6 11
+        Blank 'CNCnetPDM' 'Write access verified via deviceWise' 6 12
+    } else {
+        Check 'CNCnetPDM' 'Read access verified via deviceWise' {
+            if ($rwErr) { throw $rwErr }
+            if (-not $rwRead) { throw 'No CNC to read' }
+            $bad = @($rwRead | Where-Object { -not $_.Ok })
+            if ($bad) { throw (($bad | ForEach-Object { $_.Text }) -join '; ') }
+            ($rwRead | ForEach-Object { $_.Text }) -join ', '
+        } '' 6 11
+        if (-not $rwt.Write) {
+            Blank 'CNCnetPDM' 'Write access verified via deviceWise' 6 12
+        } else {
+            Check 'CNCnetPDM' 'Write access verified via deviceWise' {
+                if ($rwErr) { throw $rwErr }
+                if (-not $rwWrite) { throw 'Not written: the read failed first' }
+                $bad = @($rwWrite | Where-Object { -not $_.Ok })
+                if ($bad) { throw (($bad | ForEach-Object { $_.Text }) -join '; ') }
+                "wrote $($rwt.TestValue), read back, restored $($rwt.RestoreValue): " + (($rwWrite | ForEach-Object { $_.Dev }) -join ', ')
+            } '' 6 12
+        }
+    }
 
     # Item 13 - readiness aggregate
     $pdmReadyStatus = if (

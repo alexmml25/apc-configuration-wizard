@@ -212,6 +212,14 @@
     "DriverDllWaitSeconds": 30,
     "ConnectWaitSeconds":   60,
     "PortCheckTimeoutMs":   2000,
+    "ReadWriteTest": {
+      "Tag":                  "2_597",
+      "TestValue":            10,
+      "RestoreValue":         0,
+      "ReadBackDelaySeconds": 2,
+      "Write":                true,
+      "Note": "Step 13 T6 items 11-12: CNCn_PATH tag through the CHMI methods. #597 CNCToSegregateParts: 10 is ignored by the CNC logic, 0 is idle (user 2026-10-15)"
+    },
     "DefaultLicense":   "ENPQRSLNTZNOLLNVRUPTIRPQKLLXEFMLGTQJRQMSLFNLLNOS",
     "Defaults": {
       "Baud":        19200,
