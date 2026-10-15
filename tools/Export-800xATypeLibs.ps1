@@ -65,6 +65,7 @@ foreach ($dll in $Dlls) {
         $asm  = $conv.ConvertTypeLibToAssembly($tlb, "$name.dll", [System.Runtime.InteropServices.TypeLibImporterFlags]::None,
                                                (New-Object ApcTlbSink), $null, $null, $name, $null) }
         [ApcTlbSink]::Done[$name] = $asm
+        [ApcTlbSink]::Done[$libName] = $asm      # the name a referencing library asks for
         $cwd = [Environment]::CurrentDirectory
         [Environment]::CurrentDirectory = $stage           # AssemblyBuilder.Save writes to the process directory
         try { $asm.Save("$name.dll") } catch { } finally { [Environment]::CurrentDirectory = $cwd }
