@@ -98,7 +98,7 @@ function Invoke-CHMI {
     if ([bool]$Manifest.CHMI.CheckCalculations) {
         $c = Invoke-800xACalculationCheck -Manifest $Manifest -LogDir (Get-RunDir -State $State -Name Logs) -Confirm
         foreach ($l in $c.Lines) { if ($l.Trim()) { Write-Log INFO "  [calcs] $l" } }
-        $summary = @($c.Lines | Where-Object { $_ -match '^(All |No calculations|Calculation aspects:|  \d+ OK, )' }) -join '; '
+        $summary = @($c.Lines | Where-Object { $_ -match '^(All |No calculations|  \d+ running )' }) -join '; '
         switch ($c.Code) {
             0       { Add-Result -Phase CHMI -Check '800xA calculations enabled' -Status PASS -Detail "$summary - report $($c.Report)" }
             5       { Add-Result -Phase CHMI -Check '800xA calculations enabled' -Status FAIL -Detail "Still disabled or in error after Enable - see $($c.Report)" }

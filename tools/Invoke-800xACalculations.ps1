@@ -13,7 +13,8 @@
       3. per calculation: TryGetAspectOperation -> Enabled / Status / StatusMessage
       4. -Confirmed: Enabled false, or Status not 0 -> Enabled = false then true (re-enable), wait, read again
     Exit codes: 0 all enabled and Status 0 (or no calculations), 1 problems found (report only), 5 problems left
-    after re-enabling, 7 some or all calculations could not be read, 2 cannot connect to 800xA, 6 Inform IT
+    after re-enabling, 7 no running calculation could be read (aspects with no running calculation behind them are
+    object type definitions: counted, not checked), 2 cannot connect to 800xA, 6 Inform IT
     Calculations not found. Only problems are listed (SJUM7AAPPS0048 has 602 calculation aspects).
     Output: C:\APC_Config\Logs\chmi-calcs_<ts>.txt
 .EXAMPLE
@@ -172,14 +173,19 @@ foreach ($c in $calcs) {
     Say ("  FAIL  {0}  enabled={1} status={2}{3}" -f $name, $s.Enabled, $s.Status, $(if ($s.Message) { " - $($s.Message)" }))
     $problems += [pscustomobject]@{ Name = $name; Info = $c; Calc = $s }
 }
-Say "  $okCount OK, $($problems.Count) disabled or in error, $($unread.Count) not readable"
+$running = $okCount + $problems.Count
+Say "  $running running calculation(s) (the Calculation Status Viewer's list): $okCount OK, $($problems.Count) disabled or in error"
 if ($unread.Count) {
-    Say "  not readable (no ICalculationASO from TryGetAspectOperation; result '$script:lastOpResult'$(if ($script:lastOpError) { ", error: $script:lastOpError" })), first 5:"
-    $unread | Select-Object -First 5 | ForEach-Object { Say "    ?  $(Name-Of $_)" }
+    # aspects with no running calculation behind them: calculation definitions on object types (templates the
+    # instances inherit; not in the viewer - SJUM7AAPPS0048: 602 aspects, viewer 361). Listed, not a failure.
+    Say "  $($unread.Count) calculation aspect(s) with no running calculation (object type definitions) - not checked; by object:"
+    $unread | Group-Object { ((Name-Of $_) -split ' : ')[0] } | Sort-Object Count -Descending | Select-Object -First 10 |
+        ForEach-Object { Say ("    {0,4} x {1}" -f $_.Count, $_.Name) }
+    if ($script:lastOpError) { Say "  (last TryGetAspectOperation error: $script:lastOpError)" }
 }
 Say ''
-if ($unread.Count -and -not $okCount -and -not $problems.Count) { Say 'Could not read any calculation.'; Finish 7 }
-if (-not $problems) { Say "All $okCount readable calculation(s) enabled with status 0."; Finish $(if ($unread.Count) { 7 } else { 0 }) }
+if (-not $running) { Say 'Could not read any running calculation.'; Finish 7 }
+if (-not $problems) { Say "All $running running calculation(s) enabled with status 0."; Finish 0 }
 if (-not $Confirmed) { Say "$($problems.Count) calculation(s) disabled or in error. With -Confirmed they are enabled again."; Finish 1 }
 
 Say "== Re-enable $($problems.Count) calculation(s) =="

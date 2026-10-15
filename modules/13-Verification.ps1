@@ -921,7 +921,7 @@ function Invoke-Verification {
             $c = Invoke-800xACalculationCheck -Manifest $Manifest -LogDir $reportDir
             if ($c.Code -eq 1) { throw "Disabled or in error - see $($c.Report) (Step 11 enables them again)" }
             if ($c.Code -ne 0) { throw "Could not check (exit $($c.Code)) - see $($c.Report)" }
-            (@($c.Lines | Where-Object { $_ -match '^(All |No calculations)' }) -join '; ')
+            (@($c.Lines | Where-Object { $_ -match '^(All |No calculations|  \d+ running )' }) -join '; ')
         }
     }
 
