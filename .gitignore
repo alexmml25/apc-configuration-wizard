@@ -61,3 +61,4 @@ UsageControl.dll
 # 800xA service binaries copied from a VM for inspection - ABB property, never commit
 Afw*.dll
 Afw*.exe
+800xA-service-files_*.zip
