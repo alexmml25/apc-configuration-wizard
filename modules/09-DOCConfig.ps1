@@ -185,45 +185,107 @@ function Invoke-DOCConfig {
     }
 
     #region -- start each DOC and trust it in deviceWise (as Step 10 does for the data apps) ----------------
-    # DOC reads its XML at start, so it is (re)started after the changes. Its OPC UA plugin makes a client
-    # certificate on the first connection to deviceWise; that is trusted both ways (file stores).
+    # DOC reads its XML at start, so it is (re)started after the changes. Its OPC UA plugin (Plugins\OPC UA\
+    # DocOpcUa.xml) connects to deviceWise opc.tcp://localhost:48020 and only accepts the server certificate
+    # named in <CertificateSubject>; the shipped value (CN=Devicewise/UA Server ...) is not this gateway's.
+    # Its client certificate 'OPC-UA-API' is per user, shared by all DOCs: %LOCALAPPDATA%\Medtronic\own|trusted
+    # (VM 2026-10-15), made on the first connection - so on a first run DOC is started, trusted, then restarted.
     if ($State['SandboxRoot']) {
         Write-Log INFO "Test mode: DOC instances are not started"
     } elseif ($docCfg.PSObject.Properties['StartInstances'] -and $docCfg.StartInstances -eq $false) {
         Write-Log INFO "DOC.StartInstances is false: DOC instances are not started"
     } else {
-        $pki  = ([string]$Manifest.DeviceWise.GatewayInstallDir).TrimEnd('\') + '\staging\uaserver\pkiserver'
-        $wait = if ($docCfg.PSObject.Properties['CertWaitSeconds']) { [int]$docCfg.CertWaitSeconds } else { 60 }
+        $pki     = ([string]$Manifest.DeviceWise.GatewayInstallDir).TrimEnd('\') + '\staging\uaserver\pkiserver'
+        $wait    = if ($docCfg.PSObject.Properties['CertWaitSeconds']) { [int]$docCfg.CertWaitSeconds } else { 60 }
+        # per user = the service account DOC runs as (user, 2026-10-15), resolved from its profile
+        $svc     = Get-AppAccount -Manifest $Manifest -State $State
+        $userDir = ([string]$docCfg.UserCertStore).Replace('%LOCALAPPDATA%', (Get-AccountLocalAppData -Account $svc))
+        $userDir = [Environment]::ExpandEnvironmentVariables($userDir)
+        Write-Log INFO "DOC OPC UA certificate store ($(if ($svc) { $svc } else { 'this user' })): $userDir" 
+        $store   = @{ Own = (Join-Path $userDir 'own\certs'); Trusted = (Join-Path $userDir 'trusted\certs') }
+        $haveCert = { [bool](Get-ChildItem -LiteralPath $store.Own -Filter '*.der' -File -ErrorAction SilentlyContinue) }
+
+        # 1. the deviceWise server certificate subject DOC must accept
+        $srvFile = Get-ChildItem -LiteralPath (Join-Path $pki 'own\certs') -Filter '*.der' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        $srvSubject = if ($srvFile) { try { (New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $srvFile.FullName).Subject } catch { '' } }
+        foreach ($m in $machines) {
+            $n = [int]$m.CNCIndex
+            $base  = ([string]$docCfg.BasePath).Replace('{N}', "$n")
+            $uaXml = Join-Path $base ([string]$docCfg.OpcUaXml)
+            if (-not (Test-Path -LiteralPath $uaXml)) { Add-Result -Phase DOC -Check "DOC ${n}: OPC UA server certificate subject" -Status WARN -Detail "Not found: $uaXml"; continue }
+            if (-not $srvSubject) { Add-Result -Phase DOC -Check "DOC ${n}: OPC UA server certificate subject" -Status WARN -Detail "deviceWise server certificate not found in $pki\own\certs"; continue }
+            $doc  = New-Object System.Xml.XmlDocument
+            $doc.LoadXml([System.IO.File]::ReadAllText($uaXml))
+            $node = $doc.SelectSingleNode('//CertificateSubject')
+            if (-not $node) { Add-Result -Phase DOC -Check "DOC ${n}: OPC UA server certificate subject" -Status WARN -Detail "No <CertificateSubject> in $uaXml"; continue }
+            if ($node.InnerText -eq $srvSubject) {
+                Add-Result -Phase DOC -Check "DOC ${n}: OPC UA server certificate subject" -Status PASS -Detail "Already $srvSubject"
+            } else {
+                Copy-Item $uaXml "$uaXml.$ts.bak" -Force
+                $old = $node.InnerText; $node.InnerText = $srvSubject
+                Save-Xml $doc $uaXml
+                Add-Result -Phase DOC -Check "DOC ${n}: OPC UA server certificate subject" -Status PASS -Detail "$srvSubject (was '$old')"
+            }
+        }
+
+        # 2. trust both ways when DOC already has its certificate (a re-run), so the start below connects at once
+        $trusted = $false
+        if (& $haveCert) {
+            $t = Set-DataAppDeviceWiseTrust -AppDir $userDir -PkiServer $pki -OwnCertDir $store.Own -TrustedCertDir $store.Trusted
+            Add-Result -Phase DOC -Check "DOC: deviceWise OPC UA trust (OPC-UA-API, $userDir)" -Status $(if ($t.Ok) { 'PASS' } else { 'FAIL' }) -Detail $t.Detail
+            $trusted = $t.Ok
+        }
+
+        # 3. (re)start every DOC; close its start-up message boxes (watched at least BoxWatchSeconds) and wait
+        #    for the certificate on a first run
+        $known = @($docCfg.KnownStartupMessages)
+        $boxes = @{}
+        $minWatch = if ($docCfg.PSObject.Properties['BoxWatchSeconds']) { [int]$docCfg.BoxWatchSeconds } else { 20 }
+        $watch = {
+            param([int]$MinSeconds, [int]$MaxSeconds, [scriptblock]$Done)
+            $t0 = Get-Date
+            do {
+                foreach ($mm in $machines) {
+                    $p = Get-DOCProcess -Manifest $Manifest -Instance ([int]$mm.CNCIndex)
+                    if ($p) { $boxes[[int]$mm.CNCIndex] += @(Close-ProcessMessageBoxes -ProcessId $p.Id) }
+                }
+                $el = ((Get-Date) - $t0).TotalSeconds
+                $finished = $el -ge $MinSeconds -and (& $Done)
+                if (-not $finished) { Start-Sleep -Seconds 3 }
+            } while (-not $finished -and $el -lt $MaxSeconds)
+        }
         foreach ($m in $machines) {
             $n = [int]$m.CNCIndex
             $r = Restart-DOCInstance -Manifest $Manifest -Instance $n
             Add-Result -Phase DOC -Check "DOC ${n}: started" -Status $(if ($r.Ok) { 'PASS' } else { 'FAIL' }) -Detail $r.Detail
-            if (-not $r.Ok) { continue }
-            $docDir = ([string]$docCfg.BasePath).Replace('{N}', "$n")
-            # DOC's start-up message boxes (e.g. PartLookup revision MAX not found while the database is empty) are
-            # closed so they cannot hold DOC up; expected ones (DOC.KnownStartupMessages) are noted, others warned
-            $known = @($docCfg.KnownStartupMessages)
-            $proc  = Get-DOCProcess -Manifest $Manifest -Instance $n
-            $boxes = @()
-            $deadline = (Get-Date).AddSeconds($wait)
-            do {
-                if ($proc) { $boxes += @(Close-ProcessMessageBoxes -ProcessId $proc.Id) }
-                $store = Find-DOCCertStore -DocDir $docDir
-                if (-not $store) { Start-Sleep -Seconds 3 }
-            } while (-not $store -and (Get-Date) -lt $deadline)
-            foreach ($b in ($boxes | Select-Object -Unique)) {
+            $boxes[$n] = @()
+        }
+        & $watch $minWatch ([Math]::Max($wait, $minWatch)) { $trusted -or (& $haveCert) }
+        # 4. first run: DOC made its certificate on this start - trust it, then restart DOC so it connects
+        if (-not $trusted) {
+            if (& $haveCert) {
+                $t = Set-DataAppDeviceWiseTrust -AppDir $userDir -PkiServer $pki -OwnCertDir $store.Own -TrustedCertDir $store.Trusted
+                Add-Result -Phase DOC -Check "DOC: deviceWise OPC UA trust (OPC-UA-API, $userDir)" -Status $(if ($t.Ok) { 'PASS' } else { 'FAIL' }) -Detail $t.Detail
+                if ($t.Ok) {
+                    foreach ($m in $machines) {
+                        $r = Restart-DOCInstance -Manifest $Manifest -Instance ([int]$m.CNCIndex)
+                        Add-Result -Phase DOC -Check "DOC $($m.CNCIndex): restarted after trust" -Status $(if ($r.Ok) { 'PASS' } else { 'FAIL' }) -Detail $r.Detail
+                    }
+                    & $watch $minWatch $minWatch { $true }
+                }
+            } else {
+                Add-Result -Phase DOC -Check "DOC: deviceWise OPC UA trust" -Status WARN `
+                    -Detail "DOC made no OPC UA certificate in $($store.Own) within $wait s - check DOC's OPC connection, then re-run Step 9"
+            }
+        }
+        foreach ($n in @($boxes.Keys | Sort-Object)) {
+            foreach ($b in ($boxes[$n] | Select-Object -Unique)) {
                 $isKnown = @($known | Where-Object { $_ -and $b -like "*$_*" }).Count -gt 0
                 Add-Result -Phase DOC -Check "DOC ${n}: start-up message closed" -Status $(if ($isKnown) { 'PASS' } else { 'WARN' }) `
                     -Detail "$b$(if ($isKnown) { ' (expected while the database has no PartLookup data)' })"
             }
-            if (-not $store) {
-                Add-Result -Phase DOC -Check "DOC ${n}: deviceWise OPC UA trust" -Status WARN `
-                    -Detail "DOC-$n made no OPC UA certificate under $docDir within $wait s (no CertificateStores / pki folder) - check its OPC connection, then re-run Step 9"
-                continue
-            }
-            $t = Set-DataAppDeviceWiseTrust -AppDir $docDir -PkiServer $pki -OwnCertDir $store.Own -TrustedCertDir $store.Trusted
-            Add-Result -Phase DOC -Check "DOC ${n}: deviceWise OPC UA trust" -Status $(if ($t.Ok) { 'PASS' } else { 'FAIL' }) -Detail "$($t.Detail) ($($store.Own))"
         }
+
     }
     #endregion
 

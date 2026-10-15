@@ -264,7 +264,10 @@
     "ProcessPrefixes":    [ "1ST", "SPC", "VER" ],
     "StartInstances":     true,
     "CertWaitSeconds":    60,
-    "KnownStartupMessages": [ "PartLookup revision in configuration" ]
+    "KnownStartupMessages": [ "PartLookup revision in configuration" ],
+    "OpcUaXml":           "Plugins\\OPC UA\\DocOpcUa.xml",
+    "UserCertStore":      "%LOCALAPPDATA%\\Medtronic",
+    "BoxWatchSeconds":    20
   },
 
   "DataApps": {

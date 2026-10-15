@@ -573,6 +573,23 @@ function Get-AppAccount {
     return $template -replace '\{SITE\}', $State['SiteCode']
 }
 
+function Get-AccountLocalAppData {
+    <#
+        %LOCALAPPDATA% of an account (e.g. the service account DOC runs as), from its profile in ProfileList,
+        so a per-user store is found whichever account runs the wizard. Falls back to this user's LOCALAPPDATA
+        when the account is this user, empty, or has no profile on this machine.
+    #>
+    param([string]$Account)
+    $me = "$env:USERDOMAIN\$env:USERNAME"
+    if (-not $Account -or $Account -ieq $me) { return $env:LOCALAPPDATA }
+    try {
+        $sid = (New-Object System.Security.Principal.NTAccount($Account)).Translate([System.Security.Principal.SecurityIdentifier]).Value
+        $img = (Get-ItemProperty -LiteralPath "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$sid" -ErrorAction Stop).ProfileImagePath
+        if ($img) { return (Join-Path ([Environment]::ExpandEnvironmentVariables($img)) 'AppData\Local') }
+    } catch { }
+    return $env:LOCALAPPDATA
+}
+
 function Get-TopFolders {
     # The paths that are not inside another path of the list (a grant on those covers the rest by inheritance)
     param([string[]]$Paths)
