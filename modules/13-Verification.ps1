@@ -1095,10 +1095,10 @@ function Invoke-Verification {
 
     #region HTML report -------------------------------------------------------
 
-    $passCount  = ($checks | Where-Object { $_.Status -eq 'PASS' }).Count
-    $warnCount  = ($checks | Where-Object { $_.Status -eq 'WARN' }).Count
-    $failCount  = ($checks | Where-Object { $_.Status -eq 'FAIL' }).Count
-    $blankCount = ($checks | Where-Object { $_.Status -in 'BLANK','NA' }).Count
+    $passCount  = @($checks | Where-Object { $_.Status -eq 'PASS' }).Count
+    $warnCount  = @($checks | Where-Object { $_.Status -eq 'WARN' }).Count
+    $failCount  = @($checks | Where-Object { $_.Status -eq 'FAIL' }).Count
+    $blankCount = @($checks | Where-Object { $_.Status -in 'BLANK','NA' }).Count
     $totalCount = $checks.Count
 
     $overallStatus = if ($failCount -gt 0) { 'FAIL' } elseif ($warnCount -gt 0) { 'WARN' } else { 'PASS' }

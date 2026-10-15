@@ -238,8 +238,10 @@ function Invoke-DOCConfig {
 
         # 3. (re)start every DOC; close its start-up message boxes (watched at least BoxWatchSeconds) and wait
         #    for the certificate on a first run
-        $known = @($docCfg.KnownStartupMessages)
-        $boxes = @{}
+        $known  = @($docCfg.KnownStartupMessages)
+        $titles = @($docCfg.KnownStartupDialogTitles | Where-Object { $_ })
+        $boxes  = @{ 0 = @() }                  # 0: service-notification boxes (owner csrss, DOC instance unknown)
+        $stuckBoxes = New-Object System.Collections.Generic.List[string]   # filled inside the $watch script block
         $minWatch = if ($docCfg.PSObject.Properties['BoxWatchSeconds']) { [int]$docCfg.BoxWatchSeconds } else { 20 }
         $watch = {
             param([int]$MinSeconds, [int]$MaxSeconds, [scriptblock]$Done)
@@ -248,6 +250,10 @@ function Invoke-DOCConfig {
                 foreach ($mm in $machines) {
                     $p = Get-DOCProcess -Manifest $Manifest -Instance ([int]$mm.CNCIndex)
                     if ($p) { $boxes[[int]$mm.CNCIndex] += @(Close-ProcessMessageBoxes -ProcessId $p.Id) }
+                }
+                if ($titles) {
+                    $tb = Close-TitledMessageBoxes -Titles $titles
+                    $boxes[0] += @($tb.Closed); foreach ($x in $tb.Stuck) { $stuckBoxes.Add($x) }
                 }
                 $el = ((Get-Date) - $t0).TotalSeconds
                 $finished = $el -ge $MinSeconds -and (& $Done)
@@ -281,9 +287,14 @@ function Invoke-DOCConfig {
         foreach ($n in @($boxes.Keys | Sort-Object)) {
             foreach ($b in ($boxes[$n] | Select-Object -Unique)) {
                 $isKnown = @($known | Where-Object { $_ -and $b -like "*$_*" }).Count -gt 0
-                Add-Result -Phase DOC -Check "DOC ${n}: start-up message closed" -Status $(if ($isKnown) { 'PASS' } else { 'WARN' }) `
+                $who = if ($n -eq 0) { 'DOC' } else { "DOC ${n}" }
+                Add-Result -Phase DOC -Check "${who}: start-up message closed" -Status $(if ($isKnown) { 'PASS' } else { 'WARN' }) `
                     -Detail "$b$(if ($isKnown) { ' (expected while the database has no PartLookup data)' })"
             }
+        }
+        foreach ($b in ($stuckBoxes | Select-Object -Unique)) {
+            Add-Result -Phase DOC -Check "DOC: start-up message still open" -Status WARN `
+                -Detail "$b - Windows did not let the wizard press OK (system-owned box); press OK on it so DOC continues"
         }
 
     }

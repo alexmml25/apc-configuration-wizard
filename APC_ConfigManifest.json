@@ -265,6 +265,7 @@
     "StartInstances":     true,
     "CertWaitSeconds":    60,
     "KnownStartupMessages": [ "PartLookup revision in configuration" ],
+    "KnownStartupDialogTitles": [ "PartLookup_DB" ],
     "OpcUaXml":           "Plugins\\OPC UA\\DocOpcUa.xml",
     "UserCertStore":      "%LOCALAPPDATA%\\Medtronic",
     "BoxWatchSeconds":    20

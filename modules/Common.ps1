@@ -493,10 +493,20 @@ public static class ApcMsgBox {
     [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
     static string Cls(IntPtr h) { var s = new StringBuilder(256); GetClassName(h, s, 256); return s.ToString(); }
     static string Txt(IntPtr h) { var s = new StringBuilder(1024); GetWindowText(h, s, 1024); return s.ToString(); }
-    public static List<string> CloseAll(uint pid) {
+    [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr h);
+    // pid > 0: that process's dialogs. pid = 0: dialogs with one of the given titles, whoever owns them - a
+    // service-notification MessageBox (DOC's PartLookup_DB) is drawn by csrss, not by the app (VM 2026-10-15)
+    public static List<string> CloseAll(uint pid) { return Close(pid, null); }
+    public static List<string> CloseTitled(string[] titles) { return Close(0, titles); }
+    public static List<IntPtr> LastClosed = new List<IntPtr>();
+    static List<string> Close(uint pid, string[] titles) {
         var found = new List<IntPtr>();
         EnumWindows((h, l) => { uint p; GetWindowThreadProcessId(h, out p);
-            if (p == pid && IsWindowVisible(h) && Cls(h) == "#32770") found.Add(h); return true; }, IntPtr.Zero);
+            if (!IsWindowVisible(h) || Cls(h) != "#32770") return true;
+            if (pid > 0 && p == pid) found.Add(h);
+            else if (pid == 0 && titles != null && Array.IndexOf(titles, Txt(h)) >= 0) found.Add(h);
+            return true; }, IntPtr.Zero);
+        LastClosed = found;
         var texts = new List<string>();
         foreach (var h in found) {
             var parts = new List<string>();
@@ -512,6 +522,24 @@ public static class ApcMsgBox {
 '@
     }
     return @([ApcMsgBox]::CloseAll([uint32]$ProcessId))
+}
+
+function Close-TitledMessageBoxes {
+    <#
+        Closes message boxes with one of the given titles whoever draws them (DOC's PartLookup_DB comes from csrss:
+        a service-notification box, so Close-ProcessMessageBoxes does not see it). Only the listed titles are
+        touched. Returns @{ Closed = "<title>: <text>"...; Stuck = ... } - Stuck when the box is still there 2 s
+        later (Windows can block clicks on system-owned windows).
+    #>
+    param([Parameter(Mandatory)] [string[]]$Titles)
+    [void](Close-ProcessMessageBoxes -ProcessId 0 -ErrorAction SilentlyContinue)   # loads the type
+    $texts = @([ApcMsgBox]::CloseTitled($Titles))
+    $hwnds = @([ApcMsgBox]::LastClosed)
+    if (-not $texts) { return @{ Closed = @(); Stuck = @() } }
+    Start-Sleep -Seconds 2
+    $stuck = @(); $closed = @()
+    for ($i = 0; $i -lt $texts.Count; $i++) { if ([ApcMsgBox]::IsWindow($hwnds[$i])) { $stuck += $texts[$i] } else { $closed += $texts[$i] } }
+    return @{ Closed = $closed; Stuck = $stuck }
 }
 
 function Restart-DOCInstance {
