@@ -23,7 +23,7 @@
     Output: C:\APC_Config\Logs\chmi-updatecerts_<ts>.txt
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Invoke-800xAUpdateAppCerts.ps1              # backup + report only
-    powershell -ExecutionPolicy Bypass -File .\tools\Invoke-800xAUpdateAppCerts.ps1 -Confirmed   # update (asks for the password)
+    powershell -ExecutionPolicy Bypass -File .\tools\Invoke-800xAUpdateAppCerts.ps1 -Confirmed   # update (password in a Windows credential dialog)
 #>
 param(
     [switch]$Confirmed,
@@ -201,8 +201,11 @@ if (-not $Confirmed) {
     Finish 10
 }
 
-$sec = Read-Host "Password for $UserName (OPC UA login to the 800xA applications)" -AsSecureString
-$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+# Windows credential dialog (paste works there, unlike a hidden console prompt); user name filled in
+$cred = Get-Credential -UserName $UserName -Message 'OPC UA login to the 800xA applications (same account as the UA Management Portal Connect)'
+if (-not $cred) { Say 'No credentials entered - nothing was updated.'; Finish 4 }
+$UserName = $cred.UserName
+$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($cred.Password)
 try { $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
 $identity = New-Object Opc.Ua.UserIdentity($UserName, $plain)
 $plain = $null
