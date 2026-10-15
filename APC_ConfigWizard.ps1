@@ -1553,6 +1553,8 @@ $Script:StartStep      = 1
 $Script:RunTotal       = 0
 $Script:RunDone        = 0
 $Script:RerunIndex     = 0
+$Script:StoppedAt      = -1      # StepDefs index where a run stopped after a failed step (a re-run of it can continue the run)
+$Script:RunStepsAll    = @()     # the run's steps (a re-run sets AutoState.RunSteps to its own step)
 $Global:FetchedMachines = @()
 
 function Update-RunProgress {
@@ -1619,7 +1621,7 @@ function Run-NextAutoModule {
                 $choice  = [System.Windows.MessageBox]::Show(
                     "$modName reported errors - see the log.`n`nContinue to the next step?",
                     "Step Failed", "YesNo", "Warning")
-                if ($choice -ne 'Yes') { Complete-Run -Title 'Stopped'; return }
+                if ($choice -ne 'Yes') { $Script:StoppedAt = $Script:AutoIndex; Complete-Run -Title 'Stopped'; return }
             }
             $Script:AutoIndex++
             Run-NextAutoModule
@@ -1911,6 +1913,8 @@ function Start-ConfigurationRun {
     }
     # CNCAsset / CNCType are written once, by the run's last step that restarts dwcore (Set-DwCncAssetAfterRestarts)
     $Script:AutoState['RunSteps'] = @($runSteps)
+    $Script:RunStepsAll = @($runSteps)
+    $Script:StoppedAt   = -1
     Save-State -State $Script:AutoState
 
     # Step rows: only the type's steps are shown; mode-skipped and earlier-than-start steps show Skipped
@@ -1988,6 +1992,21 @@ foreach ($s in $Script:StepDefs) {
                 Set-StepState -Index $Script:RerunIndex -State $(if ($ok) { 'Done' } else { 'Failed' })
                 Save-RunLog
                 if ($Script:RerunIndex -eq 13) { Update-VerifySummary -LogText $controls['LogAll'].Text }
+                # The run stopped at this step and it now passes: offer to continue with the remaining steps
+                $stopped = $Script:StoppedAt
+                if ($ok -and $stopped -ge 0 -and $Script:StepDefs[$stopped].Index -eq $Script:RerunIndex -and $stopped + 1 -lt $Script:StepDefs.Count) {
+                    $choice = [System.Windows.MessageBox]::Show(
+                        "Step $($Script:RerunIndex) now passes. Continue the run with the remaining steps?",
+                        "Continue run", "YesNo", "Question")
+                    if ($choice -eq 'Yes') {
+                        $Script:StoppedAt = -1
+                        $Script:AutoState['RunSteps'] = @($Script:RunStepsAll)
+                        $Script:RunState  = 'running'
+                        $controls['TxtRunTitle'].Text = 'Running'
+                        $Script:AutoIndex = $stopped + 1
+                        Run-NextAutoModule
+                    }
+                }
             }
     })
 }
