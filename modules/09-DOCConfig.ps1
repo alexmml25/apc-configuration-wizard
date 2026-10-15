@@ -241,7 +241,7 @@ function Invoke-DOCConfig {
         $known  = @($docCfg.KnownStartupMessages)
         $titles = @($docCfg.KnownStartupDialogTitles | Where-Object { $_ })
         $boxes  = @{ 0 = @() }                  # 0: service-notification boxes (owner csrss, DOC instance unknown)
-        $stuckBoxes = New-Object System.Collections.Generic.List[string]   # filled inside the $watch script block
+        $stuckBoxes = New-Object System.Collections.Generic.List[string]
         $minWatch = if ($docCfg.PSObject.Properties['BoxWatchSeconds']) { [int]$docCfg.BoxWatchSeconds } else { 20 }
         $watch = {
             param([int]$MinSeconds, [int]$MaxSeconds, [scriptblock]$Done)
@@ -253,7 +253,7 @@ function Invoke-DOCConfig {
                 }
                 if ($titles) {
                     $tb = Close-TitledMessageBoxes -Titles $titles
-                    $boxes[0] += @($tb.Closed); foreach ($x in $tb.Stuck) { $stuckBoxes.Add($x) }
+                    $boxes[0] += @($tb.Closed) + @($tb.Stuck)    # a box still closing is retried on the next pass
                 }
                 $el = ((Get-Date) - $t0).TotalSeconds
                 $finished = $el -ge $MinSeconds -and (& $Done)
@@ -309,6 +309,8 @@ function Invoke-DOCConfig {
                     -Detail "$b$(if ($isKnown) { ' (expected while the database has no PartLookup data)' })"
             }
         }
+        # only a box still on screen at the end counts (one closing during the 2 s check is not stuck)
+        if ($titles) { $final = Close-TitledMessageBoxes -Titles $titles; foreach ($x in $final.Stuck) { $stuckBoxes.Add($x) } }
         foreach ($b in ($stuckBoxes | Select-Object -Unique)) {
             Add-Result -Phase DOC -Check "DOC: start-up message still open" -Status WARN `
                 -Detail "$b - Windows did not let the wizard press OK (system-owned box); press OK on it so DOC continues"
