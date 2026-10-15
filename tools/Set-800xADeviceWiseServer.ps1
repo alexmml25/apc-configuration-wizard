@@ -99,7 +99,7 @@ $gwCert = if ($gwFile) { Load-Cert $gwFile.FullName } else { $null }
 if (-not $gwCert) { Say "  Gateway certificate not found in $pki\own\certs."; Finish 6 }
 
 try {
-    $aos  = [ABB.xA.Base.System800xA]::GetCurrent().GetBaseServices().AspectObjectsServices
+    $aos  = [ABB.xA.Base.System800xAExtensions]::GetBaseServices([ABB.xA.Base.System800xA]::GetCurrent()).AspectObjectsServices   # extension method: called on its static class
     # ObjectId / AspectCategoryId live in another ABB assembly: take their types from GetAspects(ObjectId, AspectCategoryId)
     $ga = [ABB.xA.Base.IAspectObjectsServices].GetMethods() | Where-Object {
         $_.Name -eq 'GetAspects' -and $_.GetParameters().Count -eq 2 -and $_.GetParameters()[1].ParameterType.Name -eq 'AspectCategoryId' } | Select-Object -First 1

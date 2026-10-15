@@ -51,7 +51,7 @@ $onResolve = [System.ResolveEventHandler] {
 [System.AppDomain]::CurrentDomain.add_AssemblyResolve($onResolve)
 try { [void][System.Reflection.Assembly]::LoadFrom((Join-Path $BinDir 'ABB.xA.Base.dll')) } catch { Fail 'loading ABB.xA.Base.dll' $_; Finish 1 }
 
-try { $aos = [ABB.xA.Base.System800xA]::GetCurrent().GetBaseServices().AspectObjectsServices }
+try { $aos = [ABB.xA.Base.System800xAExtensions]::GetBaseServices([ABB.xA.Base.System800xA]::GetCurrent()).AspectObjectsServices }   # GetBaseServices is an extension method: called on its static class
 catch { Fail 'connecting to 800xA' $_; Finish 2 }
 
 # id types live in another ABB assembly: take them from the method signatures
