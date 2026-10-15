@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
     Creates a new 800xA OPC UA root certificate the way the UA Management Portal's "Create Root
-    Certificate" does (Step 11, SOP sub-step 2). TEST TOOL - non-production nodes only.
+    Certificate" does (Step 11, SOP sub-step 2). Called by Step 11 with -IfNeeded -Confirmed.
 .DESCRIPTION
     Calls the portal's own ABB function CertificateHandler.RunGenerateAndInstallRootCertificateAndRevocationList
     (32-bit, the script restarts itself in 32-bit PowerShell if needed), which:
@@ -17,8 +17,13 @@
     Without -Confirmed it only makes the backup and reports what it would do.
     It does NOT update the application certificates (sub-step 4); after a new root, the existing
     application certificates are signed by the old root until they are updated.
-    Exit codes: 0 created and verified, 10 backup only (no -Confirmed), 1 ABB assemblies not loaded,
-    2 cannot connect to 800xA, 3 not administrator / bad parameters, 4 create failed, 5 created but a check failed.
+    -IfNeeded: create only when this node cannot sign with the current root - no root, the root without its key
+    here (e.g. left from the machine the VM was copied from), or a root made on a node that is not part of this
+    800xA system. A root that is Installed here is kept (exit 11); a root that belongs to another node of this
+    system is never replaced (exit 12: create/sign there).
+    Exit codes: 0 created and verified, 10 backup only (no -Confirmed), 11 kept (-IfNeeded, root usable here),
+    12 not replaced (root of another node of this system), 1 ABB assemblies not loaded, 2 cannot connect to
+    800xA, 3 not administrator / bad parameters, 4 create failed, 5 created but a check failed.
     Output: C:\APC_Config\Logs\chmi-createroot_<ts>.txt
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Invoke-800xACreateRoot.ps1              # backup + report only
@@ -26,6 +31,7 @@
 #>
 param(
     [switch]$Confirmed,
+    [switch]$IfNeeded,
     [string]$Organization     = 'ABB',
     [string]$OrganizationUnit = 'Industrial Automation',
     [string]$Country          = 'CA',
@@ -43,6 +49,7 @@ if ([Environment]::Is64BitProcess -or [Threading.Thread]::CurrentThread.Apartmen
               '-Organization', $Organization, '-OrganizationUnit', $OrganizationUnit, '-Country', $Country,
               '-ValidYears', $ValidYears, '-BinDir', $BinDir, '-PkiRoot', $PkiRoot, '-OutDir', $OutDir, '-BackupRoot', $BackupRoot)
     if ($Confirmed) { $argz += '-Confirmed' }
+    if ($IfNeeded)  { $argz += '-IfNeeded' }
     & $ps32 @argz
     exit $LASTEXITCODE
 }
@@ -106,6 +113,28 @@ if ($oldRaw -and $oldRaw.Length) {
     Say "  $($old.Thumbprint)  $($old.Subject)  $($old.NotBefore.ToString('yyyy-MM-dd')) -> $($old.NotAfter.ToString('yyyy-MM-dd'))  created on '$oldNode'"
 } else { Say '  (none)' }
 Say ''
+
+if ($IfNeeded -and $oldThumb) {
+    $here  = Get-StoreCert 'Root' $oldThumb
+    $hosts = @(foreach ($n in @($backEnd.GetApplicationNodeList())) {
+        if ("$($n.Type)" -in 'UaConnect', 'UaServer') {
+            if ($n.ServerUrl -match '^opc\.tcp://([^:/]+)') { $Matches[1] }
+            foreach ($a in @($n.Addresses)) { $a }
+        }
+    }) | ForEach-Object { ($_ -split '\.')[0].ToUpperInvariant() } | Select-Object -Unique
+    $nodeShort = (([string]$oldNode) -split '\.')[0].ToUpperInvariant()
+    $thisShort = ([Environment]::MachineName).ToUpperInvariant()
+    if ($here -and $here.HasPrivateKey) {
+        Say "Root is Installed on this node (in LocalMachine\Root with its key): kept, nothing created."
+        Finish 11
+    }
+    if ($nodeShort -and $nodeShort -ne $thisShort -and $nodeShort -in $hosts) {
+        Say "Root was created on $oldNode, which is a node of this 800xA system: not replaced. Sign there, or ask the APC Team."
+        Finish 12
+    }
+    Say "Root not usable here ($(if ($here) { 'in LocalMachine\Root without its key' } else { 'not in LocalMachine\Root' }); created on '$oldNode', not a node of this system): a new root is needed."
+    Say ''
+}
 
 # -- backup -----------------------------------------------------------------------
 $backupDir = Join-Path $BackupRoot "${ts}_800xA-root"

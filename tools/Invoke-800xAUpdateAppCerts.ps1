@@ -2,7 +2,9 @@
 <#
 .SYNOPSIS
     Updates the 800xA OPC UA application certificates the way the UA Management Portal's "Update Application
-    Certificates" does (Step 11, SOP sub-step 4). TEST TOOL - run after Invoke-800xACreateRoot.ps1.
+    Certificates" does (Step 11, SOP sub-step 4). Called by Step 11 after Invoke-800xACreateRoot.ps1 -IfNeeded.
+    -NonInteractive: the password comes from the environment variable APC_OPCUA_PWD (set by Step 11 for this
+    process only, cleared after reading) instead of the credential dialog.
 .DESCRIPTION
     Uses the portal's own ABB functions (32-bit; the script restarts itself in 32-bit STA PowerShell if needed):
       1. reads the root and revocation list from 800xA; the root must be in LocalMachine\Root with its key
@@ -28,6 +30,7 @@
 param(
     [switch]$Confirmed,
     [switch]$Force,
+    [switch]$NonInteractive,
     [string]$UserName = "$env:USERDOMAIN\$env:USERNAME",   # the account the operator logs in with in the portal
     [string]$BinDir  = 'C:\Program Files (x86)\ABB 800xA\Base\bin',
     [string]$PkiRoot = 'C:\ProgramData\ABB\Process Portal A',
@@ -42,6 +45,7 @@ if ([Environment]::Is64BitProcess -or [Threading.Thread]::CurrentThread.Apartmen
               '-BinDir', $BinDir, '-PkiRoot', $PkiRoot, '-OutDir', $OutDir, '-BackupRoot', $BackupRoot)
     if ($Confirmed) { $argz += '-Confirmed' }
     if ($Force)     { $argz += '-Force' }
+    if ($NonInteractive) { $argz += '-NonInteractive' }
     & $ps32 @argz
     exit $LASTEXITCODE
 }
@@ -201,12 +205,18 @@ if (-not $Confirmed) {
     Finish 10
 }
 
-# Windows credential dialog (paste works there, unlike a hidden console prompt); user name filled in
-$cred = Get-Credential -UserName $UserName -Message 'OPC UA login to the 800xA applications (same account as the UA Management Portal Connect)'
-if (-not $cred) { Say 'No credentials entered - nothing was updated.'; Finish 4 }
-$UserName = $cred.UserName
-$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($cred.Password)
-try { $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+if ($NonInteractive) {
+    $plain = $env:APC_OPCUA_PWD
+    Remove-Item Env:\APC_OPCUA_PWD -ErrorAction SilentlyContinue
+    if (-not $plain) { Say 'No password in APC_OPCUA_PWD (NonInteractive) - nothing was updated.'; Finish 3 }
+} else {
+    # Windows credential dialog (paste works there, unlike a hidden console prompt); user name filled in
+    $cred = Get-Credential -UserName $UserName -Message 'OPC UA login to the 800xA applications (same account as the UA Management Portal Connect)'
+    if (-not $cred) { Say 'No credentials entered - nothing was updated.'; Finish 4 }
+    $UserName = $cred.UserName
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($cred.Password)
+    try { $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+}
 $identity = New-Object Opc.Ua.UserIdentity($UserName, $plain)
 $plain = $null
 

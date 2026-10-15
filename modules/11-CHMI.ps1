@@ -9,7 +9,17 @@
     Today: Inspections GP CSV folders (BENCH / 100%) and Verification GP shift settings, per DOC-assigned
     Cell_n, with values from Manifest.ABB800xA.Settings.
 
-    The only automated action in the flow is the General Property write above.
+    800xA OPC UA certificates (SOP sub-steps 1-4, Manifest.CHMI.AutomateCertificates): with the SVC account
+    password from the window (State.SvcAccountPassword) Step 11 runs, with the UA Management Portal's own
+    functions (32-bit, tools\):
+      1. Invoke-800xACreateRoot.ps1 -IfNeeded -Confirmed: a new root only when this node cannot sign with the
+         current one (none / no key here / left from the machine the VM was copied from); never replaces a root
+         of another node of this system
+      2. Invoke-800xAUpdateAppCerts.ps1 -Confirmed -NonInteractive: portal certificate, then OPC UA Connect
+         (trust list, CSR signed by the root, push, reconnect check, 800xA aspect); applications already
+         signed by the current root are left alone
+    Both back up first (C:\APC_Config\Backups\<ts>_800xA-*) and write a report to the run's Logs folder.
+    Proven on SJUM7AAPPS0048 2026-10-15.
 
     Read-only checks - OFF in the flow (Manifest.CHMI.AutomatedChecks = false; code kept for later use,
     Step 13 still runs its own certificate / server checks):
@@ -41,6 +51,15 @@ function Invoke-CHMI {
     #region -- 800xA General Properties (Manifest.ABB800xA.Properties) --------
 
     Invoke-800xAPropertyStep -Manifest $Manifest -State $State -Phase CHMI -LogDir (Get-RunDir -State $State -Name Logs)
+
+    #endregion
+
+    #region -- 800xA OPC UA certificates (SOP sub-steps 1-4) -----------------
+
+    $certsDone = $false
+    if ([bool]$Manifest.CHMI.AutomateCertificates) {
+        $certsDone = Invoke-800xACertificateSetup -Manifest $Manifest -State $State
+    }
 
     #endregion
 
@@ -85,6 +104,9 @@ function Invoke-CHMI {
     Write-Log MANUAL ""
     Write-Log MANUAL "== GUIDED STEPS (complete in order, then press Continue) =="
     Write-Log MANUAL ""
+    if ($certsDone) {
+    Write-Log MANUAL "1. UA Management Portal certificates: done by the wizard (root + application certificates) - nothing to do"
+    } else {
     Write-Log MANUAL "1. UA Management Portal (ABB Start Menu -> ABB System 800xA -> System -> Tools -> UA Management Portal)"
     if ($rootCert -and $rootCert.Found) {
         Write-Log MANUAL "   a. The root certificate already exists ($($rootCert.Thumbprint), created $($rootCert.NotBefore))."
@@ -99,6 +121,7 @@ function Invoke-CHMI {
     Write-Log MANUAL "   b. Connect... -> 800xAOpcUaConnect -> Connect... (log in as $account)"
     Write-Log MANUAL "   c. With 800xAOpcUaConnect selected: Update Application Certificates..."
     Write-Log MANUAL "   d. Check the Issuer of 800xAManagementPortal and 800xAOpcUaConnect is 800xAOPCUARoot (Step 13 also checks it)"
+    }
     Write-Log MANUAL ""
     Write-Log MANUAL "2. Engineering Workplace -> Node Administration Structure -> All Nodes ->"
     Write-Log MANUAL "   DeviceWISE OPC UA, OPC UA Server Node -> DeviceWISE OPC UA, OPC UA Server -> OPC UA Server Info aspect"
@@ -125,4 +148,53 @@ function Invoke-CHMI {
     #endregion
 
     Write-Log PASS "CHMI step complete. Step 13 re-checks the certificates and the deviceWise OPC UA server connection."
+}
+
+function Invoke-800xACertificateSetup {
+    <#
+        Create Root (only if needed) + Update Application Certificates with the portal's own functions, through
+        tools\Invoke-800xACreateRoot.ps1 and tools\Invoke-800xAUpdateAppCerts.ps1 in 32-bit PowerShell. The SVC
+        account password goes to the update tool in an environment variable of that process only.
+        Returns $true when both parts end with the certificates signed by the current root.
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [hashtable]$State)
+    $account = Get-AppAccount -Manifest $Manifest -State $State
+    $secure  = $State['SvcAccountPassword']
+    if (-not $account -or $secure -isnot [Security.SecureString] -or $secure.Length -eq 0) {
+        Add-Result -Phase CHMI -Check '800xA OPC UA certificates' -Status WARN `
+            -Detail "No password for the SVC account ($account) in this run - certificates left to the guided steps"
+        return $false
+    }
+    $tools  = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools'
+    $ps32   = Join-Path $env:WINDIR 'SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
+    $logDir = Get-RunDir -State $State -Name Logs
+    $run = {
+        param([string]$Tool, [string[]]$ToolArgs)
+        $out = & $ps32 -NoProfile -STA -ExecutionPolicy Bypass -File (Join-Path $tools $Tool) -OutDir $logDir @ToolArgs 2>&1
+        $code = $LASTEXITCODE
+        foreach ($l in @($out)) { if ("$l".Trim()) { Write-Log INFO "  [$([IO.Path]::GetFileNameWithoutExtension($Tool))] $l" } }
+        $report = @($out | ForEach-Object { "$_" } | Where-Object { $_ -match '^Written: ' } | Select-Object -Last 1) -replace '^Written: ', ''
+        @{ Code = $code; Report = "$report" }
+    }
+
+    Write-Log INFO "800xA OPC UA root certificate (create only if this node cannot sign with the current one)..."
+    $r = & $run 'Invoke-800xACreateRoot.ps1' @('-IfNeeded', '-Confirmed')
+    switch ($r.Code) {
+        0  { Add-Result -Phase CHMI -Check '800xA OPC UA root certificate' -Status PASS -Detail "New root created on this node - report $($r.Report)" }
+        11 { Add-Result -Phase CHMI -Check '800xA OPC UA root certificate' -Status PASS -Detail "Root already usable on this node - kept" }
+        12 { Add-Result -Phase CHMI -Check '800xA OPC UA root certificate' -Status FAIL -Detail "The root belongs to another node of this 800xA system - not replaced; see $($r.Report)"; return $false }
+        default { Add-Result -Phase CHMI -Check '800xA OPC UA root certificate' -Status FAIL -Detail "Create Root ended with exit code $($r.Code) - see $($r.Report)"; return $false }
+    }
+
+    Write-Log INFO "800xA OPC UA application certificates (portal + OPC UA Connect)..."
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try { $env:APC_OPCUA_PWD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    try { $u = & $run 'Invoke-800xAUpdateAppCerts.ps1' @('-Confirmed', '-NonInteractive', '-UserName', $account) }
+    finally { Remove-Item Env:\APC_OPCUA_PWD -ErrorAction SilentlyContinue }
+    if ($u.Code -eq 0) {
+        Add-Result -Phase CHMI -Check '800xA OPC UA application certificates' -Status PASS -Detail "Signed by the current root (portal, OPC UA Connect) - report $($u.Report)"
+        return $true
+    }
+    Add-Result -Phase CHMI -Check '800xA OPC UA application certificates' -Status FAIL -Detail "Update ended with exit code $($u.Code) - see $($u.Report)"
+    return $false
 }

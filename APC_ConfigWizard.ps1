@@ -403,16 +403,19 @@ $xamlText = @'
               <StackPanel>
                 <TextBlock Text="Component passwords" FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,2"/>
                 <TextBlock FontSize="11" Foreground="#92400E" TextWrapping="Wrap" Margin="0,0,0,12"
-                           Text="Needed only when TimescaleDB (step 2) runs. In memory only - never written to disk or logs."/>
+                           Text="Needed only when TimescaleDB (step 2) or CHMI (step 11) runs. In memory only - never written to disk or logs."/>
                 <Grid>
                   <Grid.ColumnDefinitions><ColumnDefinition Width="140"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                   <TextBlock Grid.Row="0" Text="apcuser (local)" Style="{StaticResource Label}"
                              ToolTip="Password for the local TimescaleDB apcuser role created in Step 2 (must be the standard APC password)."/>
                   <PasswordBox x:Name="PwdAPCUser" Grid.Row="0" Grid.Column="1" Style="{StaticResource Pwd}"/>
                   <TextBlock Grid.Row="1" Text="postgres (local)" Style="{StaticResource Label}" Margin="0,0,12,0"
                              ToolTip="Password of the local PostgreSQL superuser postgres, set at installation. Step 2 logs in with it to create apcuser and the TimescaleDB database."/>
-                  <PasswordBox x:Name="PwdPostgres" Grid.Row="1" Grid.Column="1" Style="{StaticResource Pwd}" Margin="0"/>
+                  <PasswordBox x:Name="PwdPostgres" Grid.Row="1" Grid.Column="1" Style="{StaticResource Pwd}"/>
+                  <TextBlock x:Name="TxtSvcAccountLabel" Grid.Row="2" Text="SVC account" Style="{StaticResource Label}" Margin="0,0,12,0"
+                             ToolTip="Password of the site service account (ENT\SVC-APC-site). Step 11 logs in to 800xA OPC UA Connect with it to update the certificates."/>
+                  <PasswordBox x:Name="PwdSvcAccount" Grid.Row="2" Grid.Column="1" Style="{StaticResource Pwd}" Margin="0"/>
                 </Grid>
               </StackPanel>
             </Border>
@@ -1819,6 +1822,16 @@ function Start-ConfigurationRun {
     if (2 -in $runSteps -and -not $controls['PwdPostgres'].Password) {
         Show-Warning "Enter the postgres (local) password on the Sign in page - TimescaleDB (step 2) logs in with it." 'Password Required'; return $false
     }
+    $svcSite    = if ($controls['CmbSiteCode'].SelectedItem) { [string]$controls['CmbSiteCode'].SelectedItem.Content } else { '' }
+    $svcAccount = ([string]$manifest.AppAccount) -replace '\{SITE\}', $svcSite
+    if (11 -in $runSteps -and [bool]$manifest.CHMI.AutomateCertificates -and $runMode -ne 'Test') {
+        if (-not $controls['PwdSvcAccount'].Password) {
+            Show-Warning "Enter the $svcAccount password (SVC account) on the Sign in page - CHMI (step 11) updates the 800xA certificates with it." 'Password Required'; return $false
+        }
+        if (-not (Test-InstallerCredential -DomainUser $svcAccount -Password $controls['PwdSvcAccount'].Password)) {
+            Show-Warning "The $svcAccount password was not accepted by the domain. Re-enter it on the Sign in page." 'Password Rejected'; return $false
+        }
+    }
     $license = $controls['TxtLicense'].Text.Trim()
     if (7 -in $runSteps -and -not $license) {
         Show-Warning "Enter the CNCnetPDM license key or tick 'Use default perpetual license'."; return $false
@@ -1870,6 +1883,9 @@ function Start-ConfigurationRun {
     foreach ($c in $controls['PwdPostgres'].Password.ToCharArray()) { $suPwd.AppendChar($c) }
     $Script:AutoState['APCUserPassword']     = $apcPwd
     $Script:AutoState['PostgresPassword']    = $suPwd
+    $svcPwd = New-Object System.Security.SecureString
+    foreach ($c in $controls['PwdSvcAccount'].Password.ToCharArray()) { $svcPwd.AppendChar($c) }
+    $Script:AutoState['SvcAccountPassword']  = $svcPwd
     $Script:AutoState['SiteDBPassword']      = $sdbPwd
 
     $runLog = @("$($Script:ConfigTypes[$type].Name) - $($Script:RunModeName): steps $($runSteps -join ', ')", "Run folder: $runRoot")
