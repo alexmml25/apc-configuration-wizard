@@ -337,6 +337,22 @@ function Get-800xAOpcUaServerStatus {
     [pscustomobject]$status
 }
 
+function Test-800xAServerIsOtherGateway {
+    # '' when the server start time 800xA reads matches this VM's dwcore process start (within 3 minutes, local or
+    # UTC), else the reason. '' too when it cannot be compared (no dwcore process, unreadable time).
+    param($StartTime)
+    try {
+        $q = @(& sc.exe queryex dwcore 2>$null) | Where-Object { $_ -match '^\s*PID\s*:\s*(\d+)' } | Select-Object -First 1
+        if (-not $q -or [int]$Matches[1] -le 0) { return '' }
+        $local = (Get-Process -Id ([int]$Matches[1]) -ErrorAction Stop).StartTime
+        $read  = if ($StartTime -is [datetime]) { $StartTime } else { [datetime]::Parse([string]$StartTime, [Globalization.CultureInfo]::InvariantCulture) }
+        $diffLocal = [math]::Abs(($read - $local).TotalMinutes)
+        $diffUtc   = [math]::Abs(($read - $local.ToUniversalTime()).TotalMinutes)
+        if ([math]::Min($diffLocal, $diffUtc) -le 3) { return '' }
+        return "800xA reads a deviceWise server started $read, but this VM's dwcore started $local - the DEVICEWISE OPC UA Server URL points to another machine (Step 11 sets it)"
+    } catch { return '' }
+}
+
 function Test-800xAOpcUaServer {
     <#
         Adds one result for the OPC UA server connection: PASS when it is Running with Good quality and the
@@ -355,6 +371,9 @@ function Test-800xAOpcUaServer {
         $status = 'FAIL'; $detail = 'Values are not live (OPC quality not Good) - check the connection in Node Administration'
     } elseif ($expected -and $s.Product -notmatch [regex]::Escape($expected)) {
         $status = 'WARN'; $detail = "Running, but the server is '$who', expected $expected"
+    } elseif (($other = Test-800xAServerIsOtherGateway -StartTime $s.StartTime)) {
+        # 800xA can read another machine's gateway (a VM copied from SJUM7AAPPS0065 kept its Server URL, 2026-10-15)
+        $status = 'FAIL'; $detail = $other
     } else {
         $status = 'PASS'; $detail = "Running - $who, server started $($s.StartTime)"
     }
