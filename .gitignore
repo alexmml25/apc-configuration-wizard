@@ -51,3 +51,9 @@ dw-opcua-*.txt
 
 # gateway DB inspection output from the VMs - local only
 dw-db-*.txt
+
+# Data Analyzer binaries copied from a VM for inspection (Medtronic app + Traeger library) - never commit
+DataAnalyzer.exe
+CommonLib.dll
+Opc.UaFx.*.dll
+UsageControl.dll
