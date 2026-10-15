@@ -80,10 +80,8 @@ function Get-Objects([string]$TypeGuid) {
     try { @($en | ForEach-Object { $_ }) } finally { $en.Dispose() }
 }
 function Show-Aspects($ObjectId, [string]$Indent = '    ') {
-    $refs  = @(Invoke-M $mAll $aos @($ObjectId))
-    $list  = [Activator]::CreateInstance([System.Collections.Generic.List``1].MakeGenericType($refs[0].GetType()))
-    foreach ($r in $refs) { $list.Add($r) }
-    $infos = @(Invoke-M $mInfo $aos @($list, [Enum]::Parse($tAspDet, 'All')))
+    $refs  = Invoke-M $mAll $aos @($ObjectId)                                   # IEnumerable<AspectRef>, passed on as is
+    $infos = Invoke-M $mInfo $aos @($refs, [Enum]::Parse($tAspDet, 'All'))
     foreach ($i in $infos) {
         $cat = try { $i.AspectCategoryId } catch { '' }
         Say "$Indent- '$($i.Name)'  type $($i.AspectTypeId)  category $cat"
