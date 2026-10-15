@@ -127,7 +127,7 @@ function Invoke-Gds([string]$Name, [object[]]$Arguments) {
     if ($r -is [System.Threading.Tasks.Task]) { return $r.GetAwaiter().GetResult() }
     return $r
 }
-function Close-Session($Session) { if ($Session) { try { $Session.Close() } catch { } ; try { $Session.Dispose() } catch { } } }
+function Close-Session($Session) { if ($Session) { try { [void]$Session.Close() } catch { } ; try { $Session.Dispose() } catch { } } }
 
 # -- 1. root -------------------------------------------------------------------------
 Say '== 1. Root in 800xA =='
@@ -264,7 +264,7 @@ foreach ($n in $todo) {
         if ($n.Certificate) {
             [ABB.xA.Base.Ua.ManagementPortal.CertificateHandler]::WriteCertificateToTrustedDirectory($trustedPath, $n.Certificate)
             $upd = $inst.ApplicationConfiguration.CertificateValidator.Update($secCfg)
-            if ($upd -is [System.Threading.Tasks.Task]) { $upd.GetAwaiter().GetResult() }
+            if ($upd -is [System.Threading.Tasks.Task]) { [void]$upd.GetAwaiter().GetResult() }
             Say "     trusted its registered certificate $($n.Certificate.Thumbprint) in the portal"
         }
         $session = Invoke-Gds 'Connect' @($inst, $n.ServerUrl, $identity)

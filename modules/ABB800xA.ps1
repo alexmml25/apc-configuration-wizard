@@ -369,11 +369,11 @@ function Test-800xAOpcUaServer {
 function Get-800xAOpcUaCertificates {
     <#
         Reads (never changes) the 800xA OPC UA certificates under CHMI.PkiRoot.
-        - Root: the newest 800xAOpcUaRoot in OpcUaConnect\pki\issuer\certs. This is the root OPC UA Connect
-          uses. An older root with the same name can still sit in pki\trusted and in the Windows Root store
-          (seen on the MPR VM), so the root is never taken from there.
-        - 800xAOpcUaConnect (pki\own) and 800xAOpcUaManagementPortal (Management Portal pki\trusted): whether
-          each one is signed by that root. This is checked on the signature (certificate chain), not on the
+        - Root: the newest 800xAOpcUaRoot in OpcUaConnect\pki\issuer or pki\trusted. The portal's Update
+          Application Certificates moves the root from the issuer list to the trusted list (VM 2026-10-15), and an
+          older root with the same name can sit in either (seen on the MPR VM), so the newest one counts.
+        - 800xAOpcUaConnect and 800xAOpcUaManagementPortal: the newest of their pki file and their LocalMachine\My
+          certificate (where the applications keep the one they use): whether each one is signed by that root. This is checked on the signature (certificate chain), not on the
           issuer name, because every 800xA root has the same name.
         Returns one object per certificate: Name, Path, Found, Thumbprint, NotBefore, Issuer, IssuedByRoot.
     #>
@@ -405,11 +405,27 @@ function Get-800xAOpcUaCertificates {
         $top.Thumbprint -eq $RootCert.Thumbprint -and -not @($chain.ChainStatus | Where-Object { $_.Status -match 'NotSignatureValid' })
     }
 
-    $rootInfo = & $newest 'OpcUaConnect' 'issuer' "$root*.der"
+    $pick = {
+        # newest of several candidates (each @{ Cert; Path })
+        param([object[]]$Candidates)
+        $best = @($Candidates | Where-Object { $_.Cert } | Sort-Object { $_.Cert.NotBefore } -Descending | Select-Object -First 1)
+        if ($best) { $best[0] } else { $Candidates[0] }
+    }
+    $fromMy = {
+        param([string]$Cn)
+        $st = New-Object "$X509.X509Store" ('My', 'LocalMachine')
+        try {
+            $st.Open('ReadOnly')
+            $cert = @($st.Certificates | Where-Object { $_.Subject -match "^CN=$([regex]::Escape($Cn))(,|$)" } | Sort-Object NotBefore -Descending | Select-Object -First 1)
+            @{ Cert = if ($cert) { $cert[0] } else { $null }; Path = "Cert:\LocalMachine\My (CN=$Cn)" }
+        } catch { @{ Cert = $null; Path = "Cert:\LocalMachine\My (CN=$Cn)" } } finally { $st.Close() }
+    }
+
+    $rootInfo = & $pick @((& $newest 'OpcUaConnect' 'issuer' "$root*.der"), (& $newest 'OpcUaConnect' 'trusted' "$root*.der"))
     $items = @(
         @{ Name = $root;                        Info = $rootInfo }
-        @{ Name = '800xAOpcUaConnect';          Info = (& $newest 'OpcUaConnect' 'own' '800xAOpcUaConnect*.der') }
-        @{ Name = '800xAOpcUaManagementPortal'; Info = (& $newest 'OpcUaManagementPortal' 'trusted' '800xAOpcUaManagementPortal*.der') }
+        @{ Name = '800xAOpcUaConnect';          Info = (& $pick @((& $newest 'OpcUaConnect' 'own' '800xAOpcUaConnect*.der'), (& $fromMy '800xAOpcUaConnect'))) }
+        @{ Name = '800xAOpcUaManagementPortal'; Info = (& $pick @((& $newest 'OpcUaManagementPortal' 'trusted' '800xAOpcUaManagementPortal*.der'), (& $fromMy '800xAOpcUaManagementPortal'))) }
     )
     foreach ($i in $items) {
         $cert = $i.Info.Cert
