@@ -1031,6 +1031,7 @@ function Update-DOCDetails {
             $info = Get-CNCDeviceInfo -Machine $m -Manifest $manifest
             $fam  = $info.Family; $dll = $info.DriverDll
             if ($info.Error) { $dev = 'Error'; $tip = $info.Error; $devColor = '#EF4444' } else { $dev = $info.DeviceNr }
+            if (-not $info.Error -and $info.PdmName -ne $m.MachineName) { $tip = "CNCnetPDM / deviceWise name: '$($info.PdmName)' (CNCnetPDM keeps 15 characters)" }
         }
         $controls["TxtDOCFam$n"].Text       = $fam
         $controls["TxtDOCDev$n"].Text       = $dev

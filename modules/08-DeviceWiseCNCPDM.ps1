@@ -57,7 +57,7 @@ function Invoke-DeviceWiseCNCPDM {
         $node = "CNC$($c.CNCIndex)_PATH"
         $ec   = $build.Xml.SelectSingleNode("//exportcontent[@type='device' and @name='$node']")
         if (-not $ec) { throw "Device $node is not in the baseline." }
-        $machine = "$($c.DeviceNr) - $($c.MachineName)"
+        $machine = "$($c.DeviceNr) - $($c.PdmName)"
         foreach ($p in @{ instance = $instance; machine = $machine }.GetEnumerator()) {
             $prop = $ec.SelectSingleNode(".//DeviceDefinition/Properties/Property[@name='$($p.Key)']")
             if (-not $prop) { throw "Device $node in the baseline has no '$($p.Key)' property." }
@@ -110,7 +110,7 @@ function Invoke-DeviceWiseCNCPDM {
         }
     }
     foreach ($c in $cncs) {
-        $nr = [string]$c.DeviceNr; $name = [string]$c.MachineName
+        $nr = [string]$c.DeviceNr; $name = [string]$c.PdmName
         $ok = $pdmMachines.ContainsKey($nr) -and $pdmMachines[$nr] -eq $name
         $detail = if ($ok) { "$nr - $name in [$($Manifest.CNCnetPDM.RS232Section)]" }
                   elseif ($pdmMachines.ContainsKey($nr)) { "Device Nr $nr is '$($pdmMachines[$nr])' in CNCnetPDM, not '$name' - run Step 7" }

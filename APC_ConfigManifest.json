@@ -203,7 +203,10 @@
         "CITIZEN_L12_IV":  6
       },
       "MaxMachineNumber": 999,
-      "MaxMachineNameLength": 15
+      "MaxMachineNameLength": 15,
+      "NameShortening": [
+        { "Find": "L320EA", "Replace": "L320", "Note": "only for names over MaxMachineNameLength: 'Citizen L320EA 5' -> 'Citizen L320 5' in CNCnetPDM / deviceWise" }
+      ]
     },
     "DriverDlls": [ "citizenm.dll", "mitsubishim.dll" ],
     "DriverDllWaitSeconds": 30,

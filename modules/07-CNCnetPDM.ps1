@@ -188,12 +188,12 @@ function Invoke-CNCnetPDM {
         $n = $m.CNCIndex
         $fields = @(
             $m.DeviceNr, $d.Baud, $d.Databits, $d.Parity, $d.StopBits,
-            $m.MachineName, $m.IPAddress, (Get-MachinePort $m), $d.Method, $d.DNSName,
+            $m.PdmName, $m.IPAddress, (Get-MachinePort $m), $d.Method, $d.DNSName,
             $n, $d.PLCAddr, $d.Share, $d.LogfileName, $d.LogfileVer, $m.DriverDll
         )
         $ini.Insert($insertAt, "$n = $($fields -join ';')")
         $insertAt++
-        Add-Result -Phase CNCnetPDM -Check "CNCnetPDM.ini line $n ($($m.MachineName))" -Status PASS -Detail "DeviceNr $($m.DeviceNr), $($m.IPAddress), $($m.DriverDll)"
+        Add-Result -Phase CNCnetPDM -Check "CNCnetPDM.ini line $n ($($m.MachineName))" -Status PASS -Detail "DeviceNr $($m.DeviceNr), $($m.IPAddress), $($m.DriverDll)$(if ($m.PdmName -ne $m.MachineName) { ", CNCnetPDM name '$($m.PdmName)' (15 characters max)" })"
     }
 
     Write-IniLines $iniPath $ini

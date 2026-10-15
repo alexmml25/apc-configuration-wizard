@@ -315,7 +315,7 @@ function Invoke-Verification {
             $x = Get-DwXml -Paths $paths -Table devices -Name $n
             if (-not $x) { "$n missing"; continue }
             $prop = { param($p) $node = $x.SelectSingleNode("//Property[@name='$p']"); if ($node) { $node.GetAttribute('value') } }
-            $want = "$($c.DeviceNr) - $($c.MachineName)"
+            $want = "$($c.DeviceNr) - $($c.PdmName)"
             if ((& $prop 'machine') -ne $want -or (& $prop 'instance') -ne $instance) { "$n = $(& $prop 'instance') / $(& $prop 'machine') (expected $instance / $want)" }
         }
         if (@($bad).Count) { throw @($bad) -join '; ' }
@@ -602,7 +602,7 @@ function Invoke-Verification {
                 if ($p.Count -ne 16) { throw "Expected 16 fields, found $($p.Count): $entry" }
                 $errs = @()
                 if ($p[0]  -ne $m.DeviceNr)    { $errs += "DeviceNr=$($p[0]) expected $($m.DeviceNr)" }
-                if ($p[5]  -ne $m.MachineName) { $errs += "MachineName=$($p[5]) expected $($m.MachineName)" }
+                if ($p[5]  -ne $m.PdmName)     { $errs += "MachineName=$($p[5]) expected $($m.PdmName)" }
                 if ($p[6]  -ne $m.IPAddress)   { $errs += "IP=$($p[6]) expected $($m.IPAddress)" }
                 if ($p[10] -ne "$ci")          { $errs += "Mitsubishi Nr=$($p[10]) expected $ci" }
                 if ($p[15] -ne $m.DriverDll)   { $errs += "DLL=$($p[15]) expected $($m.DriverDll)" }

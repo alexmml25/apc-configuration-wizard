@@ -11,6 +11,9 @@ function Get-CNCDeviceInfo {
                        family digit from FamilyDigits, machine number = trailing digits of the name
                        e.g. CITIZEN_L20X_IV + 'Citizen 08' -> 1008, CITIZEN_L20E_V + 'Citizen 100' -> 4100
           DriverDll  - the machine's DLL name from the Site DB (f_dllname), e.g. citizenm.dll
+          PdmName    - the name CNCnetPDM and the deviceWise CNCn_PATH 'machine' use: the Site DB name, or for a name
+                       over MaxMachineNameLength the name with the NameShortening replacements applied
+                       ('Citizen L320EA 5' -> 'Citizen L320 5'); DOC, CNCAsset and the Site DB keep the full name
         Error is set (and DeviceNr empty) when a rule cannot be applied.
     #>
     param([Parameter(Mandatory)] $Machine, [Parameter(Mandatory)] [object]$Manifest)
@@ -19,7 +22,7 @@ function Get-CNCDeviceInfo {
     $family = [string]$Machine.AssetFamily
     if (-not $family) { $family = [string]$Machine.CNCType }
     $key  = ($family.Trim() -replace '\s+', '_').ToUpper()
-    $info = @{ Family = $key; DeviceNr = ''; DriverDll = ([string]$Machine.DLLName).Trim(); Error = '' }
+    $info = @{ Family = $key; DeviceNr = ''; DriverDll = ([string]$Machine.DLLName).Trim(); PdmName = [string]$Machine.MachineName; Error = '' }
 
     $digit = $rules.FamilyDigits.PSObject.Properties[$key]
     if (-not $digit) {
@@ -29,9 +32,13 @@ function Get-CNCDeviceInfo {
     # CNCnetPDM keeps only the first 15 characters of a device name; a cut name no longer matches
     # deviceWise / DOC and can collide with another machine (Citizen L320EA 1 / 12 -> Citizen L320EA)
     $maxLen = [int]$rules.MaxMachineNameLength
-    if ($maxLen -gt 0 -and ([string]$Machine.MachineName).Length -gt $maxLen) {
-        $info.Error = "Machine name '$($Machine.MachineName)' is $(([string]$Machine.MachineName).Length) characters; CNCnetPDM keeps only $maxLen - shorten it in the Site DB / ACW"
-        return $info
+    if ($maxLen -gt 0 -and $info.PdmName.Length -gt $maxLen) {
+        foreach ($r in @($rules.NameShortening)) { if ($r.Find) { $info.PdmName = $info.PdmName.Replace([string]$r.Find, [string]$r.Replace) } }
+        $info.PdmName = ($info.PdmName -replace '\s+', ' ').Trim()
+        if ($info.PdmName.Length -gt $maxLen) {
+            $info.Error = "Machine name '$($Machine.MachineName)' is $(([string]$Machine.MachineName).Length) characters; CNCnetPDM keeps only $maxLen and no NameShortening rule makes it fit - shorten it in the Site DB / ACW or add a rule"
+            return $info
+        }
     }
     if ([string]$Machine.MachineName -notmatch '(\d+)\s*$') {
         $info.Error = "Machine name '$($Machine.MachineName)' does not end in a machine number"
@@ -78,6 +85,7 @@ function Get-AssignedCNCs {
         $h['CNCIndex']      = $i + 1
         $h['DeviceNr']      = $info.DeviceNr
         $h['DriverDll']     = $info.DriverDll
+        $h['PdmName']       = $info.PdmName
         $h['DeviceNrError'] = $info.Error
         $result += $h
     }
