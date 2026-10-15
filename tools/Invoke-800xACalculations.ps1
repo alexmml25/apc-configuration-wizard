@@ -71,7 +71,7 @@ public static class ApcCalcTlb {
             if (!string.Equals(tname, name, StringComparison.OrdinalIgnoreCase)) continue;
             ITypeInfo ti; tlb.GetTypeInfo(i, out ti);
             IntPtr p; ti.GetTypeAttr(out p);
-            try { return ((TYPEATTR)Marshal.PtrToStructure(p, typeof(TYPEATTR))).guid.ToString("B").ToUpperInvariant(); }
+            try { return ((System.Runtime.InteropServices.ComTypes.TYPEATTR)Marshal.PtrToStructure(p, typeof(System.Runtime.InteropServices.ComTypes.TYPEATTR))).guid.ToString("B").ToUpperInvariant(); }
             finally { ti.ReleaseTypeAttr(p); }
         }
         return null;
