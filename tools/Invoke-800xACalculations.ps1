@@ -171,14 +171,19 @@ try {
     $grp = $opc.OPCGroups.Add('ApcCalcs')
 } catch { Fail 'connecting to the 800xA OPC DA server (OPC.Automation, ABB.AfwOpcDaSurrogate.1)' $_; Finish 2 }
 $script:handle = 0
+# OPCItem gives PowerShell no type information ("does not contain a method named 'Read'", 2026-10-15): late binding,
+# as the kit's VBScript does
+function Com-Invoke($Obj, [string]$Name, [object[]]$Arguments) { $Obj.GetType().InvokeMember($Name, [Reflection.BindingFlags]::InvokeMethod, $null, $Obj, $Arguments) }
+function Com-Get($Obj, [string]$Name) { $Obj.GetType().InvokeMember($Name, [Reflection.BindingFlags]::GetProperty, $null, $Obj, $null) }
 function Read-Item([string]$ItemId) {
     $step = 'AddItem'
     try {
         $script:handle++
         $it = $grp.OPCItems.AddItem($ItemId, $script:handle)
         $step = 'Read'
-        $it.Read(2)                                   # 2 = from the device, not the cache
-        [pscustomobject]@{ Item = $it; Value = $it.Value; Good = (($it.Quality -band 0xC0) -eq 0xC0); Quality = $it.Quality }
+        [void](Com-Invoke $it 'Read' @(2))            # 2 = from the device, not the cache
+        $q = [int](Com-Get $it 'Quality')
+        [pscustomobject]@{ Item = $it; Value = (Com-Get $it 'Value'); Good = (($q -band 0xC0) -eq 0xC0); Quality = $q }
     } catch { $script:lastItemError = "$step $ItemId : $($_.Exception.GetBaseException().Message)"; $null }
 }
 function Read-Calc($Info) {
@@ -237,8 +242,8 @@ if (-not $Confirmed) { Say "$($problems.Count) calculation(s) disabled or in err
 Say "== Re-enable $($problems.Count) calculation(s) (Enabled over OPC, as the viewer's Enable) =="
 foreach ($p in $problems) {
     try {
-        if ($p.Calc.Enabled) { $p.Calc.EnabledItem.Write($false); Start-Sleep -Seconds 2 }   # errored but enabled: off, then on
-        $p.Calc.EnabledItem.Write($true)
+        if ($p.Calc.Enabled) { [void](Com-Invoke $p.Calc.EnabledItem 'Write' @($false)); Start-Sleep -Seconds 2 }   # errored but enabled: off, then on
+        [void](Com-Invoke $p.Calc.EnabledItem 'Write' @($true))
         Say "  enabled: $($p.Name)"
     } catch { Fail "enabling $($p.Name)" $_ }
 }
