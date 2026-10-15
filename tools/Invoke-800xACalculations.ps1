@@ -10,8 +10,9 @@
     PowerShell if needed):
       1. the interface id of ICalculationASO, read from Calculation.dll's type library (not hard-coded)
       2. every aspect that offers it (CreateAspectEnumerator with an AspectQuery on that operation id)
-      3. per calculation: TryGetAspectOperation -> Enabled / Status / StatusMessage
-      4. -Confirmed: Enabled false, or Status not 0 -> Enabled = false then true (re-enable), wait, read again
+      3. per calculation, over OPC DA (OPC.Automation -> ABB.AfwOpcDaSurrogate.1): "{object}{aspect}:Enabled",
+         ":Status", ":StatusMessage" - the aspect properties are RW (the .NET API does not hand out ICalculationASO)
+      4. -Confirmed: Enabled false, or Status not 0 -> Enabled = false then true over OPC (re-enable), wait, read again
     Exit codes: 0 all enabled and Status 0 (or no calculations), 1 problems found (report only), 5 problems left
     after re-enabling, 7 no running calculation could be read (aspects with no running calculation behind them are
     object type definitions: counted, not checked), 2 cannot connect to 800xA, 6 Inform IT
@@ -128,25 +129,6 @@ Say "Calculation aspects: $($calcs.Count)"
 Say ''
 if (-not $calcs.Count) { Say 'No calculations configured - nothing to check.'; Finish 0 }
 
-function Read-Calc($Info) {
-    $args3 = @($Info.Id, $script:opIdUsed, $null)
-    $found = $null
-    try { $found = Invoke-M $mOp $aos $args3 } catch { $script:lastOpError = $_.Exception.GetBaseException().Message }
-    $op = $args3[2]
-    # $null test, not -not: a COM object that is also a collection counts as "empty" in PowerShell
-    if ($null -eq $op -and -not $script:opIdChecked) {
-        # the operation id spelling the query accepted may not be the one TryGetAspectOperation wants: try the others once
-        $script:opIdChecked = $true
-        foreach ($alt in @($iid, $iid.Trim('{}'), $iid.ToLowerInvariant(), $iid.Trim('{}').ToLowerInvariant()) | Where-Object { $_ -ne $script:opIdUsed }) {
-            $a2 = @($Info.Id, $alt, $null)
-            try { [void](Invoke-M $mOp $aos $a2) } catch { }
-            if ($null -ne $a2[2]) { $script:opIdUsed = $alt; $op = $a2[2]; Say "  (operation id spelling for TryGetAspectOperation: $alt)"; break }
-        }
-    }
-    if ($null -eq $op) { $script:lastOpResult = "$found"; return $null }
-    $get = { param($n) try { $op.GetType().InvokeMember($n, [Reflection.BindingFlags]::GetProperty, $null, $op, $null) } catch { $null } }
-    [pscustomobject]@{ Op = $op; Enabled = [bool](& $get 'Enabled'); Status = (& $get 'Status'); Message = [string](& $get 'StatusMessage') }
-}
 function Name-Of($Info) {
     $obj = try { $Info.Id.ObjectId } catch { $null }
     $on  = ''
@@ -161,21 +143,59 @@ function Name-Of($Info) {
     if ($on) { "$on : $($Info.Name)" } else { $Info.Name }
 }
 
-# -- 3. check (and re-enable) -------------------------------------------------------------------------
-# diagnostics: what 800xA answers for the first aspects (HasAspectOperation / TryGetAspectOperation)
-Say '== Diagnostics (first 3 aspects) =='
-$mHas = $aosType.GetMethod('HasAspectOperation')
-foreach ($c in $calcs | Select-Object -First 3) {
-    foreach ($id in @($iid, $iid.Trim('{}'), $iid.ToLowerInvariant(), $iid.Trim('{}').ToLowerInvariant())) {
-        $has = try { Invoke-M $mHas $aos @($c.Id, $id) } catch { "error: $($_.Exception.GetBaseException().Message)" }
-        $a3 = @($c.Id, $id, $null)
-        $ret = try { Invoke-M $mOp $aos $a3 } catch { "error: $($_.Exception.GetBaseException().Message)" }
-        $outType = if ($null -ne $a3[2]) { $a3[2].GetType().FullName } else { 'null' }
-        Say "  $(Name-Of $c)  [$id]  HasAspectOperation=$has  TryGetAspectOperation=$ret  out=$outType"
+# The calculation aspects publish their settings as OPC properties (GPExplore of Cell_1 / Corrections, 2026-10-15):
+# ItemID "{object GUID}{aspect GUID}:Enabled | Status | StatusMessage", all RW. The 800xA .NET API lists the aspects
+# (above) but does not hand out ICalculationASO (TryGetAspectOperation = False although HasAspectOperation = True), so
+# they are read and enabled over OPC DA (OPC.Automation, the component the 800xA kit uses) in one session.
+function Get-Guid($Value) { if ("$Value" -match '([0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})') { '{' + $Matches[1].ToUpperInvariant() + '}' } }
+function Item-Base($Info) {
+    $ref = $Info.Id
+    $obj = Get-Guid $ref.ObjectId
+    $asp = $null
+    foreach ($pn in 'AspectId', 'Id', 'LocalId', 'AspectGuid') {
+        $pi = $ref.GetType().GetProperty($pn)
+        if ($pi) { $asp = Get-Guid ($pi.GetValue($ref, $null)); if ($asp -and $asp -ne $obj) { break } else { $asp = $null } }
     }
-    Say "    aspect type $($c.AspectTypeId)  category $($c.AspectCategoryId)  inherited=$($c.IsInherited)"
+    if (-not $asp) {   # any other GUID-valued property of the AspectRef
+        foreach ($pi in $ref.GetType().GetProperties()) {
+            $g = try { Get-Guid ($pi.GetValue($ref, $null)) } catch { $null }
+            if ($g -and $g -ne $obj) { $asp = $g; break }
+        }
+    }
+    if ($obj -and $asp) { "$obj$asp" }
 }
+
+try {
+    $opc = New-Object -ComObject OPC.Automation
+    $opc.Connect('ABB.AfwOpcDaSurrogate.1')
+    $grp = $opc.OPCGroups.Add('ApcCalcs')
+} catch { Fail 'connecting to the 800xA OPC DA server (OPC.Automation, ABB.AfwOpcDaSurrogate.1)' $_; Finish 2 }
+$script:handle = 0
+function Read-Item([string]$ItemId) {
+    try {
+        $script:handle++
+        $it = $grp.OPCItems.AddItem($ItemId, $script:handle)
+        $it.Read(2)                                   # 2 = from the device, not the cache
+        [pscustomobject]@{ Item = $it; Value = $it.Value; Good = (($it.Quality -band 0xC0) -eq 0xC0) }
+    } catch { $null }
+}
+function Read-Calc($Info) {
+    $base = Item-Base $Info
+    if (-not $base) { return $null }
+    $en = Read-Item "$base`:Enabled"
+    if ($null -eq $en -or -not $en.Good) { return $null }    # not in OPC: no running calculation behind this aspect
+    $st = Read-Item "$base`:Status"
+    $ms = Read-Item "$base`:StatusMessage"
+    [pscustomobject]@{ Base = $base; EnabledItem = $en.Item; Enabled = ("$($en.Value)" -eq 'True'); Status = $(if ($st) { $st.Value }); Message = [string]$(if ($ms) { $ms.Value }) }
+}
+function Close-Opc { try { $opc.OPCGroups.RemoveAll(); $opc.Disconnect() } catch { } }
+
+# -- how the first aspect maps to an OPC item (diagnostics) ----------------------------------------------
+$first = $calcs | Select-Object -First 1
+Say "OPC item of the first aspect: $(Name-Of $first) -> $(Item-Base $first)"
 Say ''
+
+# -- 3. check (and re-enable) ---------------------------------------------------------------------------
 Say '== Calculations (Calculation Status Viewer): only problems are listed =='
 $problems = @(); $okCount = 0; $unread = @()
 foreach ($c in $calcs) {
@@ -190,24 +210,20 @@ foreach ($c in $calcs) {
 $running = $okCount + $problems.Count
 Say "  $running running calculation(s) (the Calculation Status Viewer's list): $okCount OK, $($problems.Count) disabled or in error"
 if ($unread.Count) {
-    # aspects with no running calculation behind them: calculation definitions on object types (templates the
-    # instances inherit; not in the viewer - SJUM7AAPPS0048: 602 aspects, viewer 361). Listed, not a failure.
-    Say "  $($unread.Count) calculation aspect(s) with no running calculation (object type definitions) - not checked; by object:"
+    Say "  $($unread.Count) calculation aspect(s) not in OPC (no running calculation, e.g. object type definitions) - not checked; by object:"
     $unread | Group-Object { ((Name-Of $_) -split ' : ')[0] } | Sort-Object Count -Descending | Select-Object -First 10 |
         ForEach-Object { Say ("    {0,4} x {1}" -f $_.Count, $_.Name) }
-    if ($script:lastOpError) { Say "  (last TryGetAspectOperation error: $script:lastOpError)" }
 }
 Say ''
-if (-not $running) { Say 'Could not read any running calculation.'; Finish 7 }
-if (-not $problems) { Say "All $running running calculation(s) enabled with status 0."; Finish 0 }
-if (-not $Confirmed) { Say "$($problems.Count) calculation(s) disabled or in error. With -Confirmed they are enabled again."; Finish 1 }
+if (-not $running) { Say 'Could not read any running calculation.'; Close-Opc; Finish 7 }
+if (-not $problems) { Say "All $running running calculation(s) enabled with status 0."; Close-Opc; Finish 0 }
+if (-not $Confirmed) { Say "$($problems.Count) calculation(s) disabled or in error. With -Confirmed they are enabled again."; Close-Opc; Finish 1 }
 
-Say "== Re-enable $($problems.Count) calculation(s) =="
+Say "== Re-enable $($problems.Count) calculation(s) (Enabled over OPC, as the viewer's Enable) =="
 foreach ($p in $problems) {
     try {
-        $set = { param($v) [void]$p.Calc.Op.GetType().InvokeMember('Enabled', [Reflection.BindingFlags]::SetProperty, $null, $p.Calc.Op, @($v)) }
-        if ($p.Calc.Enabled) { & $set $false; Start-Sleep -Seconds 2 }     # errored but enabled: off, then on (retry)
-        & $set $true
+        if ($p.Calc.Enabled) { $p.Calc.EnabledItem.Write($false); Start-Sleep -Seconds 2 }   # errored but enabled: off, then on
+        $p.Calc.EnabledItem.Write($true)
         Say "  enabled: $($p.Name)"
     } catch { Fail "enabling $($p.Name)" $_ }
 }
@@ -220,5 +236,6 @@ foreach ($p in $problems) {
     Say ("  {0}  {1}  enabled={2} status={3}{4}" -f $(if ($ok) { 'OK  ' } else { 'FAIL' }), $p.Name, $s.Enabled, $s.Status, $(if ($s.Message) { " - $($s.Message)" }))
     if (-not $ok) { $left++ }
 }
+Close-Opc
 [System.AppDomain]::CurrentDomain.remove_AssemblyResolve($onResolve)
 Finish $(if ($left) { 5 } else { 0 })
