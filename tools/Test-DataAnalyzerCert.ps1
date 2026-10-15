@@ -16,18 +16,24 @@
     Matching = Data Analyzer will accept a certificate the wizard makes, so Step 10 can make and trust it.
     32-bit (Data Analyzer is 32-bit only); the script restarts itself in 32-bit PowerShell if needed.
     Changes nothing outside the test folder. Output: C:\APC_Config\Logs\da-cert-test_<ts>.txt
+
+    -StoreDir <Data Analyzer>\CertificateStores (used by Step 10): makes the certificate in that folder instead
+    of a test copy, when it has none yet, and skips the comparison. Exit 0 = the folder has a certificate.
+    Proven on SJUM7AAPPS0048 2026-10-15: the certificate made this way matches Data Analyzer's own
+    (subject, application URI, key, signature, validity).
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Test-DataAnalyzerCert.ps1
 #>
 param(
     [string]$DaDir  = 'C:\Medtronic\Data Analyzer',
     [string]$Url    = 'opc.tcp://127.0.0.1:1',          # nothing listens: no deviceWise side effect
-    [string]$OutDir = 'C:\APC_Config\Logs'
+    [string]$OutDir = 'C:\APC_Config\Logs',
+    [string]$StoreDir = ''                               # real store (Step 10); empty = test copy
 )
 
 if ([Environment]::Is64BitProcess) {
     $ps32 = Join-Path $env:WINDIR 'SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
-    & $ps32 -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath -DaDir $DaDir -Url $Url -OutDir $OutDir
+    & $ps32 -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath -DaDir $DaDir -Url $Url -OutDir $OutDir -StoreDir $StoreDir
     exit $LASTEXITCODE
 }
 
@@ -96,7 +102,7 @@ try {
 
     $client = New-Object Opc.UaFx.Client.OpcClient $Url
     $client.Configuration.ApplicationName = 'APC Data Analyzer'          # what the library takes from DataAnalyzer.exe
-    $stores = Join-Path $work 'CertificateStores'
+    $stores = if ($StoreDir) { $StoreDir } else { Join-Path $work 'CertificateStores' }
     $client.CertificateStores.ApplicationStore.Path   = Join-Path $stores 'App'
     $client.CertificateStores.TrustedPeerStore.Path   = Join-Path $stores 'Trusted'
     $client.CertificateStores.TrustedIssuerStore.Path = Join-Path $stores 'TrustedIssuer'
@@ -117,13 +123,17 @@ Say ''
 
 # -- compare -------------------------------------------------------------------------------
 Say '== 3. Certificate made by the test =='
-$made = Get-ChildItem -LiteralPath (Join-Path $stores 'App') -Recurse -Filter '*.der' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+$made = Get-ChildItem -LiteralPath (Join-Path $stores 'App\certs') -Filter '*.der' -File -ErrorAction SilentlyContinue | Select-Object -First 1
 $madeCert = if ($made) { New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $made.FullName } else { $null }
-if ($made) { Say "  file: $($made.FullName.Substring($work.Length + 1))" }
+if ($made) { Say "  file: $($made.FullName)" }
 Describe $madeCert | ForEach-Object { Say $_ }
-Get-ChildItem -LiteralPath $stores -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { Say "  store file: $($_.FullName.Substring($work.Length + 1))" }
+if (-not $StoreDir) { Get-ChildItem -LiteralPath $stores -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { Say "  store file: $($_.FullName.Substring($work.Length + 1))" } }
 Say ''
 
+if ($StoreDir) {
+    if ($madeCert) { Say "  certificate in $StoreDir"; Finish 0 }
+    Say "  NO certificate in $StoreDir"; Finish 3
+}
 Say '== 4. Same as Data Analyzer''s? =='
 if (-not $madeCert) { Say '  NO certificate was made: the library did not create one before the connect. Re-run with -Url opc.tcp://localhost:48020'; Finish 3 }
 if (-not $origCert) { Say '  Data Analyzer has no certificate to compare with (it never connected on this VM).'; Finish 4 }

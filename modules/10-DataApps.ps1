@@ -36,7 +36,10 @@
     and deviceWise's certificate in the app's Trusted folder - no dwcore restart needed (VM test 2026-10-15).
     Then the apps are restarted (or started) so they load the new config (Manifest.DataApps.RestartApps).
     An app makes its certificate on its first connection: Step 10 starts it, waits for the certificate and
-    trusts it; Data Analyzer only connects after a login + Start Monitoring (reported as MANUAL).
+    trusts it. Data Analyzer only connects after a login + Start Monitoring, so when it has no certificate yet
+    Step 10 makes it the way Data Analyzer would (tools\Test-DataAnalyzerCert.ps1 -StoreDir: same Traeger
+    library, licence and application name, no window; proven identical on SJUM7AAPPS0048 2026-10-15).
+    Logging in and Start Monitoring stay with the operator (Data Analyzer has no auto-start).
 #>
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
@@ -430,10 +433,14 @@ function Invoke-DataApps {
                 $r = Restart-DataApp -Exe $exe
                 Add-Result -Phase DataApps -Check "$($app.Name): restarted" -Status $(if ($r.Ok) { 'PASS' } else { 'WARN' }) -Detail $r.Detail
             }
+            if ($app.Login -and -not (Get-ChildItem -LiteralPath (Join-Path $dir 'CertificateStores\App\certs') -Filter '*.der' -ErrorAction SilentlyContinue)) {
+                $mk = New-DataAnalyzerCertificate -DaDir $dir
+                Add-Result -Phase DataApps -Check "$($app.Name): application certificate" -Status $(if ($mk.Ok) { 'PASS' } else { 'WARN' }) -Detail $mk.Detail
+            }
             # The app makes its certificate on its first connection attempt; give a just-started app time for it
             $t = Set-DataAppDeviceWiseTrust -AppDir $dir -PkiServer $pki -WaitSeconds $(if ($restart -and -not $app.Login) { 30 } else { 0 })
             if ($t.Status -eq 'NoCertificate') {
-                $how = if ($app.Login) { 'log in to Data Analyzer and press Start Monitoring once, then re-run Step 10' } else { "open $($app.Name) once, then re-run Step 10" }
+                $how = if ($app.Login) { 'log in to Data Analyzer and press Start Monitoring once, then re-run Step 10' } else { "open $($app.Name) once, then re-run Step 10" }   # only when making it failed
                 Add-Result -Phase DataApps -Check "$($app.Name): deviceWise OPC UA trust" -Status MANUAL -Detail "No application certificate yet ($dir\CertificateStores\App\certs): $how"
             } else {
                 Add-Result -Phase DataApps -Check "$($app.Name): deviceWise OPC UA trust" -Status $(if ($t.Ok) { 'PASS' } else { 'FAIL' }) -Detail $t.Detail
@@ -506,6 +513,20 @@ function Set-DataAppDeviceWiseTrust {
     } catch {
         return @{ Ok = $false; Status = 'Failed'; Detail = "$_" }
     }
+}
+
+function New-DataAnalyzerCertificate {
+    # Makes Data Analyzer's OPC UA certificate in its own CertificateStores without opening it (32-bit helper
+    # tools\Test-DataAnalyzerCert.ps1 -StoreDir; connects to an unused port, so deviceWise sees nothing).
+    param([string]$DaDir)
+    $tool = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\Test-DataAnalyzerCert.ps1'
+    if (-not (Test-Path -LiteralPath $tool)) { return @{ Ok = $false; Detail = "Helper not found: $tool" } }
+    $ps32 = Join-Path $env:WINDIR 'SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
+    $out  = & $ps32 -NoProfile -ExecutionPolicy Bypass -File $tool -DaDir $DaDir -StoreDir (Join-Path $DaDir 'CertificateStores') 2>&1
+    $code = $LASTEXITCODE
+    $made = @(Get-ChildItem -LiteralPath (Join-Path $DaDir 'CertificateStores\App\certs') -Filter '*.der' -ErrorAction SilentlyContinue)
+    if ($code -eq 0 -and $made) { return @{ Ok = $true; Detail = "Made without opening Data Analyzer: $($made[0].Name)" } }
+    return @{ Ok = $false; Detail = "Could not make it (exit $code): $((@($out) | Select-Object -Last 3) -join ' ') - log in to Data Analyzer and press Start Monitoring once, then re-run Step 10" }
 }
 
 function Restart-DataApp {
