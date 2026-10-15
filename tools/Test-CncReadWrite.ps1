@@ -67,13 +67,20 @@ function Invoke-Method([string]$Name, [object[]]$InArgs) {
         return @{ Ok = $true; Out = $res }
     } catch { return @{ Ok = $false; Error = $_.Exception.InnerException.Message + $_.Exception.Message } }
 }
-function Read-Tag([string]$Id, [string]$Nm) {
-    $r = Invoke-Method '6_CNC_DemandReadTagInteger' @([string]$device, [string]$Id, [string]$Nm)
+function Read-Tag([string]$Id, [string]$Nm, [string]$Method = '6_CNC_DemandReadTagValue') {
+    # 6_CNC_DemandReadTagValue returns a Double (the CNC offsets are FLOAT8), 6_CNC_DemandReadTagInteger an Int64
+    $r = Invoke-Method $Method @([string]$device, [string]$Id, [string]$Nm)
     if (-not $r.Ok) { return "call failed: $($r.Error)" }
     "ERROR_CODE=$($r.Out[0]) ERROR_MESSAGE='$($r.Out[1])' TagValue=$($r.Out[2])"
 }
 
-W ''; W "== Read $device $Tag (6_CNC_DemandReadTagInteger) =="
+W ''; W "== Reads on $device (TagID = TagName = tag) =="
+foreach ($t in @('STATN', '1_597', $Tag) | Select-Object -Unique) {
+    foreach ($meth in '6_CNC_DemandReadTagValue', '6_CNC_DemandReadTagInteger') {
+        W ("  {0,-8} {1,-28} -> {2}" -f $t, $meth, (Read-Tag $t $t $meth))
+    }
+}
+W ''; W "== Read $device $Tag, TagID / TagName combinations (6_CNC_DemandReadTagValue) =="
 $combos = New-Object System.Collections.Generic.List[object]    # (an if-expression would unroll the pairs)
 if ($TagId -or $TagName) { $combos.Add(@($TagId, $TagName)) } else { $combos.Add(@($Tag, $Tag)); $combos.Add(@($Tag, '')); $combos.Add(@('', $Tag)) }
 foreach ($c in $combos) { W ("  TagID='{0}' TagName='{1}'  -> {2}" -f $c[0], $c[1], (Read-Tag $c[0] $c[1])) }
