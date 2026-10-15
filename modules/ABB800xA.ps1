@@ -495,3 +495,21 @@ function Get-800xAServiceStates {
         [pscustomobject]$o
     }
 }
+
+function Invoke-800xACalculationCheck {
+    <#
+        tools\Invoke-800xACalculations.ps1 (32-bit): every Inform IT calculation enabled with Status 0 - the
+        Calculation Status Viewer check of D01558132 1.4. -Confirm re-enables a disabled or errored one (the
+        viewer's right-click > Enable). Returns @{ Code; Report; Lines }: 0 all OK / none, 1 problems (check only),
+        5 problems left after re-enabling, other = could not check.
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest, [string]$LogDir = 'C:\APC_Config\Logs', [switch]$Confirm)
+    $tool = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\Invoke-800xACalculations.ps1'
+    $ps32 = Join-Path $env:WINDIR 'SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
+    $toolArgs = @('-OutDir', $LogDir)
+    if ($Manifest.CHMI.PSObject.Properties['CalculationsBinDir'] -and $Manifest.CHMI.CalculationsBinDir) { $toolArgs += @('-CalcBinDir', [string]$Manifest.CHMI.CalculationsBinDir) }
+    if ($Confirm) { $toolArgs += '-Confirmed' }
+    $out  = @(& $ps32 -NoProfile -STA -ExecutionPolicy Bypass -File $tool @toolArgs 2>&1 | ForEach-Object { "$_" })
+    $rep  = @($out | Where-Object { $_ -match '^Written: ' } | Select-Object -Last 1) -replace '^Written: ', ''
+    @{ Code = $LASTEXITCODE; Report = "$rep"; Lines = $out }
+}

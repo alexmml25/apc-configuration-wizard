@@ -337,6 +337,8 @@
     "AutomateCertificates":       true,
     "SetDeviceWiseServer":       true,
     "DeviceWiseServerUrl":       "opc.tcp://{HOST}:48020",
+    "CheckCalculations": true,
+    "CalculationsBinDir": "C:\\Program Files (x86)\\ABB Industrial IT\\Inform IT\\Calculations\\bin",
     "ServiceChecks": [
       { "Name": "OPC UA Connect",              "ItemPath": "Services/OPC UA Connect/OPC UA Connect/OPC UA Connect on {HOST}" },
       { "Name": "OPC UA Server",               "ItemPath": "Services/OPC UA Server/OPC UA Server/OPC UA Server on {HOST}", "Optional": true },

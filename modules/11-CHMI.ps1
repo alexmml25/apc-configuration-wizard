@@ -35,6 +35,10 @@
     -Confirmed points "DEVICEWISE OPC UA" (OPC UA Server Info aspect) at this VM's gateway (copied VMs keep the
     source machine's URL) and sets up the OPC UA trust between OPC UA Connect and the gateway.
 
+    800xA calculations (Manifest.CHMI.CheckCalculations, the Calculation Status Viewer check): every Inform IT
+    calculation (ICalculationASO, Calculation.dll) enabled with Status 0; a disabled or errored one is enabled again
+    (tools\Invoke-800xACalculations.ps1 -Confirmed); FAIL when one stays disabled or in error.
+
     800xA services (Manifest.CHMI.ServiceChecks, D01558132 section 1.4 order): each must be SERVICE_STATE 'Service',
     S_STATUS 0, quality Good - FAIL otherwise. The 1.4 restart (untick/tick Enabled) itself is not scripted: its
     interface is internal to 800xA (IAfwAdminServiceProviderEdit is in no type library).
@@ -85,6 +89,21 @@ function Invoke-CHMI {
     foreach ($svc in @(Get-800xAServiceStates -Manifest $Manifest)) {
         if ($svc.Missing) { Write-Log INFO "800xA service $($svc.Name): $($svc.Detail)"; continue }
         Add-Result -Phase CHMI -Check "800xA service $($svc.Name)" -Status $(if ($svc.Ok) { 'PASS' } else { 'FAIL' }) -Detail $svc.Detail
+    }
+
+    #endregion
+
+    #region -- Calculations enabled (Calculation Status Viewer, D01558132 1.4) --
+
+    if ([bool]$Manifest.CHMI.CheckCalculations) {
+        $c = Invoke-800xACalculationCheck -Manifest $Manifest -LogDir (Get-RunDir -State $State -Name Logs) -Confirm
+        foreach ($l in $c.Lines) { if ($l.Trim()) { Write-Log INFO "  [calcs] $l" } }
+        $summary = @($c.Lines | Where-Object { $_ -match '^(All |No calculations|Calculation aspects:)' }) -join '; '
+        switch ($c.Code) {
+            0       { Add-Result -Phase CHMI -Check '800xA calculations enabled' -Status PASS -Detail "$summary - report $($c.Report)" }
+            5       { Add-Result -Phase CHMI -Check '800xA calculations enabled' -Status FAIL -Detail "Still disabled or in error after Enable - see $($c.Report)" }
+            default { Add-Result -Phase CHMI -Check '800xA calculations enabled' -Status FAIL -Detail "Could not check (exit $($c.Code)) - see $($c.Report)" }
+        }
     }
 
     #endregion

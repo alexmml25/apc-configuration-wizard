@@ -916,6 +916,15 @@ function Invoke-Verification {
         "In service, no faults: $(($states | ForEach-Object { $_.Name }) -join ', ')"
     }
 
+    if ([bool]$Manifest.CHMI.CheckCalculations) {
+        Check 'CHMI' '800xA calculations enabled (Calculation Status Viewer)' {
+            $c = Invoke-800xACalculationCheck -Manifest $Manifest -LogDir $reportDir
+            if ($c.Code -eq 1) { throw "Disabled or in error - see $($c.Report) (Step 11 enables them again)" }
+            if ($c.Code -ne 0) { throw "Could not check (exit $($c.Code)) - see $($c.Report)" }
+            (@($c.Lines | Where-Object { $_ -match '^(All |No calculations)' }) -join '; ')
+        }
+    }
+
     Check 'CHMI' 'OPC UA Server URL configured in 800xA' {
         Test-800xAOpcUaServer -Manifest $Manifest -Throw
     } '' 10 4
