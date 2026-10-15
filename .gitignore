@@ -57,3 +57,7 @@ DataAnalyzer.exe
 CommonLib.dll
 Opc.UaFx.*.dll
 UsageControl.dll
+
+# 800xA service binaries copied from a VM for inspection - ABB property, never commit
+Afw*.dll
+Afw*.exe

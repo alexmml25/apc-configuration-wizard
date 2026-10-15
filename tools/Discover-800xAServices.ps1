@@ -69,7 +69,7 @@ function Invoke-M($Method, $Target, [object[]]$Arguments) {
     $plain = New-Object object[] $Arguments.Count
     for ($i = 0; $i -lt $Arguments.Count; $i++) { if ($null -ne $Arguments[$i]) { $plain[$i] = $Arguments[$i].PSObject.BaseObject } }
     $t = if ($null -ne $Target) { $Target.PSObject.BaseObject } else { $null }
-    $Method.Invoke($t, $plain)
+    return ,($Method.Invoke($t, $plain))   # the comma keeps an enumerator (IObjectEnumerator) from being unrolled
 }
 function Get-Objects([string]$TypeGuid) {
     $tid = [Activator]::CreateInstance($tTypeId, [object[]]@([string]$TypeGuid))
@@ -123,7 +123,17 @@ Get-ChildItem -LiteralPath $BinDir -File -ErrorAction SilentlyContinue | Where-O
     ForEach-Object { Say "  file $($_.Name)  $($_.VersionInfo.FileVersion)" }
 Get-ChildItem 'Registry::HKEY_CLASSES_ROOT' -ErrorAction SilentlyContinue |
     Where-Object { $_.PSChildName -match '^(Afw|ABB)\.?.*(AdminServ|ServiceProv|SrvProv|Calc|ServiceGroup|ServiceMan)' -and $_.PSChildName -notmatch '\.\d+$' } |
-    ForEach-Object { Say "  progid $($_.PSChildName)" }
+    ForEach-Object {
+        $clsid = (Get-ItemProperty -LiteralPath "$($_.PSPath)\CLSID" -ErrorAction SilentlyContinue).'(default)'
+        $srv = ''
+        if ($clsid) {
+            foreach ($k in 'InprocServer32', 'LocalServer32') {
+                $v = (Get-ItemProperty -LiteralPath "Registry::HKEY_CLASSES_ROOT\CLSID\$clsid\$k" -ErrorAction SilentlyContinue).'(default)'
+                if ($v) { $srv = "$k $v" }
+            }
+        }
+        Say "  progid $($_.PSChildName)  $clsid  $srv"
+    }
 Say ''
 
 # -- 4. members of the 800xA service administration COM objects (created only to list their members; nothing is called) --
