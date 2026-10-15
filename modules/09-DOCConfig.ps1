@@ -260,13 +260,24 @@ function Invoke-DOCConfig {
                 if (-not $finished) { Start-Sleep -Seconds 3 }
             } while (-not $finished -and $el -lt $MaxSeconds)
         }
+        # every DOC holds a connection to the deviceWise OPC UA server: the goal of all this (DOC waits in its
+        # PartLookup_DB box until OK, so boxes are closed until then - they come at different times per DOC)
+        $opcPort = [int]$Manifest.DeviceWise.OpcUaEndpointPort
+        $connectWait = if ($docCfg.PSObject.Properties['ConnectWaitSeconds']) { [int]$docCfg.ConnectWaitSeconds } else { 120 }
+        $notConnected = {
+            @($machines | Where-Object {
+                $p = Get-DOCProcess -Manifest $Manifest -Instance ([int]$_.CNCIndex)
+                -not $p -or -not @(Get-ProcessTcpConnections -ProcessId $p.Id | Where-Object { $_.RemotePort -eq $opcPort }).Count
+            } | ForEach-Object { [int]$_.CNCIndex })
+        }
         foreach ($m in $machines) {
             $n = [int]$m.CNCIndex
             $r = Restart-DOCInstance -Manifest $Manifest -Instance $n
             Add-Result -Phase DOC -Check "DOC ${n}: started" -Status $(if ($r.Ok) { 'PASS' } else { 'FAIL' }) -Detail $r.Detail
             $boxes[$n] = @()
         }
-        & $watch $minWatch ([Math]::Max($wait, $minWatch)) { $trusted -or (& $haveCert) }
+        if ($trusted) { & $watch $minWatch $connectWait { -not (& $notConnected).Count } }
+        else          { & $watch $minWatch ([Math]::Max($wait, $minWatch)) { & $haveCert } }
         # 4. first run: DOC made its certificate on this start - trust it, then restart DOC so it connects
         if (-not $trusted) {
             if (& $haveCert) {
@@ -277,12 +288,18 @@ function Invoke-DOCConfig {
                         $r = Restart-DOCInstance -Manifest $Manifest -Instance ([int]$m.CNCIndex)
                         Add-Result -Phase DOC -Check "DOC $($m.CNCIndex): restarted after trust" -Status $(if ($r.Ok) { 'PASS' } else { 'FAIL' }) -Detail $r.Detail
                     }
-                    & $watch $minWatch $minWatch { $true }
+                    & $watch $minWatch $connectWait { -not (& $notConnected).Count }
                 }
             } else {
                 Add-Result -Phase DOC -Check "DOC: deviceWise OPC UA trust" -Status WARN `
                     -Detail "DOC made no OPC UA certificate in $($store.Own) within $wait s - check DOC's OPC connection, then re-run Step 9"
             }
+        }
+        $down = @(& $notConnected)
+        foreach ($m in $machines) {
+            $n = [int]$m.CNCIndex
+            Add-Result -Phase DOC -Check "DOC ${n}: connected to deviceWise OPC UA" -Status $(if ($down -contains $n) { 'WARN' } else { 'PASS' }) `
+                -Detail $(if ($down -contains $n) { "no connection to :$opcPort after $connectWait s - check for an open DOC message box and DOC-$n\Log" } else { "connection to :$opcPort" })
         }
         foreach ($n in @($boxes.Keys | Sort-Object)) {
             foreach ($b in ($boxes[$n] | Select-Object -Unique)) {

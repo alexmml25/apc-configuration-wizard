@@ -268,7 +268,8 @@
     "KnownStartupDialogTitles": [ "PartLookup_DB" ],
     "OpcUaXml":           "Plugins\\OPC UA\\DocOpcUa.xml",
     "UserCertStore":      "%LOCALAPPDATA%\\Medtronic",
-    "BoxWatchSeconds":    20
+    "BoxWatchSeconds":    20,
+    "ConnectWaitSeconds": 120
   },
 
   "DataApps": {
