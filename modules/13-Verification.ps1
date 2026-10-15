@@ -909,6 +909,13 @@ function Invoke-Verification {
     } '' 10 3
 
     # Item 4 - OPC UA Server URL configured: the URL is aspect data (not readable); a Running deviceWise server proves it
+    Check 'CHMI' '800xA services in normal state (D01558132 1.4)' {
+        $states = @(Get-800xAServiceStates -Manifest $Manifest | Where-Object { -not $_.Missing })
+        $bad = @($states | Where-Object { -not $_.Ok } | ForEach-Object { "$($_.Name): $($_.Detail)" })
+        if ($bad) { throw "Not normal - $($bad -join '; ')" }
+        "In service, no faults: $(($states | ForEach-Object { $_.Name }) -join ', ')"
+    }
+
     Check 'CHMI' 'OPC UA Server URL configured in 800xA' {
         Test-800xAOpcUaServer -Manifest $Manifest -Throw
     } '' 10 4

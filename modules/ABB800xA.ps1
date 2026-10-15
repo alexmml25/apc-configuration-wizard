@@ -459,3 +459,39 @@ function Get-800xAOpcUaCertificates {
         }
     }
 }
+
+function Get-800xAServiceStates {
+    <#
+        Reads (never writes) SERVICE_STATE / S_STATUS / S_DESCRIPTION of each service provider in
+        Manifest.CHMI.ServiceChecks (D01558132 section 1.4 order) over OPC DA, through the kit.
+        Normal = SERVICE_STATE 'Service', S_STATUS 0, quality Good (all providers on SJUM7AAPPS0048, 2026-10-15).
+        A provider that cannot be read is 'Missing' (Optional entries: not on this node) or a problem.
+        The 1.4 untick/tick of Enabled is not scripted: the interface behind it is internal to 800xA (user: check only).
+        Returns one object per entry: Name, ItemPath, State, Status, Description, Good, Ok, Missing, Detail.
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest, [hashtable]$Kit)
+    if (-not $Kit) { $Kit = Get-800xAKit -Manifest $Manifest }
+    $server = [string]$Manifest.ABB800xA.OpcServer
+    foreach ($svc in @($Manifest.CHMI.ServiceChecks)) {
+        $path = ([string]$svc.ItemPath) -replace '\{HOST\}', $env:COMPUTERNAME
+        $o = [ordered]@{ Name = [string]$svc.Name; ItemPath = $path; State = ''; Status = $null; Description = ''; Good = $true; Ok = $false; Missing = $false; Detail = '' }
+        if ($Kit.Problems.Count) { $o.Detail = "800xA kit not usable: $($Kit.Problems -join '; ')"; [pscustomobject]$o; continue }
+        $read = $true
+        foreach ($p in 'SERVICE_STATE', 'S_STATUS', 'S_DESCRIPTION') {
+            $r = Invoke-800xAGPCall -Kit $Kit -ItemId "$path`:$p" -Server $server
+            if (-not $r.Success) {
+                if ($p -eq 'S_DESCRIPTION') { continue }
+                $read = $false; $o.Detail = "read of $path`:$p failed (exit $($r.ExitCode)): $($r.Error)"; break
+            }
+            if ($r.Output -match 'quality=(\d+)' -and ([int]$Matches[1] -band 0xC0) -ne 0xC0) { $o.Good = $false }
+            switch ($p) { 'SERVICE_STATE' { $o.State = [string]$r.Before } 'S_STATUS' { $o.Status = $r.Before } 'S_DESCRIPTION' { $o.Description = [string]$r.Before } }
+        }
+        if (-not $read) {
+            if ($svc.PSObject.Properties['Optional'] -and $svc.Optional) { $o.Missing = $true; $o.Ok = $true; $o.Detail = 'no provider for this service on this node - skipped' }
+            [pscustomobject]$o; continue
+        }
+        $o.Ok = ($o.State -eq 'Service' -and "$($o.Status)" -eq '0' -and $o.Good)
+        $o.Detail = "SERVICE_STATE '$($o.State)', S_STATUS $($o.Status)$(if (-not $o.Good) { ', quality not Good' })$(if ($o.Description) { " - $($o.Description)" })"
+        [pscustomobject]$o
+    }
+}

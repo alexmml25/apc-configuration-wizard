@@ -35,6 +35,10 @@
     -Confirmed points "DEVICEWISE OPC UA" (OPC UA Server Info aspect) at this VM's gateway (copied VMs keep the
     source machine's URL) and sets up the OPC UA trust between OPC UA Connect and the gateway.
 
+    800xA services (Manifest.CHMI.ServiceChecks, D01558132 section 1.4 order): each must be SERVICE_STATE 'Service',
+    S_STATUS 0, quality Good - FAIL otherwise. The 1.4 restart (untick/tick Enabled) itself is not scripted: its
+    interface is internal to 800xA (IAfwAdminServiceProviderEdit is in no type library).
+
     No guided (manual) text: every part is automated and reported as PASS / FAIL (user, 2026-10-15).
 #>
 
@@ -70,6 +74,17 @@ function Invoke-CHMI {
 
     if ([bool]$Manifest.CHMI.SetDeviceWiseServer) {
         Invoke-800xADeviceWiseServer -Manifest $Manifest -State $State
+    }
+
+    #endregion
+
+    #region -- 800xA services in normal state (D01558132 section 1.4 list) -----
+    # The 1.4 untick/tick Enabled is not scripted (internal 800xA interface); Step 11 checks every service in the
+    # list runs with no fault and FAILs on any that does not (user decision 2026-10-15).
+
+    foreach ($svc in @(Get-800xAServiceStates -Manifest $Manifest)) {
+        if ($svc.Missing) { Write-Log INFO "800xA service $($svc.Name): $($svc.Detail)"; continue }
+        Add-Result -Phase CHMI -Check "800xA service $($svc.Name)" -Status $(if ($svc.Ok) { 'PASS' } else { 'FAIL' }) -Detail $svc.Detail
     }
 
     #endregion
