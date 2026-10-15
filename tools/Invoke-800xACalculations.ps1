@@ -13,7 +13,8 @@
       3. per calculation: TryGetAspectOperation -> Enabled / Status / StatusMessage
       4. -Confirmed: Enabled false, or Status not 0 -> Enabled = false then true (re-enable), wait, read again
     Exit codes: 0 all enabled and Status 0 (or no calculations), 1 problems found (report only), 5 problems left
-    after re-enabling, 2 cannot connect to 800xA, 6 Inform IT Calculations not found.
+    after re-enabling, 7 some or all calculations could not be read, 2 cannot connect to 800xA, 6 Inform IT
+    Calculations not found. Only problems are listed (SJUM7AAPPS0048 has 602 calculation aspects).
     Output: C:\APC_Config\Logs\chmi-calcs_<ts>.txt
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Invoke-800xACalculations.ps1              # check only
@@ -128,9 +129,20 @@ if (-not $calcs.Count) { Say 'No calculations configured - nothing to check.'; F
 
 function Read-Calc($Info) {
     $args3 = @($Info.Id, $script:opIdUsed, $null)
-    [void](Invoke-M $mOp $aos $args3)
+    $found = $null
+    try { $found = Invoke-M $mOp $aos $args3 } catch { $script:lastOpError = $_.Exception.GetBaseException().Message }
     $op = $args3[2]
-    if (-not $op) { return $null }
+    # $null test, not -not: a COM object that is also a collection counts as "empty" in PowerShell
+    if ($null -eq $op -and -not $script:opIdChecked) {
+        # the operation id spelling the query accepted may not be the one TryGetAspectOperation wants: try the others once
+        $script:opIdChecked = $true
+        foreach ($alt in @($iid, $iid.Trim('{}'), $iid.ToLowerInvariant(), $iid.Trim('{}').ToLowerInvariant()) | Where-Object { $_ -ne $script:opIdUsed }) {
+            $a2 = @($Info.Id, $alt, $null)
+            try { [void](Invoke-M $mOp $aos $a2) } catch { }
+            if ($null -ne $a2[2]) { $script:opIdUsed = $alt; $op = $a2[2]; Say "  (operation id spelling for TryGetAspectOperation: $alt)"; break }
+        }
+    }
+    if ($null -eq $op) { $script:lastOpResult = "$found"; return $null }
     $get = { param($n) try { $op.GetType().InvokeMember($n, [Reflection.BindingFlags]::GetProperty, $null, $op, $null) } catch { $null } }
     [pscustomobject]@{ Op = $op; Enabled = [bool](& $get 'Enabled'); Status = (& $get 'Status'); Message = [string](& $get 'StatusMessage') }
 }
@@ -149,18 +161,25 @@ function Name-Of($Info) {
 }
 
 # -- 3. check (and re-enable) -------------------------------------------------------------------------
-Say '== Calculations (Calculation Status Viewer) =='
-$problems = @()
+Say '== Calculations (Calculation Status Viewer): only problems are listed =='
+$problems = @(); $okCount = 0; $unread = @()
 foreach ($c in $calcs) {
-    $name = Name-Of $c
     $s = Read-Calc $c
-    if (-not $s) { Say "  ?    $name  (no ICalculationASO)"; continue }
+    if ($null -eq $s) { $unread += $c; continue }
     $ok = $s.Enabled -and "$($s.Status)" -eq '0'
-    Say ("  {0}  {1}  enabled={2} status={3}{4}" -f $(if ($ok) { 'OK  ' } else { 'FAIL' }), $name, $s.Enabled, $s.Status, $(if ($s.Message) { " - $($s.Message)" }))
-    if (-not $ok) { $problems += [pscustomobject]@{ Name = $name; Info = $c; Calc = $s } }
+    if ($ok) { $okCount++; continue }
+    $name = Name-Of $c
+    Say ("  FAIL  {0}  enabled={1} status={2}{3}" -f $name, $s.Enabled, $s.Status, $(if ($s.Message) { " - $($s.Message)" }))
+    $problems += [pscustomobject]@{ Name = $name; Info = $c; Calc = $s }
+}
+Say "  $okCount OK, $($problems.Count) disabled or in error, $($unread.Count) not readable"
+if ($unread.Count) {
+    Say "  not readable (no ICalculationASO from TryGetAspectOperation; result '$script:lastOpResult'$(if ($script:lastOpError) { ", error: $script:lastOpError" })), first 5:"
+    $unread | Select-Object -First 5 | ForEach-Object { Say "    ?  $(Name-Of $_)" }
 }
 Say ''
-if (-not $problems) { Say "All $($calcs.Count) calculation(s) enabled with status 0."; Finish 0 }
+if ($unread.Count -and -not $okCount -and -not $problems.Count) { Say 'Could not read any calculation.'; Finish 7 }
+if (-not $problems) { Say "All $okCount readable calculation(s) enabled with status 0."; Finish $(if ($unread.Count) { 7 } else { 0 }) }
 if (-not $Confirmed) { Say "$($problems.Count) calculation(s) disabled or in error. With -Confirmed they are enabled again."; Finish 1 }
 
 Say "== Re-enable $($problems.Count) calculation(s) =="
