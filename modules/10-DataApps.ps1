@@ -28,6 +28,15 @@
 
     Blocks are cloned from the installed config (the application installer provides one
     block per instrument type); a type with no block there is reported as FAIL.
+
+    deviceWise OPC UA trust (SOP 2.1.2.5, External Client Enablement): the three apps are OPC UA clients of
+    the deviceWise server (opc.tcp://localhost:48020). Each keeps its certificates in <app folder>\CertificateStores
+    (App = its own, Trusted = servers it trusts); deviceWise keeps them in staging\uaserver\pkiserver (own,
+    trusted, rejected). Step 10 puts each app's certificate in deviceWise's trusted folder (and out of rejected)
+    and deviceWise's certificate in the app's Trusted folder - no dwcore restart needed (VM test 2026-10-15).
+    Then the apps are restarted (or started) so they load the new config (Manifest.DataApps.RestartApps).
+    An app makes its certificate on its first connection: Step 10 starts it, waits for the certificate and
+    trusts it; Data Analyzer only connects after a login + Start Monitoring (reported as MANUAL).
 #>
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
@@ -398,11 +407,121 @@ function Invoke-DataApps {
 
     #endregion
 
+    #region -- deviceWise OPC UA trust and app restart ---------------------------
+
+    if ($State['SandboxRoot']) {
+        Write-Log INFO "Test mode: deviceWise certificates and the applications are left alone"
+    } else {
+        $apps = @(
+            @{ Name = 'File Manager';   Config = $da.FileManagerConfig;   Login = $false }
+            @{ Name = 'Data Collector'; Config = $da.DataCollectorConfig; Login = $false }
+            @{ Name = 'Data Analyzer';  Config = $da.DataAnalyzerConfig;  Login = $true }
+        )
+        $pki     = ([string]$Manifest.DeviceWise.GatewayInstallDir).TrimEnd('\') + '\staging\uaserver\pkiserver'
+        $restart = -not ($da.PSObject.Properties['RestartApps'] -and $da.RestartApps -eq $false)
+        foreach ($app in $apps) {
+            $dir = Split-Path ([string]$app.Config) -Parent
+            $exe = ([string]$app.Config) -replace '\.config$', ''
+            if (-not (Test-Path -LiteralPath $exe)) {
+                Add-Result -Phase DataApps -Check "$($app.Name): deviceWise OPC UA trust" -Status WARN -Detail "Not installed: $exe"
+                continue
+            }
+            if ($restart) {
+                $r = Restart-DataApp -Exe $exe
+                Add-Result -Phase DataApps -Check "$($app.Name): restarted" -Status $(if ($r.Ok) { 'PASS' } else { 'WARN' }) -Detail $r.Detail
+            }
+            # The app makes its certificate on its first connection attempt; give a just-started app time for it
+            $t = Set-DataAppDeviceWiseTrust -AppDir $dir -PkiServer $pki -WaitSeconds $(if ($restart -and -not $app.Login) { 30 } else { 0 })
+            if ($t.Status -eq 'NoCertificate') {
+                $how = if ($app.Login) { 'log in to Data Analyzer and press Start Monitoring once, then re-run Step 10' } else { "open $($app.Name) once, then re-run Step 10" }
+                Add-Result -Phase DataApps -Check "$($app.Name): deviceWise OPC UA trust" -Status MANUAL -Detail "No application certificate yet ($dir\CertificateStores\App\certs): $how"
+            } else {
+                Add-Result -Phase DataApps -Check "$($app.Name): deviceWise OPC UA trust" -Status $(if ($t.Ok) { 'PASS' } else { 'FAIL' }) -Detail $t.Detail
+            }
+        }
+    }
+
+    #endregion
+
     if ($fmFailed -or $dcFailed) {
         Write-Log WARN "Data applications configuration finished with errors - review results above."
     } else {
         Write-Log PASS "Data applications configuration complete."
     }
     Write-Log INFO "Backup files (.$ts.bak) created alongside each modified config. Review and delete after validation."
-    Write-Log INFO "Restart File Manager, Data Collector and Data Analyzer to load the new configuration."
+    if ($State['SandboxRoot']) { Write-Log INFO "Restart File Manager, Data Collector and Data Analyzer to load the new configuration." }
+}
+
+function Set-DataAppDeviceWiseTrust {
+    <#
+        Two-way OPC UA trust between one data app and the deviceWise server (file stores, no restart needed):
+          app  <AppDir>\CertificateStores\App\certs\*.der  -> <PkiServer>\trusted\certs  (and out of <PkiServer>\rejected)
+          deviceWise <PkiServer>\own\certs\*.der        -> <AppDir>\CertificateStores\Trusted\certs
+        Waits up to WaitSeconds for the app certificate (an app makes it on its first connection).
+        Returns @{ Ok; Status = Done | NoCertificate | Failed; Detail }.
+    #>
+    param([string]$AppDir, [string]$PkiServer, [int]$WaitSeconds = 0)
+    $X509   = 'System.Security.Cryptography.X509Certificates.X509Certificate2'
+    $appOwn = Join-Path $AppDir 'CertificateStores\App\certs'
+    $appTr  = Join-Path $AppDir 'CertificateStores\Trusted\certs'
+    $dwOwn  = Join-Path $PkiServer 'own\certs'
+    $dwTr   = Join-Path $PkiServer 'trusted\certs'
+    $dwRej  = Join-Path $PkiServer 'rejected'
+    $load   = { param($f) try { New-Object $X509 $f.FullName } catch { $null } }
+
+    $deadline = (Get-Date).AddSeconds($WaitSeconds)
+    do {
+        $mine = @(Get-ChildItem -LiteralPath $appOwn -Filter '*.der' -File -ErrorAction SilentlyContinue)
+        if ($mine) { break }
+        if ((Get-Date) -lt $deadline) { Start-Sleep -Seconds 3 }
+    } while ((Get-Date) -lt $deadline)
+    if (-not $mine) { return @{ Ok = $false; Status = 'NoCertificate'; Detail = '' } }
+    $server = @(Get-ChildItem -LiteralPath $dwOwn -Filter '*.der' -File -ErrorAction SilentlyContinue)
+    if (-not $server) { return @{ Ok = $false; Status = 'Failed'; Detail = "deviceWise OPC UA server certificate not found in $dwOwn" } }
+
+    try {
+        $notes = @()
+        New-Item -ItemType Directory -Path $dwTr, $appTr -Force | Out-Null
+        $trustedThumbs = @(Get-ChildItem -LiteralPath $dwTr -File -ErrorAction SilentlyContinue | ForEach-Object { (& $load $_).Thumbprint })
+        foreach ($f in $mine) {
+            $c = & $load $f
+            if (-not $c) { continue }
+            if ($c.Thumbprint -notin $trustedThumbs) {
+                Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $dwTr $f.Name) -Force
+                $notes += "$($c.GetNameInfo('SimpleName', $false)) trusted by deviceWise"
+            } else { $notes += "$($c.GetNameInfo('SimpleName', $false)) already trusted by deviceWise" }
+            # the same certificate waiting in rejected would keep Step 13's client-certificate check failing
+            Get-ChildItem -LiteralPath $dwRej -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object { (& $load $_).Thumbprint -eq $c.Thumbprint } | Remove-Item -Force -ErrorAction SilentlyContinue
+        }
+        $appThumbs = @(Get-ChildItem -LiteralPath $appTr -File -ErrorAction SilentlyContinue | ForEach-Object { (& $load $_).Thumbprint })
+        foreach ($f in $server) {
+            $c = & $load $f
+            if ($c -and $c.Thumbprint -notin $appThumbs) {
+                Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $appTr $f.Name) -Force
+                $notes += 'deviceWise server certificate trusted by the app'
+            } elseif ($c) { $notes += 'deviceWise server certificate already trusted' }
+        }
+        return @{ Ok = $true; Status = 'Done'; Detail = $notes -join '; ' }
+    } catch {
+        return @{ Ok = $false; Status = 'Failed'; Detail = "$_" }
+    }
+}
+
+function Restart-DataApp {
+    # Closes a running data app (window close, then kill after 20 s) and starts it again from its folder,
+    # so it loads the new config. Started from the wizard it runs as the wizard's account (the SVC account).
+    param([string]$Exe)
+    $name = [IO.Path]::GetFileNameWithoutExtension($Exe)
+    $was  = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
+    try {
+        foreach ($p in $was) { [void]$p.CloseMainWindow() }
+        foreach ($p in $was) { if (-not $p.WaitForExit(20000)) { $p.Kill(); [void]$p.WaitForExit(10000) } }
+        $new = Start-Process -FilePath $Exe -WorkingDirectory (Split-Path $Exe -Parent) -PassThru
+        Start-Sleep -Seconds 3
+        if ($new.HasExited) { return @{ Ok = $false; Detail = "$name exited right after starting (exit code $($new.ExitCode))" } }
+        return @{ Ok = $true; Detail = "$(if ($was) { 'Restarted' } else { 'Started' }) $name (PID $($new.Id))" }
+    } catch {
+        return @{ Ok = $false; Detail = "$name could not be restarted: $_" }
+    }
 }
