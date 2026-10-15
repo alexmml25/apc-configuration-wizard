@@ -13,7 +13,7 @@
 #>
 param(
     [string]$BinDir = 'C:\Program Files (x86)\ABB 800xA\Base\bin',
-    [string[]]$Dlls = @('AfwServiceAspects.dll', 'AfwAbsInterfaces.dll', 'AfwServiceViews.dll'),
+    [string[]]$Dlls = @('AfwAbsInterfaces.dll', 'AfwServiceAspects.dll', 'AfwServiceViews.dll'),
     [string]$OutDir = 'C:\APC_Config\Logs'
 )
 
@@ -29,8 +29,17 @@ using System;
 using System.Reflection;
 using System.Runtime.InteropServices;
 public class ApcTlbSink : ITypeLibImporterNotifySink {
+    // a type library that references another one (AfwServiceAspects -> AfwAbsInterfaces) needs that one converted too
+    public static System.Collections.Generic.Dictionary<string, Assembly> Done = new System.Collections.Generic.Dictionary<string, Assembly>();
     public void ReportEvent(ImporterEventKind eventKind, int eventCode, string eventMsg) { }
-    public Assembly ResolveRef(object typeLib) { return null; }
+    public Assembly ResolveRef(object typeLib) {
+        string name = "Interop." + Marshal.GetTypeLibName((System.Runtime.InteropServices.ComTypes.ITypeLib)typeLib);
+        Assembly a;
+        if (Done.TryGetValue(name, out a)) return a;
+        a = new TypeLibConverter().ConvertTypeLibToAssembly(typeLib, name + ".dll", TypeLibImporterFlags.None, this, null, null, name, null);
+        Done[name] = a;
+        return a;
+    }
 }
 public static class ApcTlb {
     [DllImport("oleaut32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
@@ -51,10 +60,14 @@ foreach ($dll in $Dlls) {
         $tlb = $null
         [ApcTlb]::LoadTypeLibEx($path, 2, [ref]$tlb)          # 2 = REGKIND_NONE: load only, never register
         $conv = New-Object System.Runtime.InteropServices.TypeLibConverter
+        $libName = 'Interop.' + [System.Runtime.InteropServices.Marshal]::GetTypeLibName([System.Runtime.InteropServices.ComTypes.ITypeLib]$tlb)
+        if ([ApcTlbSink]::Done.ContainsKey($libName)) { $asm = [ApcTlbSink]::Done[$libName] } else {
         $asm  = $conv.ConvertTypeLibToAssembly($tlb, "$name.dll", [System.Runtime.InteropServices.TypeLibImporterFlags]::None,
-                                               (New-Object ApcTlbSink), $null, $null, $name, $null)
-        Push-Location $stage
-        try { $asm.Save("$name.dll") } finally { Pop-Location }
+                                               (New-Object ApcTlbSink), $null, $null, $name, $null) }
+        [ApcTlbSink]::Done[$name] = $asm
+        $cwd = [Environment]::CurrentDirectory
+        [Environment]::CurrentDirectory = $stage           # AssemblyBuilder.Save writes to the process directory
+        try { $asm.Save("$name.dll") } catch { } finally { [Environment]::CurrentDirectory = $cwd }
         $summary.Add("== $dll -> $name.dll")
         foreach ($t in ($asm.GetTypes() | Sort-Object FullName)) {
             $kind = if ($t.IsInterface) { 'interface' } elseif ($t.IsEnum) { 'enum' } elseif ($t.IsValueType) { 'struct' } else { 'class' }
