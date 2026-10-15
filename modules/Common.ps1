@@ -466,6 +466,54 @@ function Find-DOCCertStore {
     return $null
 }
 
+function Close-ProcessMessageBoxes {
+    <#
+        Closes the message boxes (dialog class #32770) that one process shows, by pressing their OK/Cancel/Close,
+        and returns their texts as "<title>: <text>". Only that process's dialogs are touched (no other UI).
+        DOC shows "PartLookup revision in configuration (MAX) does not exist or is unreachable" at start while the
+        database has no PartLookup data yet (VM 2026-10-15); left open it can hold DOC up.
+    #>
+    param([Parameter(Mandatory)] [int]$ProcessId)
+    if (-not ('ApcMsgBox' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class ApcMsgBox {
+    delegate bool EnumProc(IntPtr h, IntPtr l);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
+    [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr p, EnumProc f, IntPtr l);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll")] static extern IntPtr GetDlgItem(IntPtr h, int id);
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+    static string Cls(IntPtr h) { var s = new StringBuilder(256); GetClassName(h, s, 256); return s.ToString(); }
+    static string Txt(IntPtr h) { var s = new StringBuilder(1024); GetWindowText(h, s, 1024); return s.ToString(); }
+    public static List<string> CloseAll(uint pid) {
+        var found = new List<IntPtr>();
+        EnumWindows((h, l) => { uint p; GetWindowThreadProcessId(h, out p);
+            if (p == pid && IsWindowVisible(h) && Cls(h) == "#32770") found.Add(h); return true; }, IntPtr.Zero);
+        var texts = new List<string>();
+        foreach (var h in found) {
+            var parts = new List<string>();
+            EnumChildWindows(h, (c, l) => { if (Cls(c) == "Static") { var t = Txt(c).Trim(); if (t.Length > 0) parts.Add(t); } return true; }, IntPtr.Zero);
+            texts.Add(Txt(h) + ": " + string.Join(" ", parts));
+            // BM_CLICK on OK (1), else Cancel (2), else WM_CLOSE
+            IntPtr b = GetDlgItem(h, 1); if (b == IntPtr.Zero) b = GetDlgItem(h, 2);
+            if (b != IntPtr.Zero) PostMessage(b, 0x00F5, IntPtr.Zero, IntPtr.Zero); else PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero);
+        }
+        return texts;
+    }
+}
+'@
+    }
+    return @([ApcMsgBox]::CloseAll([uint32]$ProcessId))
+}
+
 function Restart-DOCInstance {
     # Closes DOC instance N if it runs (window close, then kill after 20 s) and starts it from its folder, like the
     # data apps (Restart-DataApp). Only that instance: all DOCs share the process name DynamicOffsetCalculation.

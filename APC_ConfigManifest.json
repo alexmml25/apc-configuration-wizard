@@ -255,7 +255,8 @@
     "LoadMatrixRevision": "MAX",
     "ProcessPrefixes":    [ "1ST", "SPC", "VER" ],
     "StartInstances":     true,
-    "CertWaitSeconds":    60
+    "CertWaitSeconds":    60,
+    "KnownStartupMessages": [ "PartLookup revision in configuration" ]
   },
 
   "DataApps": {

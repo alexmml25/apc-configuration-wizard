@@ -200,11 +200,22 @@ function Invoke-DOCConfig {
             Add-Result -Phase DOC -Check "DOC ${n}: started" -Status $(if ($r.Ok) { 'PASS' } else { 'FAIL' }) -Detail $r.Detail
             if (-not $r.Ok) { continue }
             $docDir = ([string]$docCfg.BasePath).Replace('{N}', "$n")
+            # DOC's start-up message boxes (e.g. PartLookup revision MAX not found while the database is empty) are
+            # closed so they cannot hold DOC up; expected ones (DOC.KnownStartupMessages) are noted, others warned
+            $known = @($docCfg.KnownStartupMessages)
+            $proc  = Get-DOCProcess -Manifest $Manifest -Instance $n
+            $boxes = @()
             $deadline = (Get-Date).AddSeconds($wait)
             do {
+                if ($proc) { $boxes += @(Close-ProcessMessageBoxes -ProcessId $proc.Id) }
                 $store = Find-DOCCertStore -DocDir $docDir
                 if (-not $store) { Start-Sleep -Seconds 3 }
             } while (-not $store -and (Get-Date) -lt $deadline)
+            foreach ($b in ($boxes | Select-Object -Unique)) {
+                $isKnown = @($known | Where-Object { $_ -and $b -like "*$_*" }).Count -gt 0
+                Add-Result -Phase DOC -Check "DOC ${n}: start-up message closed" -Status $(if ($isKnown) { 'PASS' } else { 'WARN' }) `
+                    -Detail "$b$(if ($isKnown) { ' (expected while the database has no PartLookup data)' })"
+            }
             if (-not $store) {
                 Add-Result -Phase DOC -Check "DOC ${n}: deviceWise OPC UA trust" -Status WARN `
                     -Detail "DOC-$n made no OPC UA certificate under $docDir within $wait s (no CertificateStores / pki folder) - check its OPC connection, then re-run Step 9"
