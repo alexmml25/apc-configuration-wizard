@@ -172,12 +172,14 @@ try {
 } catch { Fail 'connecting to the 800xA OPC DA server (OPC.Automation, ABB.AfwOpcDaSurrogate.1)' $_; Finish 2 }
 $script:handle = 0
 function Read-Item([string]$ItemId) {
+    $step = 'AddItem'
     try {
         $script:handle++
         $it = $grp.OPCItems.AddItem($ItemId, $script:handle)
+        $step = 'Read'
         $it.Read(2)                                   # 2 = from the device, not the cache
-        [pscustomobject]@{ Item = $it; Value = $it.Value; Good = (($it.Quality -band 0xC0) -eq 0xC0) }
-    } catch { $null }
+        [pscustomobject]@{ Item = $it; Value = $it.Value; Good = (($it.Quality -band 0xC0) -eq 0xC0); Quality = $it.Quality }
+    } catch { $script:lastItemError = "$step $ItemId : $($_.Exception.GetBaseException().Message)"; $null }
 }
 function Read-Calc($Info) {
     $base = Item-Base $Info
@@ -190,9 +192,22 @@ function Read-Calc($Info) {
 }
 function Close-Opc { try { $opc.OPCGroups.RemoveAll(); $opc.Disconnect() } catch { } }
 
-# -- how the first aspect maps to an OPC item (diagnostics) ----------------------------------------------
+# -- diagnostics: a known item (from a GPExplore of Cell_1) and how the first aspect maps to an OPC item -------
+Say '== Diagnostics =='
+$known = '{4B9023E4-39F5-46BD-9018-A4387D1E1890}{147B1B12-9885-4662-9A7F-7B5BC55234C5}:Enabled'   # Cell_1 Cancelled Calculation
+$k = Read-Item $known
+Say "  known item $known -> $(if ($k) { "value '$($k.Value)' quality $($k.Quality)" } else { "FAILED: $script:lastItemError" })"
 $first = $calcs | Select-Object -First 1
-Say "OPC item of the first aspect: $(Name-Of $first) -> $(Item-Base $first)"
+$fb = Item-Base $first
+Say "  first aspect $(Name-Of $first) -> $fb"
+foreach ($pi in $first.Id.GetType().GetProperties()) {
+    $v = try { $pi.GetValue($first.Id, $null) } catch { "<$($_.Exception.GetBaseException().Message)>" }
+    Say "    AspectRef.$($pi.Name) = $v"
+}
+$f = Read-Item "$fb`:Enabled"
+Say "  first aspect Enabled -> $(if ($f) { "value '$($f.Value)' quality $($f.Quality)" } else { "FAILED: $script:lastItemError" })"
+$c1 = $calcs | Where-Object { (Name-Of $_) -like 'Cell_1 : Cancelled*' } | Select-Object -First 1
+if ($c1) { Say "  Cell_1 Cancelled Calculation from the query -> $(Item-Base $c1)  (GPExplore: $($known -replace ':Enabled$', ''))" }
 Say ''
 
 # -- 3. check (and re-enable) ---------------------------------------------------------------------------
