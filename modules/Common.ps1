@@ -389,6 +389,105 @@ function Get-DOCProcess {
         Where-Object { $_.Path -and $_.Path.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
 }
 
+function Set-DataAppDeviceWiseTrust {
+    <#
+        Two-way OPC UA trust between one OPC UA client app and the deviceWise server (file stores, no restart needed):
+          app  <OwnCertDir>\*.der            -> <PkiServer>\trusted\certs  (and out of <PkiServer>\rejected)
+          deviceWise <PkiServer>\own\certs\*.der -> <TrustedCertDir>
+        Defaults (the data apps): <AppDir>\CertificateStores\App\certs and <AppDir>\CertificateStores\Trusted\certs.
+        Waits up to WaitSeconds for the app certificate (an app makes it on its first connection).
+        Returns @{ Ok; Status = Done | NoCertificate | Failed; Detail }.
+    #>
+    param([string]$AppDir, [string]$PkiServer, [int]$WaitSeconds = 0, [string]$OwnCertDir, [string]$TrustedCertDir)
+    $X509   = 'System.Security.Cryptography.X509Certificates.X509Certificate2'
+    $appOwn = if ($OwnCertDir)     { $OwnCertDir }     else { Join-Path $AppDir 'CertificateStores\App\certs' }
+    $appTr  = if ($TrustedCertDir) { $TrustedCertDir } else { Join-Path $AppDir 'CertificateStores\Trusted\certs' }
+    $dwOwn  = Join-Path $PkiServer 'own\certs'
+    $dwTr   = Join-Path $PkiServer 'trusted\certs'
+    $dwRej  = Join-Path $PkiServer 'rejected'
+    $load   = { param($f) try { New-Object $X509 $f.FullName } catch { $null } }
+
+    $deadline = (Get-Date).AddSeconds($WaitSeconds)
+    do {
+        $mine = @(Get-ChildItem -LiteralPath $appOwn -Filter '*.der' -File -ErrorAction SilentlyContinue)
+        if ($mine) { break }
+        if ((Get-Date) -lt $deadline) { Start-Sleep -Seconds 3 }
+    } while ((Get-Date) -lt $deadline)
+    if (-not $mine) { return @{ Ok = $false; Status = 'NoCertificate'; Detail = '' } }
+    $server = @(Get-ChildItem -LiteralPath $dwOwn -Filter '*.der' -File -ErrorAction SilentlyContinue)
+    if (-not $server) { return @{ Ok = $false; Status = 'Failed'; Detail = "deviceWise OPC UA server certificate not found in $dwOwn" } }
+
+    try {
+        $notes = @()
+        New-Item -ItemType Directory -Path $dwTr, $appTr -Force | Out-Null
+        $trustedThumbs = @(Get-ChildItem -LiteralPath $dwTr -File -ErrorAction SilentlyContinue | ForEach-Object { (& $load $_).Thumbprint })
+        foreach ($f in $mine) {
+            $c = & $load $f
+            if (-not $c) { continue }
+            if ($c.Thumbprint -notin $trustedThumbs) {
+                Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $dwTr $f.Name) -Force
+                $notes += "$($c.GetNameInfo('SimpleName', $false)) trusted by deviceWise"
+            } else { $notes += "$($c.GetNameInfo('SimpleName', $false)) already trusted by deviceWise" }
+            # the same certificate waiting in rejected would keep Step 13's client-certificate check failing
+            Get-ChildItem -LiteralPath $dwRej -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object { (& $load $_).Thumbprint -eq $c.Thumbprint } | Remove-Item -Force -ErrorAction SilentlyContinue
+        }
+        $appThumbs = @(Get-ChildItem -LiteralPath $appTr -File -ErrorAction SilentlyContinue | ForEach-Object { (& $load $_).Thumbprint })
+        foreach ($f in $server) {
+            $c = & $load $f
+            if ($c -and $c.Thumbprint -notin $appThumbs) {
+                Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $appTr $f.Name) -Force
+                $notes += 'deviceWise server certificate trusted by the app'
+            } elseif ($c) { $notes += 'deviceWise server certificate already trusted' }
+        }
+        return @{ Ok = $true; Status = 'Done'; Detail = $notes -join '; ' }
+    } catch {
+        return @{ Ok = $false; Status = 'Failed'; Detail = "$_" }
+    }
+}
+
+function Find-DOCCertStore {
+    <#
+        The OPC UA certificate store of one DOC instance (its OPC UA plugin makes it on the first connection):
+        a 'CertificateStores' folder (App / Trusted, as the data apps) or a 'pki' folder (own / trusted) under
+        DOC_II. Returns @{ Own; Trusted } (the certs folders) or $null when DOC has made none yet.
+    #>
+    param([Parameter(Mandatory)] [string]$DocDir)
+    $roots = @(Get-ChildItem -LiteralPath $DocDir -Directory -Recurse -Depth 4 -ErrorAction SilentlyContinue |
+               Where-Object { $_.Name -in 'CertificateStores', 'pki' })
+    foreach ($r in $roots) {
+        foreach ($pair in @(@('App', 'Trusted'), @('own', 'trusted'))) {
+            $own = Join-Path $r.FullName "$($pair[0])\certs"
+            if (Get-ChildItem -LiteralPath $own -Filter '*.der' -File -ErrorAction SilentlyContinue) {
+                return @{ Own = $own; Trusted = (Join-Path $r.FullName "$($pair[1])\certs") }
+            }
+        }
+    }
+    return $null
+}
+
+function Restart-DOCInstance {
+    # Closes DOC instance N if it runs (window close, then kill after 20 s) and starts it from its folder, like the
+    # data apps (Restart-DataApp). Only that instance: all DOCs share the process name DynamicOffsetCalculation.
+    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [int]$Instance)
+    $dir = ([string]$Manifest.DOC.BasePath).Replace('{N}', "$Instance")
+    $exe = Join-Path $dir 'DynamicOffsetCalculation.exe'
+    if (-not (Test-Path -LiteralPath $exe)) { return @{ Ok = $false; Detail = "Not installed: $exe" } }
+    $was = Get-DOCProcess -Manifest $Manifest -Instance $Instance
+    try {
+        if ($was) {
+            [void]$was.CloseMainWindow()
+            if (-not $was.WaitForExit(20000)) { $was.Kill(); [void]$was.WaitForExit(10000) }
+        }
+        $new = Start-Process -FilePath $exe -WorkingDirectory $dir -PassThru
+        Start-Sleep -Seconds 5
+        if ($new.HasExited) { return @{ Ok = $false; Detail = "DOC-$Instance exited right after starting (exit code $($new.ExitCode)) - see $(Split-Path $dir -Parent)\Log" } }
+        return @{ Ok = $true; Detail = "$(if ($was) { 'Restarted' } else { 'Started' }) DOC-$Instance (PID $($new.Id))" }
+    } catch {
+        return @{ Ok = $false; Detail = "DOC-$Instance could not be started: $_" }
+    }
+}
+
 function Test-IsElevated {
     # True when running as administrator (the wizard always does). Administrator sessions may not see
     # network shares that the normal session can.

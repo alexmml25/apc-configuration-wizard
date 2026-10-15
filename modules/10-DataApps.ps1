@@ -459,62 +459,6 @@ function Invoke-DataApps {
     if ($State['SandboxRoot']) { Write-Log INFO "Restart File Manager, Data Collector and Data Analyzer to load the new configuration." }
 }
 
-function Set-DataAppDeviceWiseTrust {
-    <#
-        Two-way OPC UA trust between one data app and the deviceWise server (file stores, no restart needed):
-          app  <AppDir>\CertificateStores\App\certs\*.der  -> <PkiServer>\trusted\certs  (and out of <PkiServer>\rejected)
-          deviceWise <PkiServer>\own\certs\*.der        -> <AppDir>\CertificateStores\Trusted\certs
-        Waits up to WaitSeconds for the app certificate (an app makes it on its first connection).
-        Returns @{ Ok; Status = Done | NoCertificate | Failed; Detail }.
-    #>
-    param([string]$AppDir, [string]$PkiServer, [int]$WaitSeconds = 0)
-    $X509   = 'System.Security.Cryptography.X509Certificates.X509Certificate2'
-    $appOwn = Join-Path $AppDir 'CertificateStores\App\certs'
-    $appTr  = Join-Path $AppDir 'CertificateStores\Trusted\certs'
-    $dwOwn  = Join-Path $PkiServer 'own\certs'
-    $dwTr   = Join-Path $PkiServer 'trusted\certs'
-    $dwRej  = Join-Path $PkiServer 'rejected'
-    $load   = { param($f) try { New-Object $X509 $f.FullName } catch { $null } }
-
-    $deadline = (Get-Date).AddSeconds($WaitSeconds)
-    do {
-        $mine = @(Get-ChildItem -LiteralPath $appOwn -Filter '*.der' -File -ErrorAction SilentlyContinue)
-        if ($mine) { break }
-        if ((Get-Date) -lt $deadline) { Start-Sleep -Seconds 3 }
-    } while ((Get-Date) -lt $deadline)
-    if (-not $mine) { return @{ Ok = $false; Status = 'NoCertificate'; Detail = '' } }
-    $server = @(Get-ChildItem -LiteralPath $dwOwn -Filter '*.der' -File -ErrorAction SilentlyContinue)
-    if (-not $server) { return @{ Ok = $false; Status = 'Failed'; Detail = "deviceWise OPC UA server certificate not found in $dwOwn" } }
-
-    try {
-        $notes = @()
-        New-Item -ItemType Directory -Path $dwTr, $appTr -Force | Out-Null
-        $trustedThumbs = @(Get-ChildItem -LiteralPath $dwTr -File -ErrorAction SilentlyContinue | ForEach-Object { (& $load $_).Thumbprint })
-        foreach ($f in $mine) {
-            $c = & $load $f
-            if (-not $c) { continue }
-            if ($c.Thumbprint -notin $trustedThumbs) {
-                Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $dwTr $f.Name) -Force
-                $notes += "$($c.GetNameInfo('SimpleName', $false)) trusted by deviceWise"
-            } else { $notes += "$($c.GetNameInfo('SimpleName', $false)) already trusted by deviceWise" }
-            # the same certificate waiting in rejected would keep Step 13's client-certificate check failing
-            Get-ChildItem -LiteralPath $dwRej -Recurse -File -ErrorAction SilentlyContinue |
-                Where-Object { (& $load $_).Thumbprint -eq $c.Thumbprint } | Remove-Item -Force -ErrorAction SilentlyContinue
-        }
-        $appThumbs = @(Get-ChildItem -LiteralPath $appTr -File -ErrorAction SilentlyContinue | ForEach-Object { (& $load $_).Thumbprint })
-        foreach ($f in $server) {
-            $c = & $load $f
-            if ($c -and $c.Thumbprint -notin $appThumbs) {
-                Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $appTr $f.Name) -Force
-                $notes += 'deviceWise server certificate trusted by the app'
-            } elseif ($c) { $notes += 'deviceWise server certificate already trusted' }
-        }
-        return @{ Ok = $true; Status = 'Done'; Detail = $notes -join '; ' }
-    } catch {
-        return @{ Ok = $false; Status = 'Failed'; Detail = "$_" }
-    }
-}
-
 function New-DataAnalyzerCertificate {
     # Makes Data Analyzer's OPC UA certificate in its own CertificateStores without opening it (32-bit helper
     # tools\Test-DataAnalyzerCert.ps1 -StoreDir; connects to an unused port, so deviceWise sees nothing).

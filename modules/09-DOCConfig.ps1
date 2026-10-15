@@ -184,6 +184,38 @@ function Invoke-DOCConfig {
         #endregion
     }
 
+    #region -- start each DOC and trust it in deviceWise (as Step 10 does for the data apps) ----------------
+    # DOC reads its XML at start, so it is (re)started after the changes. Its OPC UA plugin makes a client
+    # certificate on the first connection to deviceWise; that is trusted both ways (file stores).
+    if ($State['SandboxRoot']) {
+        Write-Log INFO "Test mode: DOC instances are not started"
+    } elseif ($docCfg.PSObject.Properties['StartInstances'] -and $docCfg.StartInstances -eq $false) {
+        Write-Log INFO "DOC.StartInstances is false: DOC instances are not started"
+    } else {
+        $pki  = ([string]$Manifest.DeviceWise.GatewayInstallDir).TrimEnd('\') + '\staging\uaserver\pkiserver'
+        $wait = if ($docCfg.PSObject.Properties['CertWaitSeconds']) { [int]$docCfg.CertWaitSeconds } else { 60 }
+        foreach ($m in $machines) {
+            $n = [int]$m.CNCIndex
+            $r = Restart-DOCInstance -Manifest $Manifest -Instance $n
+            Add-Result -Phase DOC -Check "DOC ${n}: started" -Status $(if ($r.Ok) { 'PASS' } else { 'FAIL' }) -Detail $r.Detail
+            if (-not $r.Ok) { continue }
+            $docDir = ([string]$docCfg.BasePath).Replace('{N}', "$n")
+            $deadline = (Get-Date).AddSeconds($wait)
+            do {
+                $store = Find-DOCCertStore -DocDir $docDir
+                if (-not $store) { Start-Sleep -Seconds 3 }
+            } while (-not $store -and (Get-Date) -lt $deadline)
+            if (-not $store) {
+                Add-Result -Phase DOC -Check "DOC ${n}: deviceWise OPC UA trust" -Status WARN `
+                    -Detail "DOC-$n made no OPC UA certificate under $docDir within $wait s (no CertificateStores / pki folder) - check its OPC connection, then re-run Step 9"
+                continue
+            }
+            $t = Set-DataAppDeviceWiseTrust -AppDir $docDir -PkiServer $pki -OwnCertDir $store.Own -TrustedCertDir $store.Trusted
+            Add-Result -Phase DOC -Check "DOC ${n}: deviceWise OPC UA trust" -Status $(if ($t.Ok) { 'PASS' } else { 'FAIL' }) -Detail "$($t.Detail) ($($store.Own))"
+        }
+    }
+    #endregion
+
     Write-Log PASS "DOC XML configuration complete ($($machines.Count) instance(s))."
     Write-Log INFO "Backups (.$ts.bak) created alongside each modified XML. Review and delete after validation."
 }

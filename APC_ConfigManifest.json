@@ -253,7 +253,9 @@
     "IqsCollectorXml":    "IqsDocSpcDataCollector.xml",
     "CSVFileNamePattern": "{AF}-{AN}-{BN}-{PF}-{PN}-{PSN} {DS} {TS}.csv",
     "LoadMatrixRevision": "MAX",
-    "ProcessPrefixes":    [ "1ST", "SPC", "VER" ]
+    "ProcessPrefixes":    [ "1ST", "SPC", "VER" ],
+    "StartInstances":     true,
+    "CertWaitSeconds":    60
   },
 
   "DataApps": {
