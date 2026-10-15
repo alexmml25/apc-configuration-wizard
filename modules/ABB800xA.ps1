@@ -513,3 +513,34 @@ function Invoke-800xACalculationCheck {
     $rep  = @($out | Where-Object { $_ -match '^Written: ' } | Select-Object -Last 1) -replace '^Written: ', ''
     @{ Code = $LASTEXITCODE; Report = "$rep"; Lines = $out }
 }
+
+function Get-800xACellOpcStates {
+    <#
+        Reads (never writes) <Manifest.CHMI.CellOpcPath with {n}>:CNCAsset / :CNCType for each DOC-assigned CNC through
+        the kit. The 'OPC' child of each Medtronic cell is the uploaded deviceWise CNC{n} node (SOP: each cell must have a
+        child named OPC); matching values with Good quality prove it exists, is named right and is live.
+        Returns per cell: Cell, Machine, Asset, Type, Good, Exists, Ok, Detail.
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [hashtable]$State, [hashtable]$Kit)
+    if (-not $Kit) { $Kit = Get-800xAKit -Manifest $Manifest }
+    $server = [string]$Manifest.ABB800xA.OpcServer
+    $tmpl   = if ($Manifest.CHMI.PSObject.Properties['CellOpcPath'] -and $Manifest.CHMI.CellOpcPath) { [string]$Manifest.CHMI.CellOpcPath } else { 'Root/Medtronic/Cell_{n}/OPC' }
+    foreach ($m in @(Get-AssignedCNCs -State $State -Manifest $Manifest)) {
+        $path = $tmpl -replace '\{n\}', $m.CNCIndex
+        $o = [ordered]@{ Cell = "Cell_$($m.CNCIndex)"; Path = $path; Machine = [string]$m.MachineName; MachineType = [string]$m.CNCType
+                         Asset = ''; Type = ''; Good = $true; Exists = $false; Ok = $false; Detail = '' }
+        if ($Kit.Problems.Count) { $o.Detail = "800xA kit not usable: $($Kit.Problems -join '; ')"; [pscustomobject]$o; continue }
+        foreach ($p in 'CNCAsset', 'CNCType') {
+            $r = Invoke-800xAGPCall -Kit $Kit -ItemId "$path`:$p" -Server $server
+            if (-not $r.Success) { $o.Detail = "no $path`:$p ($($r.Error)) - the cell has no 'OPC' child, or it is not uploaded/named OPC"; break }
+            $o.Exists = $true
+            if ($r.Output -match 'quality=(\d+)' -and ([int]$Matches[1] -band 0xC0) -ne 0xC0) { $o.Good = $false }
+            if ($p -eq 'CNCAsset') { $o.Asset = [string]$r.Before } else { $o.Type = [string]$r.Before }
+        }
+        if ($o.Exists -and -not $o.Detail) {
+            $o.Ok = $o.Good -and $o.Asset -eq $o.Machine -and (-not $o.MachineType -or $o.Type -eq $o.MachineType)
+            $o.Detail = "$path`: CNCAsset '$($o.Asset)', CNCType '$($o.Type)'$(if (-not $o.Good) { ', quality not Good (not live)' })$(if ($o.Asset -ne $o.Machine) { " - expected '$($o.Machine)'" })"
+        }
+        [pscustomobject]$o
+    }
+}

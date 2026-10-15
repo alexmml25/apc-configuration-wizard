@@ -24,6 +24,7 @@
 #>
 param(
     [switch]$Confirmed,
+    [switch]$CheckOnly,              # Step 13: report URL, certificate and upload placements; no backup, exit 0 when all right
     [string]$ServerName = 'DEVICEWISE OPC UA',
     [string]$ServerUrl  = '',
     [string]$GatewayDir = 'C:\Program Files\deviceWISE\Gateway',
@@ -40,6 +41,7 @@ if ([Environment]::Is64BitProcess -or [Threading.Thread]::CurrentThread.Apartmen
               '-ServerUrl', $ServerUrl, '-GatewayDir', $GatewayDir, '-BinDir', $BinDir, '-PkiRoot', $PkiRoot,
               '-OutDir', $OutDir, '-BackupRoot', $BackupRoot)
     if ($Confirmed) { $argz += '-Confirmed' }
+    if ($CheckOnly) { $argz += '-CheckOnly' }
     & $ps32 @argz
     exit $LASTEXITCODE
 }
@@ -124,7 +126,17 @@ $my.Close()
 Say "  OPC UA Connect certificate:      $(if ($uaConnect) { "$($uaConnect.Thumbprint) (to $($uaConnect.NotAfter.ToString('yyyy-MM-dd')))" } else { 'NOT FOUND in LocalMachine\My' })"
 $urlOk  = [string]::Equals($oldUrl, $ServerUrl, [StringComparison]::OrdinalIgnoreCase)
 $certOk = $node.Certificate -and $node.Certificate.Thumbprint -eq $gwCert.Thumbprint
+# SOP OPC UA Server Info > Placements / Upload: every placement Uploaded (Node Status = Uploaded)
+$placements = @($data.UploadPlacements)
+foreach ($pl in $placements) { Say "  placement '$($pl.NodeName)'  status $($pl.Status)" }
+$notUp = @($placements | Where-Object { "$($_.Status)" -ne 'Uploaded' })
+$plOk  = $placements.Count -gt 0 -and -not $notUp
+Say ("Upload placements: {0}, {1}" -f $placements.Count, $(if (-not $placements.Count) { 'none - add a placement and Upload to 800xA' } elseif ($notUp) { "not uploaded: $(($notUp | ForEach-Object { "$($_.NodeName) ($($_.Status))" }) -join ', ')" } else { 'all Uploaded' }))
 Say ''
+if ($CheckOnly) {
+    Say "Check: URL $(if ($urlOk) { 'OK' } else { "is $oldUrl, expected $ServerUrl" }); certificate $(if ($certOk) { 'OK' } else { 'not this gateway''s' }); placements $(if ($plOk) { 'OK' } else { 'NOT OK' })"
+    Finish $(if ($urlOk -and $certOk -and $plOk) { 0 } else { 1 })
+}
 
 # -- backup -----------------------------------------------------------------------------------
 $backupDir = Join-Path $BackupRoot "${ts}_800xA-dwserver"
@@ -195,6 +207,7 @@ try {
     Say "  trusted server certificate now: $(if ($n2.Certificate) { $n2.Certificate.Thumbprint } else { '(none)' })"
     if (-not [string]::Equals([string]$now.ServerURL, $ServerUrl, [StringComparison]::OrdinalIgnoreCase)) { $problems++ }
     if (-not ($n2.Certificate -and $n2.Certificate.Thumbprint -eq $gwCert.Thumbprint)) { $problems++ }
+    if (-not $plOk) { Say '  upload placements not all Uploaded (see above)' }   # reported by Step 11 on its own line
 } catch { Fail 'check' $_; $problems++ }
 Say ''
 Say 'OPC UA Connect picks up the new URL when it restarts (Step 11 service reset, OPC UA Connect first).'

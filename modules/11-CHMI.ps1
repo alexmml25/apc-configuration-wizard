@@ -93,6 +93,14 @@ function Invoke-CHMI {
 
     #endregion
 
+    #region -- 'OPC' child per cell, live from deviceWise (SOP CHMI: each cell has a child named OPC) --
+
+    foreach ($c in @(Get-800xACellOpcStates -Manifest $Manifest -State $State)) {
+        Add-Result -Phase CHMI -Check "800xA $($c.Cell) OPC (CNC$($c.Cell -replace 'Cell_', ''))" -Status $(if ($c.Ok) { 'PASS' } else { 'FAIL' }) -Detail $c.Detail
+    }
+
+    #endregion
+
     #region -- Calculations enabled (Calculation Status Viewer, D01558132 1.4) --
 
     if ([bool]$Manifest.CHMI.CheckCalculations) {
@@ -208,6 +216,10 @@ function Invoke-800xADeviceWiseServer {
     foreach ($l in @($out)) { if ("$l".Trim()) { Write-Log INFO "  [dwserver] $l" } }
     $rep  = @($out | ForEach-Object { "$_" } | Where-Object { $_ -match '^Written: ' } | Select-Object -Last 1) -replace '^Written: ', ''
     $now  = @($out | ForEach-Object { "$_" } | Where-Object { $_ -match 'Server URL now: ' } | Select-Object -Last 1) -replace '^.*Server URL now: ', ''
+    $pl   = @($out | ForEach-Object { "$_" } | Where-Object { $_ -match '^Upload placements: ' } | Select-Object -Last 1) -replace '^Upload placements: ', ''
+    if ($pl) {
+        Add-Result -Phase CHMI -Check '800xA DEVICEWISE OPC UA placements uploaded' -Status $(if ($pl -match 'all Uploaded') { 'PASS' } else { 'FAIL' }) -Detail "$pl (OPC UA Server Info > Placements / Upload)"
+    }
     if ($code -eq 0) {
         Add-Result -Phase CHMI -Check '800xA DEVICEWISE OPC UA server' -Status PASS -Detail "Server URL $now, this gateway's certificate trusted both ways - report $rep"
     } else {

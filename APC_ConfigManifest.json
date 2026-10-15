@@ -337,6 +337,7 @@
     "AutomateCertificates":       true,
     "SetDeviceWiseServer":       true,
     "DeviceWiseServerUrl":       "opc.tcp://{HOST}:48020",
+    "CellOpcPath": "Root/Medtronic/Cell_{n}/OPC",
     "CheckCalculations": true,
     "CalculationsBinDir": "C:\\Program Files (x86)\\ABB Industrial IT\\Inform IT\\Calculations\\bin",
     "ServiceChecks": [

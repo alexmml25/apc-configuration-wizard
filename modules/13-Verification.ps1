@@ -930,9 +930,29 @@ function Invoke-Verification {
     } '' 10 4
 
     # Items 5-7 - manual
-    Blank 'CHMI' 'OPC UA placements added (Node Status=Uploaded)' 10 5
-    Blank 'CHMI' 'CNC OPC object naming verified' 10 6
-    Blank 'CHMI' 'OPC UA connectivity readiness confirmed' 10 7
+    # Item 5 - placements uploaded (OPC UA Server Info aspect, read by tools\Set-800xADeviceWiseServer.ps1 -CheckOnly)
+    Check 'CHMI' 'OPC UA placements added (Node Status=Uploaded)' {
+        $tool = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\Set-800xADeviceWiseServer.ps1'
+        $ps32 = Join-Path $env:WINDIR 'SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
+        $out  = @(& $ps32 -NoProfile -STA -ExecutionPolicy Bypass -File $tool -CheckOnly -OutDir $reportDir 2>&1 | ForEach-Object { "$_" })
+        $pl   = @($out | Where-Object { $_ -match '^Upload placements: ' } | Select-Object -Last 1) -replace '^Upload placements: ', ''
+        if (-not $pl) { throw "Could not read the placements: $(($out | Select-Object -Last 3) -join ' ')" }
+        if ($pl -notmatch 'all Uploaded') { throw $pl }
+        $pl
+    } '' 10 5
+
+    # Items 6-7 - each cell's 'OPC' child exists, is named OPC and shows its CNC live (CNCAsset / CNCType from deviceWise)
+    $cellOpc = @(Get-800xACellOpcStates -Manifest $Manifest -State $State)
+    Check 'CHMI' 'CNC OPC object naming verified' {
+        $missing = @($cellOpc | Where-Object { -not $_.Exists } | ForEach-Object { "$($_.Cell): $($_.Detail)" })
+        if ($missing) { throw ($missing -join '; ') }
+        "OPC child present: $(($cellOpc | ForEach-Object { "$($_.Cell)/OPC" }) -join ', ')"
+    } '' 10 6
+    Check 'CHMI' 'OPC UA connectivity readiness confirmed' {
+        $bad = @($cellOpc | Where-Object { -not $_.Ok } | ForEach-Object { "$($_.Cell): $($_.Detail)" })
+        if ($bad) { throw ($bad -join '; ') }
+        "Live from deviceWise: $(($cellOpc | ForEach-Object { "$($_.Cell)=$($_.Asset) ($($_.Type))" }) -join ', ')"
+    } '' 10 7
 
     #endregion
 
