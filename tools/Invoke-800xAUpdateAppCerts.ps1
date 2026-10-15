@@ -258,6 +258,15 @@ foreach ($n in $todo) {
     Say "  -- $($n.Name)  $($n.ServerUrl)"
     $session = $null
     try {
+        # The portal asks "trust this server certificate?" on its first connect (operator clicks Trust). Same
+        # effect here, limited to the certificate 800xA has registered for this application: put it in the
+        # portal's trusted folder and reload the validator (VM run 2026-10-15: "Certificate is not trusted").
+        if ($n.Certificate) {
+            [ABB.xA.Base.Ua.ManagementPortal.CertificateHandler]::WriteCertificateToTrustedDirectory($trustedPath, $n.Certificate)
+            $upd = $inst.ApplicationConfiguration.CertificateValidator.Update($secCfg)
+            if ($upd -is [System.Threading.Tasks.Task]) { $upd.GetAwaiter().GetResult() }
+            Say "     trusted its registered certificate $($n.Certificate.Thumbprint) in the portal"
+        }
         $session = Invoke-Gds 'Connect' @($inst, $n.ServerUrl, $identity)
         Say '     connected (security on)'
         $trust = Invoke-Gds 'GetTrustedCertificates' @($session, $true)
