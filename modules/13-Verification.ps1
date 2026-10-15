@@ -952,8 +952,7 @@ function Invoke-Verification {
     Check 'Network' 'TCP 683 connectivity to each CNC machine' {
         $failed = @()
         foreach ($m in $machines) {
-            $conn = Test-NetConnection -ComputerName $m.IPAddress -Port 683 -WarningAction SilentlyContinue
-            if (-not $conn.TcpTestSucceeded) { $failed += "$($m.MachineName)($($m.IPAddress))" }
+            if (-not (Test-TcpPort $m.IPAddress 683 ([int]$cncPdm.PortCheckTimeoutMs))) { $failed += "$($m.MachineName)($($m.IPAddress))" }
         }
         if ($failed) { throw "TCP 683 unreachable: $($failed -join ', ')" }
         "TCP 683 reachable: $($machines.MachineName -join ', ')"
@@ -1097,8 +1096,13 @@ function Invoke-FillD01555624 {
         [Parameter(Mandatory)] [string]    $Performer
     )
 
-    Add-Type -AssemblyName System.IO.Compression
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    # Load by full name: Add-Type -AssemblyName failed in the wizard's step runspace with
+    # "Invalid pointer (E_POINTER)" (VM run 2026-10-15)
+    foreach ($asm in 'System.IO.Compression', 'System.IO.Compression.FileSystem') {
+        if (-not ([AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq $asm })) {
+            [void][Reflection.Assembly]::Load("$asm, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")
+        }
+    }
 
     # Read template zip and produce new output zip, modifying only word/document.xml
     $docXmlEntry = 'word/document.xml'

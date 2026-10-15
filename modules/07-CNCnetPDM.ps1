@@ -148,15 +148,6 @@ function Invoke-CNCnetPDM {
         } finally { $fs.Close() }
     }
 
-    function Test-TcpPort {
-        param([string]$Address, [int]$Port, [int]$TimeoutMs = 2000)
-        $client = New-Object System.Net.Sockets.TcpClient
-        try {
-            $ar = $client.BeginConnect($Address, $Port, $null, $null)
-            return ($ar.AsyncWaitHandle.WaitOne($TimeoutMs) -and $client.Connected)
-        } catch { return $false } finally { $client.Close() }
-    }
-
     function Get-MachinePort {
         param($Machine)
         if ("$($Machine.Port)" -match '^\d+$') { [int]$Machine.Port } else { [int]$d.Port }

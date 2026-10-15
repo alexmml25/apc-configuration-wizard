@@ -346,6 +346,17 @@ function Test-ShareServerReachable {
     } catch { return $false } finally { $client.Close() }
 }
 
+function Test-TcpPort {
+    # True when Address:Port accepts a TCP connection within TimeoutMs. Plain TcpClient: Test-NetConnection
+    # needs CimCmdlets, which does not load in the wizard's step runspace (VM run 2026-10-15)
+    param([string]$Address, [int]$Port, [int]$TimeoutMs = 2000)
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $ar = $client.BeginConnect($Address, $Port, $null, $null)
+        return ($ar.AsyncWaitHandle.WaitOne($TimeoutMs) -and $client.Connected)
+    } catch { return $false } finally { $client.Close() }
+}
+
 function Test-IsElevated {
     # True when running as administrator (the wizard always does). Administrator sessions may not see
     # network shares that the normal session can.
