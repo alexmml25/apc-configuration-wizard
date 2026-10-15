@@ -57,7 +57,7 @@ try {
     $browser.IncludeSubtypes = $true
     foreach ($ref in $browser.Browse([Opc.Ua.ObjectIds]::ObjectsFolder)) {
         W "  $($ref.DisplayName)   [$($ref.NodeId)]  $($ref.NodeClass)"
-        if ("$($ref.DisplayName)" -match '^CNC\d') {
+        if ("$($ref.DisplayName)" -match '^CNC\d|Device|Gateway') {
             $id = [Opc.Ua.ExpandedNodeId]::ToNodeId($ref.NodeId, $session.NamespaceUris)
             $kids = @($browser.Browse($id))
             foreach ($k in ($kids | Select-Object -First 40)) { W "      $($k.DisplayName)   [$($k.NodeId)]  $($k.NodeClass)" }
@@ -69,13 +69,26 @@ try {
 # -- 3. candidate nodes -----------------------------------------------------------------------------------
 W ''; W "== Reads (CNC$Cnc) =="
 if ($session) {
-    foreach ($p in "CNC${Cnc}_PATH.2_597", "CNC$Cnc.Control.CNCToSegregateParts", "CNC$Cnc.CNCAsset", "CNC$Cnc.Control.CNCPartMachined") {
+    foreach ($p in "CNC${Cnc}_PATH.2_597", "CNC${Cnc}_PATH.1_597", "CNC${Cnc}_PATH.2_599", "CNC$Cnc.Control.CNCToSegregateParts", "CNC$Cnc.CNCAsset") {
         try {
             $v = Get-DwUaValue -Session $session -Namespace $ns -Path $p
             W ("  {0,-40} value '{1}'  status {2}  source time {3}" -f $p, $v.Value, $v.StatusCode, $v.SourceTimestamp)
         } catch { W ("  {0,-40} FAILED: {1}" -f $p, $_.Exception.Message) }
     }
     try { $session.Close() } catch { }
+}
+
+# -- 4. deviceWise listening ports (is there a local gateway API besides OPC UA?) -----------------------
+W ''; W '== deviceWise processes and their listening ports =='
+$dwProcs = @(Get-Process -Name 'dwcore', 'dwts', 'dwhttp*', 'dw*' -ErrorAction SilentlyContinue | Sort-Object Id -Unique)
+foreach ($p in $dwProcs) {
+    $ports = @(netstat -ano -p TCP | Where-Object { $_ -match 'LISTENING' -and ($_.Trim() -split '\s+')[-1] -eq "$($p.Id)" } | ForEach-Object { ($_.Trim() -split '\s+')[1] })
+    W ("  {0,-12} PID {1,-6} listening: {2}" -f $p.ProcessName, $p.Id, ($ports -join ', '))
+}
+$props = Get-ChildItem ([string]$m.DeviceWise.GatewayInstallDir) -Filter '*.properties' -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 10
+foreach ($f in $props) {
+    W "  -- $($f.FullName)"
+    Get-Content $f.FullName -ErrorAction SilentlyContinue | Where-Object { $_ -match 'port|http|api|rest' -and $_ -notmatch 'password' } | Select-Object -First 15 | ForEach-Object { W "     $_" }
 }
 
 $lines | Set-Content -Path $out

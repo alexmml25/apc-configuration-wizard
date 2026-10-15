@@ -604,6 +604,8 @@ function Open-DwUaSession {
     if (-not ('Opc.Ua.Client.Session' -as [type])) {
         # start from an empty copy each run, so it always matches 800xA's current stack version
         if (Test-Path $Global:DwUaStackCopy) { Remove-Item (Join-Path $Global:DwUaStackCopy '*') -Force -ErrorAction SilentlyContinue }
+        # another process (an open wizard) still holds the copy: use one of our own
+        if (Test-Path (Join-Path $Global:DwUaStackCopy 'Opc.Ua.Core.dll')) { $Global:DwUaStackCopy = "C:\APC_Config\OpcUaStack_$PID" }
         New-Item -ItemType Directory -Path $Global:DwUaStackCopy -Force | Out-Null
         # dependencies (e.g. Newtonsoft.Json) are copied and loaded on demand the same way
         [AppDomain]::CurrentDomain.add_AssemblyResolve([ResolveEventHandler]{
