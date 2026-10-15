@@ -116,7 +116,14 @@ function Get-GdsMethod([string]$Name, [int]$ParamCount) {
     return $m
 }
 function Invoke-Gds([string]$Name, [object[]]$Arguments) {
-    $r = (Get-GdsMethod $Name $Arguments.Count).Invoke($null, $Arguments)
+    # MethodInfo.Invoke needs the plain .NET objects: PowerShell hands over objects made with New-Object
+    # wrapped in a PSObject ("cannot be converted to type 'Opc.Ua.IUserIdentity'", VM run 2026-10-15)
+    $plain = New-Object object[] $Arguments.Count
+    for ($i = 0; $i -lt $Arguments.Count; $i++) {
+        $a = $Arguments[$i]
+        if ($null -ne $a) { $plain[$i] = $a.PSObject.BaseObject }   # direct assignment: an if-expression would unroll byte[]
+    }
+    $r = (Get-GdsMethod $Name $Arguments.Count).Invoke($null, $plain)
     if ($r -is [System.Threading.Tasks.Task]) { return $r.GetAwaiter().GetResult() }
     return $r
 }
@@ -253,7 +260,7 @@ foreach ($n in $todo) {
         $trust = Invoke-Gds 'GetTrustedCertificates' @($session, $true)
         [void](Invoke-Gds 'UpdateTrustList' @($session, $trust, [byte[]]$rootRaw, [byte[]]$crlRaw, $true))
         Say '     trust list: root + CRL trusted, root removed from the issuer list'
-        $cm = [Activator]::CreateInstance($cmType, [System.Reflection.BindingFlags]'Public,NonPublic,Instance', $null, @($root.Thumbprint), $null)
+        $cm = [Activator]::CreateInstance($cmType, [System.Reflection.BindingFlags]'Public,NonPublic,Instance', $null, [object[]]@([string]$root.Thumbprint), $null)
         try { $newCert = Invoke-Gds 'UpdateCertificate' @($session, $cm, $n) } finally { $cm.Dispose() }
         if (-not $newCert) { throw 'the application returned no certificate' }
         Say "     pushed + ApplyChanges: $(Describe $newCert)"
