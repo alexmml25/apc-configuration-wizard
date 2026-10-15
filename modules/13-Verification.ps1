@@ -535,9 +535,34 @@ function Invoke-Verification {
         ($machines | ForEach-Object { "DOC$($_.CNCIndex) -> CNC$($_.CNCIndex) ($($_.MachineName))" }) -join ', '
     } '' 5 9
 
-    # Items 10-11 - manual
-    Blank 'DOC' 'DOC application launch' 5 10
-    Blank 'DOC' 'DOC connectivity indicators (DB/SPC/OPC green)' 5 11
+    # Item 10 - each assigned DOC instance running (DynamicOffsetCalculation.exe from its DOC-n folder)
+    $docProcs = @{}
+    foreach ($mm in $machines) { $pp = Get-DOCProcess -Manifest $Manifest -Instance $mm.CNCIndex; if ($pp) { $docProcs[[int]$mm.CNCIndex] = $pp } }
+    Check 'DOC' 'DOC application launch' {
+        if ($machines.Count -eq 0) { throw "No DOC-assigned machines" }
+        $down = @($machines | Where-Object { -not $docProcs.ContainsKey([int]$_.CNCIndex) } | ForEach-Object { "DOC$($_.CNCIndex)" })
+        if ($down) { throw "Not running: $($down -join ', ') (DynamicOffsetCalculation.exe in DOC-n\DOC_II)" }
+        ($machines | ForEach-Object { "DOC$($_.CNCIndex) PID $($docProcs[[int]$_.CNCIndex].Id)" }) -join ', '
+    } '' 5 10
+
+    # Item 11 - the DB/SPC and OPC indicators: the DOC process holds a connection to PostgreSQL and to the
+    # deviceWise OPC UA server (the indicators turn green on those connections)
+    Check 'DOC' 'DOC connectivity indicators (DB/SPC/OPC green)' {
+        if ($machines.Count -eq 0) { throw "No DOC-assigned machines" }
+        $opcPort = [int]$dw.OpcUaEndpointPort
+        $issues = @(); $ok = @()
+        foreach ($mm in $machines) {
+            $n = [int]$mm.CNCIndex
+            if (-not $docProcs.ContainsKey($n)) { $issues += "DOC$n not running"; continue }
+            $ports = @(Get-ProcessTcpConnections -ProcessId $docProcs[$n].Id | ForEach-Object { $_.RemotePort })
+            $miss = @()
+            if ($ports -notcontains [int]$pg.DefaultPort) { $miss += "DB/SPC (no connection to PostgreSQL :$($pg.DefaultPort))" }
+            if ($ports -notcontains $opcPort)              { $miss += "OPC (no connection to deviceWise :$opcPort)" }
+            if ($miss) { $issues += "DOC$n $($miss -join ', ')" } else { $ok += "DOC$n" }
+        }
+        if ($issues) { throw ($issues -join '; ') }
+        "DB/SPC and OPC connected: $($ok -join ', ')"
+    } '' 5 11
 
     # Item 12 - every DOC assignment resolves to a Site DB machine
     Check 'DOC' 'DOC-to-CNC alignment with deviceWise' {
@@ -875,8 +900,14 @@ function Invoke-Verification {
         "Process: $($proc.ProcessName) (PID $($proc.Id))"
     } '' 9 3
 
-    # Item 4 - TSDB connectivity (manual)
-    Blank 'DataAnalyzer' 'TSDB connectivity confirmed in app' 9 4
+    # Item 4 - TSDB connectivity: Data Analyzer holds connections to PostgreSQL (it opens them at start)
+    Check 'DataAnalyzer' 'TSDB connectivity confirmed in app' {
+        $procs = @(Get-Process -Name 'DataAnalyzer' -ErrorAction SilentlyContinue)
+        if (-not $procs) { throw "Data Analyzer not running" }
+        $c = @(Get-ProcessTcpConnections -ProcessId ($procs | ForEach-Object { $_.Id }) | Where-Object { $_.RemotePort -eq [int]$pg.DefaultPort })
+        if (-not $c) { throw "Data Analyzer has no connection to PostgreSQL :$($pg.DefaultPort) - check logs\DBManager.log" }
+        "$($c.Count) connection(s) to PostgreSQL :$($pg.DefaultPort)"
+    } '' 9 4
 
     #endregion
 

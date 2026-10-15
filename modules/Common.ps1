@@ -365,6 +365,30 @@ function Test-TcpPort {
     } catch { return $false } finally { $client.Close() }
 }
 
+function Get-ProcessTcpConnections {
+    <#
+        Established TCP connections of the given process IDs, from netstat -ano (no NetTCPIP / CimCmdlets in the
+        step runspace): objects ProcessId, Local, Remote, RemotePort. An app's DB or OPC UA connection shows here
+        while it is running (probe on SJUM7AAPPS0048 2026-10-15: DataAnalyzer -> [::1]:5432 x3, DataCollector ->
+        :5432 and :48020).
+    #>
+    param([int[]]$ProcessId)
+    $ids = @($ProcessId | ForEach-Object { [string]$_ })
+    foreach ($l in @(netstat -ano -p TCP 2>$null) + @(netstat -ano -p TCPv6 2>$null)) {
+        $f = "$l".Trim() -split '\s+'
+        if ($f.Count -lt 5 -or $f[0] -ne 'TCP' -or $f[3] -ne 'ESTABLISHED' -or $ids -notcontains $f[4]) { continue }
+        [pscustomobject]@{ ProcessId = [int]$f[4]; Local = $f[1]; Remote = $f[2]; RemotePort = [int]($f[2] -replace '^.*:', '') }
+    }
+}
+
+function Get-DOCProcess {
+    # The running DOC (DynamicOffsetCalculation.exe) of instance N, found by its folder (Manifest.DOC.BasePath); $null if not running
+    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [int]$Instance)
+    $dir = ([string]$Manifest.DOC.BasePath).Replace('{N}', "$Instance").TrimEnd('\') + '\'
+    Get-Process -Name 'DynamicOffsetCalculation' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -and $_.Path.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1
+}
+
 function Test-IsElevated {
     # True when running as administrator (the wizard always does). Administrator sessions may not see
     # network shares that the normal session can.
