@@ -4,8 +4,8 @@
     Step 11 - CHMI / APC UI: 800xA General Properties, OPC UA certificates and deviceWise server (all automated).
 .DESCRIPTION
     800xA General Properties (first, config-driven): each entry of Manifest.ABB800xA.Properties is read,
-    written and read back through the proven kit in kits\800xA (32-bit cscript), with before/after values
-    logged to C:\APC_Config\Logs\800xA_changes_<ts>.log. The step stops at the first failed read/write.
+    written and read back through the proven kit in modules\800xA (32-bit cscript), with before/after values
+    logged to <run>\Logs\800xA_changes_<ts>.log. The step stops at the first failed read/write.
     Today: Inspections GP CSV folders (BENCH / 100%) and Verification GP shift settings, per DOC-assigned
     Cell_n, with values from Manifest.ABB800xA.Settings.
 
@@ -18,7 +18,7 @@
       2. Invoke-800xAUpdateAppCerts.ps1 -Confirmed -NonInteractive: portal certificate, then OPC UA Connect
          (trust list, CSR signed by the root, push, reconnect check, 800xA aspect); applications already
          signed by the current root are left alone
-    Both back up first (C:\APC_Config\Backups\<ts>_800xA-*) and write a report to the run's Logs folder.
+    Both back up first (<run>\Backups\<ts>_800xA-*) and write a report to the run's Logs folder.
     Proven on SJUM7AAPPS0048 2026-10-15.
 
     Read-only checks - OFF in the flow (Manifest.CHMI.AutomatedChecks = false; code kept for later use,
@@ -31,13 +31,13 @@
       product and version. The Server URL is aspect data and cannot be read over OPC; the default
       opc.tcp://localhost:48020 is fine.
 
-    deviceWise OPC UA server in 800xA (Manifest.CHMI.SetDeviceWiseServer): tools\Set-800xADeviceWiseServer.ps1
+    deviceWise OPC UA server in 800xA (Manifest.CHMI.SetDeviceWiseServer): modules\Set-800xADeviceWiseServer.ps1
     -Confirmed points "DEVICEWISE OPC UA" (OPC UA Server Info aspect) at this VM's gateway (copied VMs keep the
     source machine's URL) and sets up the OPC UA trust between OPC UA Connect and the gateway.
 
     800xA calculations (Manifest.CHMI.CheckCalculations, the Calculation Status Viewer check): every Inform IT
     calculation (ICalculationASO, Calculation.dll) enabled with Status 0; a disabled or errored one is enabled again
-    (tools\Invoke-800xACalculations.ps1 -Confirmed); FAIL when one stays disabled or in error.
+    (modules\Invoke-800xACalculations.ps1 -Confirmed); FAIL when one stays disabled or in error.
 
     800xA services (Manifest.CHMI.ServiceChecks, D01558132 section 1.4 order): each must be SERVICE_STATE 'Service',
     S_STATUS 0, quality Good - FAIL otherwise. The 1.4 restart (untick/tick Enabled) itself is not scripted: its
@@ -156,7 +156,7 @@ function Invoke-CHMI {
 function Invoke-800xACertificateSetup {
     <#
         Create Root (only if needed) + Update Application Certificates with the portal's own functions, through
-        tools\Invoke-800xACreateRoot.ps1 and tools\Invoke-800xAUpdateAppCerts.ps1 in 32-bit PowerShell. The SVC
+        modules\Invoke-800xACreateRoot.ps1 and modules\Invoke-800xAUpdateAppCerts.ps1 in 32-bit PowerShell. The SVC
         account password goes to the update tool in an environment variable of that process only.
         Returns $true when both parts end with the certificates signed by the current root.
     #>
@@ -168,12 +168,13 @@ function Invoke-800xACertificateSetup {
             -Detail "No password for the SVC account ($account) in this run - enter it on the Sign in page and re-run Step 11"
         return $false
     }
-    $tools  = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools'
+    $tools  = $PSScriptRoot                                     # the 800xA tools are in modules\ with this step
     $ps32   = Join-Path $env:WINDIR 'SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
     $logDir = Get-RunDir -State $State -Name Logs
+    $bkDir  = Get-RunDir -State $State -Name Backups              # their undo copies go into this run's Backups
     $run = {
         param([string]$Tool, [string[]]$ToolArgs)
-        $out = & $ps32 -NoProfile -STA -ExecutionPolicy Bypass -File (Join-Path $tools $Tool) -OutDir $logDir @ToolArgs 2>&1
+        $out = & $ps32 -NoProfile -STA -ExecutionPolicy Bypass -File (Join-Path $tools $Tool) -OutDir $logDir -BackupRoot $bkDir @ToolArgs 2>&1
         $code = $LASTEXITCODE
         foreach ($l in @($out)) { if ("$l".Trim()) { Write-Log INFO "  [$([IO.Path]::GetFileNameWithoutExtension($Tool))] $l" } }
         $report = @($out | ForEach-Object { "$_" } | Where-Object { $_ -match '^Written: ' } | Select-Object -Last 1) -replace '^Written: ', ''
@@ -203,13 +204,13 @@ function Invoke-800xACertificateSetup {
 }
 
 function Invoke-800xADeviceWiseServer {
-    # tools\Set-800xADeviceWiseServer.ps1 -Confirmed (32-bit): Server URL of "DEVICEWISE OPC UA" -> this VM,
+    # modules\Set-800xADeviceWiseServer.ps1 -Confirmed (32-bit): Server URL of "DEVICEWISE OPC UA" -> this VM,
     # trusted server certificate -> this gateway's, file trust both ways
     param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [hashtable]$State)
-    $tool = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\Set-800xADeviceWiseServer.ps1'
+    $tool = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules\Set-800xADeviceWiseServer.ps1'
     $ps32 = Join-Path $env:WINDIR 'SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
     $url  = ([string]$Manifest.CHMI.DeviceWiseServerUrl) -replace '\{HOST\}', $env:COMPUTERNAME
-    $toolArgs = @('-Confirmed', '-OutDir', (Get-RunDir -State $State -Name Logs), '-GatewayDir', [string]$Manifest.DeviceWise.GatewayInstallDir)
+    $toolArgs = @('-Confirmed', '-OutDir', (Get-RunDir -State $State -Name Logs), '-BackupRoot', (Get-RunDir -State $State -Name Backups), '-GatewayDir', [string]$Manifest.DeviceWise.GatewayInstallDir)
     if ($url) { $toolArgs += @('-ServerUrl', $url) }
     $out  = & $ps32 -NoProfile -STA -ExecutionPolicy Bypass -File $tool @toolArgs 2>&1
     $code = $LASTEXITCODE

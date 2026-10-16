@@ -446,8 +446,7 @@ function Set-PgHbaEntry {
         if ($lines.Count -and $lines[$lines.Count - 1] -eq '') { $lines.Insert($lines.Count - 1, $line) } else { $lines.Add($line) }
     }
 
-    $bak = "$Path.$(Get-Date -Format 'yyyyMMdd-HHmmss').bak"
-    Copy-Item -LiteralPath $Path -Destination $bak -Force
+    $bak = Save-FileBackup -Path $Path -Stamp (Get-Date -Format 'yyyyMMdd-HHmmss') -State $State
     [IO.File]::WriteAllText($Path, ($lines -join $eol), (New-Object Text.UTF8Encoding $false))
     return $bak
 }

@@ -284,20 +284,68 @@ function Test-StandardPassword {
     return ($hash -ceq [string]$Check.Hash)
 }
 
+function Get-ApcRoot {
+    <#
+        The Configuration Manager's work folder: Manifest.APC.InstallRoot (D:\APC_Config), or the same folder on C:
+        when that drive is not a ready fixed disk (no D:, or D: is a DVD drive). Runs, state, logs and the work
+        files (OPC UA stack copy, client pki) all go under it.
+    #>
+    param([object]$Manifest)
+    $cfg = 'D:\APC_Config'
+    if ($Manifest -and $Manifest.PSObject.Properties['APC'] -and $Manifest.APC.PSObject.Properties['InstallRoot'] -and $Manifest.APC.InstallRoot) {
+        $cfg = [Environment]::ExpandEnvironmentVariables([string]$Manifest.APC.InstallRoot)
+    }
+    if ($cfg -notmatch '^[A-Za-z]:') { return $cfg }
+    $drive = $cfg.Substring(0, 2).ToUpper()
+    $ok = @([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name.TrimEnd('\', '/').ToUpper() -eq $drive -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count
+    if ($ok) { return $cfg }
+    return 'C:' + $cfg.Substring(2)
+}
+
+function Resolve-ApcPath {
+    # '{APCROOT}\Backups' -> '<work folder>\Backups' (manifest paths under the work folder)
+    param([string]$Path, [object]$Manifest)
+    if (-not $Path) { return $Path }
+    return $Path.Replace('{APCROOT}', (Get-ApcRoot $Manifest))
+}
+
 function Get-RunDir {
     <#
         Folder for this run's Logs / Backups / Reports. The wizard gives each run its own folder,
-        State.RunRoot = C:\APC_Config\<Type>_<yyyyMMdd-HHmmss>, with Logs, Backups and Reports inside.
-        Without RunRoot (e.g. APC_Config.ps1) the shared folders are used: C:\APC_Config\Logs,
-        <Manifest.Backup.Root>\<yyyyMMdd-HHmmss> and C:\APC_Config\Reports. The folder is created.
+        State.RunRoot = <work folder>\<Type>_<yyyyMMdd-HHmmss>, with Logs, Backups and Reports inside.
+        Without RunRoot (a step run on its own) the shared folders are used: <work folder>\Logs,
+        <Manifest.Backup.Root>\<yyyyMMdd-HHmmss> and <work folder>\Reports. The folder is created.
     #>
     param([Parameter(Mandatory)] [hashtable]$State, [Parameter(Mandatory)] [ValidateSet('Logs', 'Backups', 'Reports')] [string]$Name,
           [object]$Manifest)
     $dir = if ($State['RunRoot']) { Join-Path ([string]$State['RunRoot']) $Name }
-           elseif ($Name -eq 'Backups') { Join-Path ([string]$Manifest.Backup.Root) (Get-Date -Format 'yyyyMMdd-HHmmss') }
-           else { Join-Path 'C:\APC_Config' $Name }
+           elseif ($Name -eq 'Backups') {
+               $broot = if ($Manifest -and $Manifest.Backup.Root) { Resolve-ApcPath ([string]$Manifest.Backup.Root) $Manifest } else { Join-Path (Get-ApcRoot $Manifest) 'Backups' }
+               Join-Path $broot (Get-Date -Format 'yyyyMMdd-HHmmss') }
+           else { Join-Path (Get-ApcRoot $Manifest) $Name }
     New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop | Out-Null
     return $dir
+}
+
+function Save-FileBackup {
+    <#
+        Before a step changes a file: "<file>.<Stamp>.bak" next to it (as always), and the same original into this
+        run's Backups\Files\<drive>\<path> (State.RunRoot), so one run folder holds everything the run changed.
+        Returns the .bak path.
+    #>
+    param([Parameter(Mandatory)] [string]$Path, [Parameter(Mandatory)] [string]$Stamp, [hashtable]$State)
+    $bak = "$Path.$Stamp.bak"
+    Copy-Item -LiteralPath $Path -Destination $bak -Force
+    if ($State -and $State['RunRoot']) {
+        try {
+            $full = [IO.Path]::GetFullPath($Path)
+            $rel  = if ($full -match '^([A-Za-z]):\\(.*)$') { Join-Path $Matches[1] $Matches[2] } else { $full.TrimStart('\', '/') }
+            $dest = Join-Path (Join-Path (Join-Path ([string]$State['RunRoot']) 'Backups') 'Files') $rel
+            New-Item -ItemType Directory -Path (Split-Path $dest -Parent) -Force | Out-Null
+            if (-not (Test-Path -LiteralPath $dest)) { Copy-Item -LiteralPath $Path -Destination $dest -Force }   # first original of the run
+        } catch { }
+    }
+    return $bak
 }
 
 function Test-SandboxPath {

@@ -21,8 +21,9 @@ $ErrorActionPreference = 'Stop'
 $Script:RootDir      = $PSScriptRoot
 $Script:ModulesDir   = Join-Path $Script:RootDir 'modules'
 $Script:ManifestPath = Join-Path $Script:RootDir 'APC_ConfigManifest.json'
-$Script:StateFile    = 'C:\APC_Config\.config_state.json'
-$Script:LogDir       = 'C:\APC_Config\Logs'
+# work folder (D:\APC_Config, C: without a D: disk) - set once the manifest and Common.ps1 are loaded below
+$Script:ApcRoot      = $null
+$Script:StateFile    = $null
 
 function Get-Manifest {
     if (-not (Test-Path $Script:ManifestPath)) {
@@ -34,6 +35,8 @@ function Get-Manifest {
 $manifest = Get-Manifest
 . (Join-Path $Script:ModulesDir 'Common.ps1')
 . (Join-Path $Script:ModulesDir 'ABB800xA.ps1')
+$Script:ApcRoot   = Get-ApcRoot $manifest
+$Script:StateFile = Join-Path $Script:ApcRoot '.config_state.json'
 $Script:RunManifest = $manifest   # replaced by the sandbox copy in test mode
 $Script:TestMode    = $false
 $Script:SkipSteps   = @()
@@ -58,7 +61,7 @@ $StepDefs = @(
 
 # Configuration types = the "Reason for Configuration" options of D01555624 (ReasonIndex = checkbox row).
 # Verification replaces "Other" in the wizard: a read-only check that ticks "Other" in the draft.
-# Folder = prefix of the run's own folder, C:\APC_Config\<Folder>_<yyyyMMdd-HHmmss> (Logs, Backups, Reports inside).
+# Folder = prefix of the run's own folder, <work folder>\<Folder>_<yyyyMMdd-HHmmss> (Logs, Backups, Reports inside).
 $Script:ConfigTypes = [ordered]@{
     initial   = @{ Name = 'Initial System Configuration';   ReasonIndex = 0; Folder = 'InitialConfiguration' }
     restore   = @{ Name = 'Configuration Restore';          ReasonIndex = 1; Folder = 'ConfigurationRestore' }
@@ -696,7 +699,7 @@ $xamlText = @'
             </Border>
             <Border x:Name="PanelReadOnly" Margin="0,0,0,16" Background="#F0FDF4" BorderBrush="#BBF7D0" BorderThickness="1" CornerRadius="8" Padding="16,12" Visibility="Collapsed">
               <TextBlock TextWrapping="Wrap" Foreground="#166534">
-                <Bold>Read-only.</Bold> No configuration, service or database on this VM is changed; only the report and the draft checklist are saved, in this run's folder under C:\APC_Config. Use it to check an existing system or to troubleshoot.
+                <Bold>Read-only.</Bold> No configuration, service or database on this VM is changed; only the report and the draft checklist are saved, in this run's folder (under D:\APC_Config, or C: without a D: disk). Use it to check an existing system or to troubleshoot.
               </TextBlock>
             </Border>
             <Border Style="{StaticResource Card}" Padding="16,12">
@@ -1058,7 +1061,7 @@ foreach ($n in 1,2,3) {
 # ---- Run mode and license -----------------------------------------------------
 
 $controls['TxtModeDescReviewed'].Text = "Real run of the reviewed steps ($(@(1..13 | Where-Object { $_ -notin (Get-RunModeSkipSteps -Manifest $manifest -Mode Reviewed) }) -join ', ')); the others are skipped."
-$controls['TxtModeDescTest'].Text     = "Works on sandbox copies in the run folder (C:\APC_Config\<type>_<time>\Sandbox); nothing installed is changed. Runs steps $(@(1..13 | Where-Object { $_ -notin (Get-RunModeSkipSteps -Manifest $manifest -Mode Test) }) -join ', ')."
+$controls['TxtModeDescTest'].Text     = "Works on sandbox copies in the run folder ($Script:ApcRoot\<type>_<time>\Sandbox); nothing installed is changed. Runs steps $(@(1..13 | Where-Object { $_ -notin (Get-RunModeSkipSteps -Manifest $manifest -Mode Test) }) -join ', ')."
 $controls["RbMode$($manifest.RunModes.Default)"].IsChecked = $true
 
 # CNCnetPDM license: default from manifest, editable when the checkbox is cleared
@@ -1244,7 +1247,20 @@ function Save-State {
     if ($State['RunRoot']) { $json | Set-Content (Join-Path $State['RunRoot'] 'config_state.json') -Encoding UTF8 }
 }
 
-# The window's run log (what "Show log" shows) -> <RunRoot>\Logs\Wizard.log, rewritten after each step
+# The window's run log (what "Show log" shows) -> <RunRoot>\Logs\Wizard.log: each line is appended as it is shown
+# (Add-RunLogText), so the file is complete up to the last line even if the wizard stops; Save-RunLog rewrites it
+# from the window after each step.
+function Add-RunLogText {
+    param([System.Windows.Controls.TextBox]$Box, [string]$Text)
+    $Box.AppendText($Text)
+    if ($Box -ne $controls['LogAll'] -or -not $Script:AutoState -or -not $Script:AutoState['RunRoot']) { return }
+    try {
+        $dir = Join-Path $Script:AutoState['RunRoot'] 'Logs'
+        if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        [System.IO.File]::AppendAllText((Join-Path $dir 'Wizard.log'), $Text)
+    } catch { }
+}
+
 function Save-RunLog {
     if (-not $Script:AutoState -or -not $Script:AutoState['RunRoot']) { return }
     try {
@@ -1257,7 +1273,7 @@ function Save-RunLog {
 function Add-LogSection {
     param([string]$Title)
     $bar = '=' * 58; $pad = ' ' * ([math]::Max(0, (58 - $Title.Length - 4)) / 2)
-    $controls['LogAll'].AppendText("`r`n$bar`r`n$pad  $Title`r`n$bar`r`n")
+    Add-RunLogText $controls['LogAll'] "`r`n$bar`r`n$pad  $Title`r`n$bar`r`n"
     $controls['LogAll'].ScrollToEnd()
 }
 
@@ -1532,7 +1548,7 @@ function Start-ModuleInWindow {
     $timer.Add_Tick({
         $line = [string]::Empty
         while ($capturedSync.Queue.TryDequeue([ref]$line)) {
-            $capturedLog.AppendText("$line`r`n"); $capturedLog.ScrollToEnd()
+            Add-RunLogText $capturedLog "$line`r`n"; $capturedLog.ScrollToEnd()
         }
         if ($capturedSync.Done) {
             $args[0].Stop()
@@ -1584,7 +1600,7 @@ function Run-NextAutoModule {
     if ($mod.Index -in $Script:SkipSteps -or $mod.Index -lt $Script:StartStep) {
         if ($mod.Index -in $plan) {
             Set-StepState -Index $mod.Index -State 'Skipped'
-            $controls['LogAll'].AppendText("-- Step $($mod.Index) $($mod.Name): skipped ($Script:RunModeName) --`r`n")
+            Add-RunLogText $controls['LogAll'] "-- Step $($mod.Index) $($mod.Name): skipped ($Script:RunModeName) --`r`n"
         }
         $Script:AutoIndex++
         Run-NextAutoModule
@@ -1604,7 +1620,7 @@ function Run-NextAutoModule {
             $doneIndex = $Script:StepDefs[$Script:AutoIndex].Index
             $elapsed   = (Get-Date) - $Script:StepStartTime
             $timeStr   = if ($elapsed.TotalSeconds -lt 60) { "$([math]::Round($elapsed.TotalSeconds)) sec" } else { "$($elapsed.Minutes) min $($elapsed.Seconds) sec" }
-            $controls['LogAll'].AppendText("-- $(if ($ok) {'Completed'} else {'Failed'}) in $timeStr --`r`n")
+            Add-RunLogText $controls['LogAll'] "-- $(if ($ok) {'Completed'} else {'Failed'}) in $timeStr --`r`n"
             $controls['LogAll'].ScrollToEnd()
             Save-RunLog
 
@@ -1859,8 +1875,8 @@ function Start-ConfigurationRun {
     }
 
     $Script:AutoState = Get-CurrentState
-    # This run's own folder: C:\APC_Config\<type>_<yyyyMMdd-HHmmss>\{Logs,Backups,Reports}
-    $runRoot = Join-Path 'C:\APC_Config' ("{0}_{1}" -f $Script:ConfigTypes[$type].Folder, (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    # This run's own folder: <work folder>\<type>_<yyyyMMdd-HHmmss>\{Logs,Backups,Reports}
+    $runRoot = Join-Path $Script:ApcRoot ("{0}_{1}" -f $Script:ConfigTypes[$type].Folder, (Get-Date -Format 'yyyyMMdd-HHmmss'))
     try {
         foreach ($sub in 'Logs', 'Reports') { New-Item -ItemType Directory -Path (Join-Path $runRoot $sub) -Force -ErrorAction Stop | Out-Null }
     } catch {
@@ -1949,6 +1965,7 @@ function Start-ConfigurationRun {
     $Script:RunState  = 'running'
     $controls['TxtRunTitle'].Text              = 'Running'
     $controls['LogAll'].Text                   = ($runLog -join "`r`n") + "`r`n"
+    Save-RunLog                                   # starts Logs\Wizard.log with the run header
     $controls['TxtReportPath'].Visibility      = 'Collapsed'
     $controls['BtnOpenReport'].Visibility      = 'Collapsed'
     $controls['TxtReportStatus'].Text          = ''
@@ -2074,7 +2091,7 @@ $controls['BtnGenerateReport'].Add_Click({
 $controls['BtnOpenReport'].Add_Click({
     $doc = if ($Script:AutoState) { $Script:AutoState['VerificationDocPath'] } else { $null }
     if (-not $doc -or -not (Test-Path $doc)) {
-        $reports = if ($Script:AutoState -and $Script:AutoState['RunRoot']) { Join-Path $Script:AutoState['RunRoot'] 'Reports' } else { 'C:\APC_Config\Reports' }
+        $reports = if ($Script:AutoState -and $Script:AutoState['RunRoot']) { Join-Path $Script:AutoState['RunRoot'] 'Reports' } else { (Join-Path $Script:ApcRoot 'Reports') }
         $doc = Get-ChildItem $reports -Filter 'APC_Config_Checklist_DRAFT_*.docx' -ErrorAction SilentlyContinue |
                Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
     }

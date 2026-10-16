@@ -3,9 +3,9 @@
 .SYNOPSIS
     Step 12 - Back up the APC configuration to one timestamped folder on the VM.
 .DESCRIPTION
-    Everything goes to the run's Backups folder, C:\APC_Config\<type>_<yyyyMMdd-HHmmss>\Backups\ (from the wizard;
+    Everything goes to the run's Backups folder, <work folder>\<type>_<yyyyMMdd-HHmmss>\Backups\ (from the wizard;
     without a run folder: <Manifest.Backup.Root>\<yyyyMMdd-HHmmss>\):
-      800xA\<backup name>   800xA Full backup made by kits\800xA\Backup-800xA.ps1 (32-bit PowerShell, gated on
+      800xA\<backup name>   800xA Full backup made by modules\800xA\Backup-800xA.ps1 (32-bit PowerShell, gated on
                             its exit code), then copied from the 800xA backup folder (C:\BACKUP\...);
                             the kit's log Backup800xA_<ts>.log and the robocopy logs go to the run's Logs
                             folder (without a run folder: the backup folder)
@@ -63,7 +63,7 @@ function Invoke-Backup {
         return ($rc -le 7)
     }
 
-    #region -- 800xA Full backup (kits\800xA\Backup-800xA.ps1) -----------------
+    #region -- 800xA Full backup (modules\800xA\Backup-800xA.ps1) -----------------
 
     if ($Manifest.ABB800xA.Backup.Enabled -eq $false) {
         Write-Log INFO "800xA backup disabled in the manifest (ABB800xA.Backup.Enabled)."

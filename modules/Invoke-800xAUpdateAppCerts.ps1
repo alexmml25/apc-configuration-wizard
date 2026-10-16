@@ -18,14 +18,14 @@
          e. save the certificate in the application's 800xA certificate aspect
     Applications already on a certificate signed by the current root are left alone (use -Force to redo them).
     Before any change it saves the 800xA certificates of LocalMachine\My (public parts) and the pki folders into
-    C:\APC_Config\Backups\<ts>_800xA-appcerts. Without -Confirmed it only makes the backup and reports.
+    <run>\Backups\ <ts>_800xA-appcerts. Without -Confirmed it only makes the backup and reports.
     Exit codes: 0 updated (or nothing to do), 10 report only (no -Confirmed), 1 ABB assemblies not loaded,
     2 cannot connect to 800xA, 3 not administrator / bad parameters, 4 update failed, 5 updated but a check failed,
     6 root not usable on this node (run Invoke-800xACreateRoot.ps1 first).
-    Output: C:\APC_Config\Logs\chmi-updatecerts_<ts>.txt
+    Output: <run>\Logs\ (standalone: <work folder>\Logs\) chmi-updatecerts_<ts>.txt
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\tools\Invoke-800xAUpdateAppCerts.ps1              # backup + report only
-    powershell -ExecutionPolicy Bypass -File .\tools\Invoke-800xAUpdateAppCerts.ps1 -Confirmed   # update (password in a Windows credential dialog)
+    powershell -ExecutionPolicy Bypass -File .\modules\Invoke-800xAUpdateAppCerts.ps1              # backup + report only
+    powershell -ExecutionPolicy Bypass -File .\modules\Invoke-800xAUpdateAppCerts.ps1 -Confirmed   # update (password in a Windows credential dialog)
 #>
 param(
     [switch]$Confirmed,
@@ -34,8 +34,8 @@ param(
     [string]$UserName = "$env:USERDOMAIN\$env:USERNAME",   # the account the operator logs in with in the portal
     [string]$BinDir  = 'C:\Program Files (x86)\ABB 800xA\Base\bin',
     [string]$PkiRoot = 'C:\ProgramData\ABB\Process Portal A',
-    [string]$OutDir  = 'C:\APC_Config\Logs',
-    [string]$BackupRoot = 'C:\APC_Config\Backups'
+    [string]$OutDir  = $(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:\APC_Config\Logs' } else { 'C:\APC_Config\Logs' }),
+    [string]$BackupRoot = $(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:\APC_Config\Backups' } else { 'C:\APC_Config\Backups' })
 )
 
 # ABB's certificate assemblies are 32-bit only; the portal's helpers expect an STA (WPF) thread

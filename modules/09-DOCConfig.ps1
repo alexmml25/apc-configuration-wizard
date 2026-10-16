@@ -40,7 +40,7 @@ function Invoke-DOCConfig {
     function Backup-AndLoad {
         param([string]$Path)
         if (-not (Test-Path $Path)) { return $null }
-        Copy-Item $Path "$Path.$ts.bak" -Force
+        [void](Save-FileBackup -Path $Path -Stamp $ts -State $State)
         $xml = New-Object System.Xml.XmlDocument
         $xml.LoadXml([System.IO.File]::ReadAllText($Path))
         return $xml
@@ -221,7 +221,7 @@ function Invoke-DOCConfig {
             if ($node.InnerText -eq $srvSubject) {
                 Add-Result -Phase DOC -Check "DOC ${n}: OPC UA server certificate subject" -Status PASS -Detail "Already $srvSubject"
             } else {
-                Copy-Item $uaXml "$uaXml.$ts.bak" -Force
+                [void](Save-FileBackup -Path $uaXml -Stamp $ts -State $State)
                 $old = $node.InnerText; $node.InnerText = $srvSubject
                 Save-Xml $doc $uaXml
                 Add-Result -Phase DOC -Check "DOC ${n}: OPC UA server certificate subject" -Status PASS -Detail "$srvSubject (was '$old')"

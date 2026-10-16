@@ -3,12 +3,12 @@
 .SYNOPSIS
     800xA helpers dot-sourced by Step 11 (General Properties) and Step 12 (800xA Full backup).
 .DESCRIPTION
-    Wraps the proven 800xA kit in kits\800xA (see kits\800xA\HANDOFF.md) without changing it:
+    Wraps the proven 800xA kit in modules\800xA (see modules\800xA\HANDOFF.md) without changing it:
       Backup-800xA.ps1    Full backup through the Backup Definition aspect (32-bit PowerShell)
       Invoke-800xAGP.ps1  read / write one property via GPWrite3.vbs (32-bit cscript)
     Everything touching 800xA runs 32-bit. The wizard may run 64-bit, so the kit is called as child
     processes through the SysWOW64 paths, and each call is gated on its exit code.
-    The kit files are checked against kits\800xA\SHA256SUMS.txt before use.
+    The kit files are checked against modules\800xA\SHA256SUMS.txt before use.
 #>
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
@@ -59,11 +59,11 @@ function Get-800xAKit {
 
 function Invoke-800xABackup {
     <#
-        Runs kits\800xA\Backup-800xA.ps1 -Start -Confirmed in 32-bit PowerShell and returns
+        Runs modules\800xA\Backup-800xA.ps1 -Start -Confirmed in 32-bit PowerShell and returns
         @{ Ok; ExitCode; Message; Name; Folder; Files; SizeMB; Errors; Warnings; LogFile }.
         The kit's own output is streamed to Write-Log as it runs (a backup takes about 1.5 minutes).
     #>
-    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [hashtable]$Kit, [string]$LogDir = 'C:\APC_Config\Logs')
+    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [hashtable]$Kit, [string]$LogDir = (Join-Path (Get-ApcRoot) 'Logs'))
     $b = $Manifest.ABB800xA.Backup
     New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
     $log = Join-Path $LogDir ("Backup800xA_{0}.log" -f (Get-Date -Format 'yyyyMMdd_HHmmss'))
@@ -223,12 +223,12 @@ function Invoke-800xAPropertyStep {
     <#
         Writes Manifest.ABB800xA.Properties (Step 11): for each entry read the current value, skip it when it
         already has the wanted value, otherwise write + read back through the kit. Before/after values go to
-        C:\APC_Config\Logs\800xA_changes_<ts>.log and the step results. Stops (throws) at the first failed
+        <run>\Logs\800xA_changes_<ts>.log and the step results. Stops (throws) at the first failed
         read/write; the remaining entries are reported as not attempted. Nothing is written when the list
         has an invalid entry or the kit fails its checksum check.
     #>
     param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [hashtable]$State,
-          [string]$Phase = 'CHMI', [string]$LogDir = 'C:\APC_Config\Logs')
+          [string]$Phase = 'CHMI', [string]$LogDir = (Join-Path (Get-ApcRoot) 'Logs'))
 
     $plan = @(Get-800xAPropertyPlan -Manifest $Manifest -State $State)
     if ($plan.Count -eq 0) {
@@ -498,13 +498,13 @@ function Get-800xAServiceStates {
 
 function Invoke-800xACalculationCheck {
     <#
-        tools\Invoke-800xACalculations.ps1 (32-bit): every Inform IT calculation enabled with Status 0 - the
+        modules\Invoke-800xACalculations.ps1 (32-bit): every Inform IT calculation enabled with Status 0 - the
         Calculation Status Viewer check of D01558132 1.4. -Confirm re-enables a disabled or errored one (the
         viewer's right-click > Enable). Returns @{ Code; Report; Lines }: 0 all OK / none, 1 problems (check only),
         5 problems left after re-enabling, other = could not check.
     #>
-    param([Parameter(Mandatory)] [object]$Manifest, [string]$LogDir = 'C:\APC_Config\Logs', [switch]$Confirm)
-    $tool = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\Invoke-800xACalculations.ps1'
+    param([Parameter(Mandatory)] [object]$Manifest, [string]$LogDir = (Join-Path (Get-ApcRoot) 'Logs'), [switch]$Confirm)
+    $tool = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules\Invoke-800xACalculations.ps1'
     $ps32 = Join-Path $env:WINDIR 'SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
     $toolArgs = @('-OutDir', $LogDir)
     if ($Manifest.CHMI.PSObject.Properties['CalculationsBinDir'] -and $Manifest.CHMI.CalculationsBinDir) { $toolArgs += @('-CalcBinDir', [string]$Manifest.CHMI.CalculationsBinDir) }

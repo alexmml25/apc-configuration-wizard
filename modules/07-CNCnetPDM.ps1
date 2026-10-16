@@ -93,7 +93,7 @@ function Invoke-CNCnetPDM {
 
     function Write-IniLines {
         param([string]$Path, [System.Collections.Generic.List[string]]$Lines)
-        Copy-Item $Path "$Path.$ts.bak" -Force
+        [void](Save-FileBackup -Path $Path -Stamp $ts -State $State)
         [System.IO.File]::WriteAllText($Path, (($Lines -join "`r`n") + "`r`n"), [System.Text.Encoding]::ASCII)
     }
 
@@ -307,7 +307,7 @@ function Invoke-CNCnetPDM {
                 # citizenm_1001.ini is 43165) would give every device default driver settings: use the configured one
                 if ($largest -and $largest.Length -gt 2 * $src.Length) {
                     try {
-                        Copy-Item $tplPath "$tplPath.$ts.bak" -Force
+                        [void](Save-FileBackup -Path $tplPath -Stamp $ts -State $State)
                         Copy-Item $largest.FullName $tplPath -Force -ErrorAction Stop
                         $note = " (template $tplName was $($src.Length) bytes, a CNCnetPDM default: replaced with $($largest.Name), $($largest.Length) bytes)"
                         $src = Get-Item $tplPath
@@ -335,7 +335,7 @@ function Invoke-CNCnetPDM {
                 if ((Test-Path $dstPath) -and (Get-FileHash $dstPath).Hash -eq (Get-FileHash $src.FullName).Hash) {
                     Add-Result -Phase CNCnetPDM -Check "Driver ini $dstName" -Status $(if ($note) { 'WARN' } else { 'PASS' }) -Detail "Same as $($src.Name)$note"
                 } else {
-                    if (Test-Path $dstPath) { Copy-Item $dstPath "$dstPath.$ts.bak" -Force }
+                    if (Test-Path $dstPath) { [void](Save-FileBackup -Path $dstPath -Stamp $ts -State $State) }
                     Copy-Item $src.FullName $dstPath -Force -ErrorAction Stop
                     Add-Result -Phase CNCnetPDM -Check "Driver ini $dstName" -Status $(if ($note) { 'WARN' } else { 'PASS' }) `
                         -Detail ("Copied from $($src.Name)" + $(if (Test-Path "$dstPath.$ts.bak") { "; previous file kept as $dstName.$ts.bak" } else { '' }) + $note)

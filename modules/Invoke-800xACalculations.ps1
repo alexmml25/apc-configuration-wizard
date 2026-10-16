@@ -19,17 +19,17 @@
     7 no running calculation could be read (aspects with no running calculation behind them are
     object type definitions: counted, not checked), 2 cannot connect to 800xA, 6 Inform IT
     Calculations not found. Only problems are listed (SJUM7AAPPS0048 has 602 calculation aspects).
-    Output: C:\APC_Config\Logs\chmi-calcs_<ts>.txt
+    Output: <run>\Logs\ (standalone: <work folder>\Logs\) chmi-calcs_<ts>.txt
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\tools\Invoke-800xACalculations.ps1              # check only
-    powershell -ExecutionPolicy Bypass -File .\tools\Invoke-800xACalculations.ps1 -Confirmed   # check + re-enable
+    powershell -ExecutionPolicy Bypass -File .\modules\Invoke-800xACalculations.ps1              # check only
+    powershell -ExecutionPolicy Bypass -File .\modules\Invoke-800xACalculations.ps1 -Confirmed   # check + re-enable
 #>
 param(
     [switch]$Confirmed,
     [string]$BinDir     = 'C:\Program Files (x86)\ABB 800xA\Base\bin',
     [string]$CalcBinDir = 'C:\Program Files (x86)\ABB Industrial IT\Inform IT\Calculations\bin',
     [int]$WaitSeconds   = 15,
-    [string]$OutDir     = 'C:\APC_Config\Logs'
+    [string]$OutDir     = $(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:\APC_Config\Logs' } else { 'C:\APC_Config\Logs' })
 )
 
 if ([Environment]::Is64BitProcess -or [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {

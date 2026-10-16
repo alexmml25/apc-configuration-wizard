@@ -592,20 +592,21 @@ function Open-DwUaSession {
     <#
         Opens an anonymous OPC UA session (security mode None) to the gateway's OPC UA server, using
         the OPC Foundation .NET stack that 800xA installs (1.4.370 on SJUM7AAPPS0048). The DLLs it needs
-        are copied to C:\APC_Config\OpcUaStack and loaded from there, so 800xA's files are never held
-        open. The client certificate store is C:\APC_Config\pki (not ABB's).
+        are copied to <work folder>\Work\OpcUaStack and loaded from there, so 800xA's files are never held
+        open. The client certificate store is <work folder>\Work\pki (not ABB's).
         Returns the session; close it with $session.Close().
     #>
     param([Parameter(Mandatory)] [object]$Manifest)
     $ua = $Manifest.DeviceWise.OpcUaClient
     if (-not (Test-Path (Join-Path $ua.StackDir 'Opc.Ua.Client.dll'))) { throw "OPC UA client library not found in $($ua.StackDir)" }
     $Global:DwUaStackSource = $ua.StackDir
-    $Global:DwUaStackCopy   = 'C:\APC_Config\OpcUaStack'
+    $work = Join-Path (Get-ApcRoot $Manifest) 'Work'
+    $Global:DwUaStackCopy   = Join-Path $work 'OpcUaStack'
     if (-not ('Opc.Ua.Client.Session' -as [type])) {
         # start from an empty copy each run, so it always matches 800xA's current stack version
         if (Test-Path $Global:DwUaStackCopy) { Remove-Item (Join-Path $Global:DwUaStackCopy '*') -Force -ErrorAction SilentlyContinue }
         # another process (an open wizard) still holds the copy: use one of our own
-        if (Test-Path (Join-Path $Global:DwUaStackCopy 'Opc.Ua.Core.dll')) { $Global:DwUaStackCopy = "C:\APC_Config\OpcUaStack_$PID" }
+        if (Test-Path (Join-Path $Global:DwUaStackCopy 'Opc.Ua.Core.dll')) { $Global:DwUaStackCopy = Join-Path $work "OpcUaStack_$PID" }
         New-Item -ItemType Directory -Path $Global:DwUaStackCopy -Force | Out-Null
         # dependencies (e.g. Newtonsoft.Json) are copied and loaded on demand the same way
         [AppDomain]::CurrentDomain.add_AssemblyResolve([ResolveEventHandler]{
@@ -625,7 +626,7 @@ function Open-DwUaSession {
     }
     $wait = { param($r) if ($r -is [Threading.Tasks.Task]) { $r.GetAwaiter().GetResult() } else { $r } }
 
-    $pki = 'C:\APC_Config\pki'
+    $pki = Join-Path $work 'pki'
     $cfg = New-Object Opc.Ua.ApplicationConfiguration
     $cfg.ApplicationName = 'APC Config Wizard'
     $cfg.ApplicationUri  = "urn:$($env:COMPUTERNAME):APCConfigWizard"

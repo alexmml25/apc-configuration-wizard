@@ -10,7 +10,7 @@
       2. imports it with its private key into LocalMachine\Root (machine key)
       3. creates its revocation list
       4. writes root + revocation list + this node's name to the 800xA OPC UA Certificate aspect
-    Before that it saves everything needed to undo it into C:\APC_Config\Backups\<ts>_800xA-root:
+    Before that it saves everything needed to undo it into <run>\Backups\ <ts>_800xA-root:
       - the current root and revocation list from 800xA (old-root.der, old-crl.crl, old-nodename.txt)
       - the 800xA certificates in LocalMachine\Root and LocalMachine\My (public parts, .cer)
       - the OPC UA Connect / Management Portal pki folders
@@ -24,10 +24,10 @@
     Exit codes: 0 created and verified, 10 backup only (no -Confirmed), 11 kept (-IfNeeded, root usable here),
     12 not replaced (root of another node of this system), 1 ABB assemblies not loaded, 2 cannot connect to
     800xA, 3 not administrator / bad parameters, 4 create failed, 5 created but a check failed.
-    Output: C:\APC_Config\Logs\chmi-createroot_<ts>.txt
+    Output: <run>\Logs\ (standalone: <work folder>\Logs\) chmi-createroot_<ts>.txt
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\tools\Invoke-800xACreateRoot.ps1              # backup + report only
-    powershell -ExecutionPolicy Bypass -File .\tools\Invoke-800xACreateRoot.ps1 -Confirmed   # create the root
+    powershell -ExecutionPolicy Bypass -File .\modules\Invoke-800xACreateRoot.ps1              # backup + report only
+    powershell -ExecutionPolicy Bypass -File .\modules\Invoke-800xACreateRoot.ps1 -Confirmed   # create the root
 #>
 param(
     [switch]$Confirmed,
@@ -38,8 +38,8 @@ param(
     [ValidateRange(3, 10)] [int]$ValidYears = 10,     # the portal offers 3-10 years
     [string]$BinDir  = 'C:\Program Files (x86)\ABB 800xA\Base\bin',
     [string]$PkiRoot = 'C:\ProgramData\ABB\Process Portal A',
-    [string]$OutDir  = 'C:\APC_Config\Logs',
-    [string]$BackupRoot = 'C:\APC_Config\Backups'
+    [string]$OutDir  = $(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:\APC_Config\Logs' } else { 'C:\APC_Config\Logs' }),
+    [string]$BackupRoot = $(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:\APC_Config\Backups' } else { 'C:\APC_Config\Backups' })
 )
 
 # ABB's certificate assemblies are 32-bit only; WPF needs an STA thread

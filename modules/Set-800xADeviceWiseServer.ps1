@@ -13,14 +13,14 @@
          - BackEnd800xA.UpdateApplicationCertificateAspect, as the portal does
       3. file trust both ways: the gateway certificate into OPC UA Connect's pki\trusted, and OPC UA Connect's
          certificate (LocalMachine\My) into the gateway's pkiserver\trusted (out of rejected)
-    Backup first (old URL and certificate, C:\APC_Config\Backups\<ts>_800xA-dwserver). Without -Confirmed it only
+    Backup first (old URL and certificate, <run>\Backups\ <ts>_800xA-dwserver). Without -Confirmed it only
     backs up and reports. OPC UA Connect reads the new URL when it restarts (Step 11's service reset).
     Exit codes: 0 done (or already right), 10 report only, 1 ABB assemblies not loaded, 2 cannot connect to 800xA,
     3 not administrator, 4 failed, 6 server or gateway certificate not found.
-    Output: C:\APC_Config\Logs\chmi-dwserver_<ts>.txt
+    Output: <run>\Logs\ (standalone: <work folder>\Logs\) chmi-dwserver_<ts>.txt
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\tools\Set-800xADeviceWiseServer.ps1              # report only
-    powershell -ExecutionPolicy Bypass -File .\tools\Set-800xADeviceWiseServer.ps1 -Confirmed
+    powershell -ExecutionPolicy Bypass -File .\modules\Set-800xADeviceWiseServer.ps1              # report only
+    powershell -ExecutionPolicy Bypass -File .\modules\Set-800xADeviceWiseServer.ps1 -Confirmed
 #>
 param(
     [switch]$Confirmed,
@@ -30,8 +30,8 @@ param(
     [string]$GatewayDir = 'C:\Program Files\deviceWISE\Gateway',
     [string]$BinDir  = 'C:\Program Files (x86)\ABB 800xA\Base\bin',
     [string]$PkiRoot = 'C:\ProgramData\ABB\Process Portal A',
-    [string]$OutDir  = 'C:\APC_Config\Logs',
-    [string]$BackupRoot = 'C:\APC_Config\Backups'
+    [string]$OutDir  = $(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:\APC_Config\Logs' } else { 'C:\APC_Config\Logs' }),
+    [string]$BackupRoot = $(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:\APC_Config\Backups' } else { 'C:\APC_Config\Backups' })
 )
 if (-not $ServerUrl) { $ServerUrl = "opc.tcp://$($env:COMPUTERNAME):48020" }
 

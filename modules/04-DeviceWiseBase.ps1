@@ -17,7 +17,7 @@
          machine name and type (as variable defaults: the devices do not persist values).
       3. Checks: each imported item status 0, OPC UA endpoint listening, gateway name, OPC UA flags.
       4. CNCn CNCAsset / CNCType written live through the gateway's OPC UA server (OPC Foundation stack
-         from 800xA, copied to C:\APC_Config\OpcUaStack) and read back. Known limitation: the CNC
+         from 800xA, copied to <work folder>\Work\OpcUaStack) and read back. Known limitation: the CNC
          devices do not persist values, so these are empty again after the next dwcore restart.
     Projects (CHMI, SINC, TimescaleDB), tables and the CNCn_PATH devices are imported by Steps 5, 6, 8.
     A safety copy of the gateway databases is kept in the run's Backups\deviceWise-before-step4.

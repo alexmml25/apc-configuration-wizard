@@ -1082,11 +1082,11 @@ function Invoke-Verification {
     } '' 10 4
 
     # Items 5-7 - manual
-    # Item 5 - placements uploaded (OPC UA Server Info aspect, read by tools\Set-800xADeviceWiseServer.ps1 -CheckOnly)
+    # Item 5 - placements uploaded (OPC UA Server Info aspect, read by modules\Set-800xADeviceWiseServer.ps1 -CheckOnly)
     Check 'CHMI' 'OPC UA placements added (Node Status=Uploaded)' {
-        $tool = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\Set-800xADeviceWiseServer.ps1'
+        $tool = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules\Set-800xADeviceWiseServer.ps1'
         $ps32 = Join-Path $env:WINDIR 'SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
-        $out  = @(& $ps32 -NoProfile -STA -ExecutionPolicy Bypass -File $tool -CheckOnly -OutDir $reportDir 2>&1 | ForEach-Object { "$_" })
+        $out  = @(& $ps32 -NoProfile -STA -ExecutionPolicy Bypass -File $tool -CheckOnly -OutDir (Get-RunDir -State $State -Name Logs) 2>&1 | ForEach-Object { "$_" })
         $pl   = @($out | Where-Object { $_ -match '^Upload placements: ' } | Select-Object -Last 1) -replace '^Upload placements: ', ''
         if (-not $pl) { throw "Could not read the placements: $(($out | Select-Object -Last 3) -join ' ')" }
         if ($pl -notmatch 'all Uploaded') { throw $pl }

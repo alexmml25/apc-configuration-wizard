@@ -9,25 +9,25 @@
     after the entry assembly ("APC Data Analyzer") and keeps it in <app folder>\CertificateStores.
 
     This tool does the same first connect from PowerShell, with the same library, licence and name, but against
-    a COPY of the store folders (C:\APC_Config\Logs\da-cert-test_<ts>), so Data Analyzer's real certificate is
+    a COPY of the store folders (<run>\Logs\ (standalone: <work folder>\Logs\) da-cert-test_<ts>), so Data Analyzer's real certificate is
     not touched. By default it connects to a port nothing listens on: the certificate is made before the
     connect, and deviceWise never sees (or rejects) the test certificate. Then it compares the new certificate
     with Data Analyzer's own one: subject, application URI, host names, key size, validity, signature.
     Matching = Data Analyzer will accept a certificate the wizard makes, so Step 10 can make and trust it.
     32-bit (Data Analyzer is 32-bit only); the script restarts itself in 32-bit PowerShell if needed.
-    Changes nothing outside the test folder. Output: C:\APC_Config\Logs\da-cert-test_<ts>.txt
+    Changes nothing outside the test folder. Output: <run>\Logs\ (standalone: <work folder>\Logs\) da-cert-test_<ts>.txt
 
     -StoreDir <Data Analyzer>\CertificateStores (used by Step 10): makes the certificate in that folder instead
     of a test copy, when it has none yet, and skips the comparison. Exit 0 = the folder has a certificate.
     Proven on SJUM7AAPPS0048 2026-10-15: the certificate made this way matches Data Analyzer's own
     (subject, application URI, key, signature, validity).
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File .\tools\Test-DataAnalyzerCert.ps1
+    powershell -ExecutionPolicy Bypass -File .\modules\Test-DataAnalyzerCert.ps1
 #>
 param(
     [string]$DaDir  = 'C:\Medtronic\Data Analyzer',
     [string]$Url    = 'opc.tcp://127.0.0.1:1',          # nothing listens: no deviceWise side effect
-    [string]$OutDir = 'C:\APC_Config\Logs',
+    [string]$OutDir = $(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:\APC_Config\Logs' } else { 'C:\APC_Config\Logs' }),
     [string]$StoreDir = ''                               # real store (Step 10); empty = test copy
 )
 

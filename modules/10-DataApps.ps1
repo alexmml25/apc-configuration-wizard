@@ -37,7 +37,7 @@
     Then the apps are restarted (or started) so they load the new config (Manifest.DataApps.RestartApps).
     An app makes its certificate on its first connection: Step 10 starts it, waits for the certificate and
     trusts it. Data Analyzer only connects after a login + Start Monitoring, so when it has no certificate yet
-    Step 10 makes it the way Data Analyzer would (tools\Test-DataAnalyzerCert.ps1 -StoreDir: same Traeger
+    Step 10 makes it the way Data Analyzer would (modules\Test-DataAnalyzerCert.ps1 -StoreDir: same Traeger
     library, licence and application name, no window; proven identical on SJUM7AAPPS0048 2026-10-15).
     Logging in and Start Monitoring stay with the operator (Data Analyzer has no auto-start).
 #>
@@ -80,7 +80,7 @@ function Invoke-DataApps {
     function Backup-AndLoad {
         param([string]$Path)
         if (-not (Test-Path $Path)) { return $null }
-        Copy-Item $Path "$Path.$ts.bak" -Force
+        [void](Save-FileBackup -Path $Path -Stamp $ts -State $State)
         $xml = New-Object System.Xml.XmlDocument
         $xml.PreserveWhitespace = $false
         $xml.LoadXml([System.IO.File]::ReadAllText($Path))
@@ -437,7 +437,7 @@ function Invoke-DataApps {
                 Add-Result -Phase DataApps -Check "$($app.Name): restarted" -Status $(if ($r.Ok) { 'PASS' } else { 'WARN' }) -Detail $r.Detail
             }
             if ($app.Login -and -not (Get-ChildItem -LiteralPath (Join-Path $dir 'CertificateStores\App\certs') -Filter '*.der' -ErrorAction SilentlyContinue)) {
-                $mk = New-DataAnalyzerCertificate -DaDir $dir
+                $mk = New-DataAnalyzerCertificate -DaDir $dir -OutDir (Get-RunDir -State $State -Name Logs -Manifest $Manifest)
                 Add-Result -Phase DataApps -Check "$($app.Name): application certificate" -Status $(if ($mk.Ok) { 'PASS' } else { 'WARN' }) -Detail $mk.Detail
             }
             # The app makes its certificate on its first connection attempt; give a just-started app time for it
@@ -464,12 +464,12 @@ function Invoke-DataApps {
 
 function New-DataAnalyzerCertificate {
     # Makes Data Analyzer's OPC UA certificate in its own CertificateStores without opening it (32-bit helper
-    # tools\Test-DataAnalyzerCert.ps1 -StoreDir; connects to an unused port, so deviceWise sees nothing).
-    param([string]$DaDir)
-    $tool = Join-Path (Split-Path $PSScriptRoot -Parent) 'tools\Test-DataAnalyzerCert.ps1'
+    # modules\Test-DataAnalyzerCert.ps1 -StoreDir; connects to an unused port, so deviceWise sees nothing).
+    param([string]$DaDir, [string]$OutDir)
+    $tool = Join-Path $PSScriptRoot 'Test-DataAnalyzerCert.ps1'
     if (-not (Test-Path -LiteralPath $tool)) { return @{ Ok = $false; Detail = "Helper not found: $tool" } }
     $ps32 = Join-Path $env:WINDIR 'SysWOW64\WindowsPowerShell\v1.0\powershell.exe'
-    $out  = & $ps32 -NoProfile -ExecutionPolicy Bypass -File $tool -DaDir $DaDir -StoreDir (Join-Path $DaDir 'CertificateStores') 2>&1
+    $out  = & $ps32 -NoProfile -ExecutionPolicy Bypass -File $tool -DaDir $DaDir -StoreDir (Join-Path $DaDir 'CertificateStores') -OutDir $(if ($OutDir) { $OutDir } else { Join-Path (Get-ApcRoot) 'Logs' }) 2>&1
     $code = $LASTEXITCODE
     $made = @(Get-ChildItem -LiteralPath (Join-Path $DaDir 'CertificateStores\App\certs') -Filter '*.der' -ErrorAction SilentlyContinue)
     if ($code -eq 0 -and $made) { return @{ Ok = $true; Detail = "Made without opening Data Analyzer: $($made[0].Name)" } }

@@ -3,7 +3,9 @@
     "Version": "1.5",
     "ReleaseLabel": "APC System Release 1.5",
     "RepositoryRoot": "\\\\MSPM7AAPPS0342.cfrf.medtronic.com\\Shared\\APC\\Deployment Resources",
-    "BackupShare": "\\\\MSPM7AAPPS0342.cfrf.medtronic.com\\Shared\\APC\\Backups"
+    "BackupShare": "\\\\MSPM7AAPPS0342.cfrf.medtronic.com\\Shared\\APC\\Backups",
+    "InstallRoot": "D:\\APC_Config",
+    "InstallRootHelp": "Work folder of the Configuration Manager (runs, state, logs, Work\\OpcUaStack, Work\\pki). C:\\APC_Config when D: is not a ready fixed disk. {APCROOT} in other manifest paths = this folder."
   },
 
   "Sites": [ "MCR", "MPR" ],
@@ -295,7 +297,7 @@
     },
     "FileFlowTest": {
       "Enabled":        true,
-      "CsvFiles":       [ "templates\\FileFlowTest_CTSCAN1.csv", "templates\\FileFlowTest_CMM1.csv" ],
+      "CsvFiles":       [ "Templates\\FileFlowTest_CTSCAN1.csv", "Templates\\FileFlowTest_CMM1.csv" ],
       "Cnc":            1,
       "TimeoutSeconds": 180,
       "Note": "Step 13 7.7 / 8.9 / 8.10: test CSV through File Manager and Data Collector; tags and DB rows put back (modules\\FileFlowTest.ps1)"
@@ -328,12 +330,12 @@
   },
 
   "TestMode": {
-    "SandboxRoot": "C:\\APC_Config\\Sandbox",
+    "SandboxRoot": "{APCROOT}\\Sandbox",
     "SkipSteps":   [ 2, 4, 5, 6, 8, 11, 12 ]
   },
 
   "Backup": {
-    "Root":                 "C:\\APC_Config\\Backups",
+    "Root":                 "{APCROOT}\\Backups",
     "MedtronicDir":         "C:\\Medtronic",
     "MedtronicHelp":        "Step 12 copies only these folders of MedtronicDir into Backups\\Medtronic\\<folder>, leaving out MedtronicExcludeDirs (relative to MedtronicDir). {n} = each DOC instance of the run (1..DOCCount).",
     "MedtronicIncludeDirs": [ "DOC-{n}", "File Manager", "Data Collector", "Data Analyzer", "CNCNetPDM" ],
@@ -341,7 +343,7 @@
   },
 
   "ABB800xA": {
-    "KitDir":       "kits\\800xA",
+    "KitDir":       "modules\\800xA",
     "PowerShell32": "%WINDIR%\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe",
     "Cscript32":    "%WINDIR%\\SysWOW64\\cscript.exe",
     "OpcServer":    "ABB.AfwOpcDaSurrogate.1",
@@ -403,7 +405,7 @@
 
   "Checklist": {
     "Description":  "Draft D01555624 filled by Step 13 (modules\\Checklist.ps1)",
-    "Template":     "templates\\D01555624_C_EN.docx",
+    "Template":     "Templates\\D01555624_C_EN.docx",
     "SolutionName": "Closed-Loop Correction (CLC)",
     "Revision":     "A",
     "ReasonLabels": {
