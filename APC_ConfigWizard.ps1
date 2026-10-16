@@ -2019,6 +2019,7 @@ foreach ($s in $Script:StepDefs) {
         Set-StepState -Index $Script:RerunIndex -State 'Running'
         $Script:AutoState['RunSteps'] = @($Script:RerunIndex)   # a re-run is its own run (writes CNCAsset / CNCType itself)
         Add-LogSection -Title "Step $($mod.Index) -- $($mod.Name) (re-run)"
+        $Script:RerunStartTime = Get-Date
         Start-ModuleInWindow `
             -ModuleFile   $mod.File `
             -FunctionName $mod.Fn `
@@ -2027,13 +2028,20 @@ foreach ($s in $Script:StepDefs) {
             -OnDone       {
                 param([bool]$ok)
                 Set-StepState -Index $Script:RerunIndex -State $(if ($ok) { 'Done' } else { 'Failed' })
+                $elapsed = (Get-Date) - $Script:RerunStartTime
+                $timeStr = if ($elapsed.TotalSeconds -lt 60) { "$([math]::Round($elapsed.TotalSeconds)) sec" } else { "$($elapsed.Minutes) min $($elapsed.Seconds) sec" }
+                Add-RunLogText $controls['LogAll'] "-- $(if ($ok) {'Completed'} else {'Failed'}) in $timeStr --`r`n"
+                $controls['LogAll'].ScrollToEnd()
                 Save-RunLog
                 if ($Script:RerunIndex -eq 13) { Update-VerifySummary -LogText $controls['LogAll'].Text }
                 # The run stopped at this step and it now passes: offer to continue with the remaining steps
                 $stopped = $Script:StoppedAt
                 if ($ok -and $stopped -ge 0 -and $Script:StepDefs[$stopped].Index -eq $Script:RerunIndex -and $stopped + 1 -lt $Script:StepDefs.Count) {
+                    # the steps the stopped run still has to do (as planned at its start)
+                    $left = @($Script:StepDefs[($stopped + 1)..($Script:StepDefs.Count - 1)] | Where-Object { $_.Index -in @($Script:RunStepsAll) } | ForEach-Object { $_.Index })
+                    if (-not $left) { return }
                     $choice = [System.Windows.MessageBox]::Show(
-                        "Step $($Script:RerunIndex) now passes. Continue the run with the remaining steps?",
+                        "Step $($Script:RerunIndex) now passes.`n`nThe run stopped at this step. Continue it with Step$(if ($left.Count -gt 1) { 's' }) $($left -join ', ')?",
                         "Continue run", "YesNo", "Question")
                     if ($choice -eq 'Yes') {
                         $Script:StoppedAt = -1
