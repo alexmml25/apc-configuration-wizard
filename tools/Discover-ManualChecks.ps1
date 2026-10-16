@@ -5,7 +5,7 @@
     TimescaleDB connection, CNCnetPDM read/write through deviceWise, and the File Manager -> Data Collector file
     flow. Changes nothing.
 .DESCRIPTION
-    Zips into C:\APC_Config\Logs\manual-checks_<ts>.zip:
+    Zips into D:\APC_Config\Logs\manual-checks_<ts>.zip:
       - report.txt: Medtronic processes (path, command line, start time) and their TCP connections (netstat),
         PostgreSQL sessions (pg_stat_activity, as apcuser with the pgpass file Step 2 wrote), deviceWise OPC UA
         server certificate stores, and the folder tree of every Medtronic app (newest files first)
@@ -20,7 +20,7 @@
 param(
     [string]$ManifestPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'APC_ConfigManifest.json'),
     [string]$MedtronicDir = 'C:\Medtronic',
-    [string]$OutDir = 'C:\APC_Config\Logs'
+    [string]$OutDir = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs"
 )
 
 $ErrorActionPreference = 'Continue'

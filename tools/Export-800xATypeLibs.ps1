@@ -7,14 +7,14 @@
 .DESCRIPTION
     For each DLL: LoadTypeLibEx (REGKIND_NONE) -> TypeLibConverter.ConvertTypeLibToAssembly -> Interop.<name>.dll,
     then a plain-text list of every interface and its members. All into one zip:
-    C:\APC_Config\Logs\800xA-typelibs_<ts>.zip. 32-bit (restarts itself in 32-bit PowerShell if needed).
+    D:\APC_Config\Logs\800xA-typelibs_<ts>.zip. 32-bit (restarts itself in 32-bit PowerShell if needed).
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Export-800xATypeLibs.ps1
 #>
 param(
     [string]$BinDir = 'C:\Program Files (x86)\ABB 800xA\Base\bin',
     [string[]]$Dlls = @('AfwAbsInterfaces.dll', 'AfwServiceAspects.dll', 'AfwServiceViews.dll'),
-    [string]$OutDir = 'C:\APC_Config\Logs'
+    [string]$OutDir = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs"
 )
 
 if ([Environment]::Is64BitProcess) {

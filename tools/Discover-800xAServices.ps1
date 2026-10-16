@@ -9,13 +9,13 @@
          (name, aspect type, category) - to find the "Service Provider Definition" aspect that holds Enabled
       2. the aspects of the Calculation Server objects - to find the Calculation Status Viewer
       3. 800xA bin files and 32-bit COM ProgIDs about services / calculations (the API behind those aspects)
-    Output: C:\APC_Config\Logs\chmi-services_<ts>.txt
+    Output: D:\APC_Config\Logs\chmi-services_<ts>.txt
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Discover-800xAServices.ps1
 #>
 param(
     [string]$BinDir = 'C:\Program Files (x86)\ABB 800xA\Base\bin',
-    [string]$OutDir = 'C:\APC_Config\Logs'
+    [string]$OutDir = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs"
 )
 
 if ([Environment]::Is64BitProcess -or [Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {

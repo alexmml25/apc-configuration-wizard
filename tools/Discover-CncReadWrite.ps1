@@ -4,7 +4,7 @@
     Read-only discovery for the Step 13 CNCnetPDM read / write checks: where the CNC variable 2_597
     (#597, CNCToSegregateParts) can be reached through deviceWise. Changes nothing.
 .DESCRIPTION
-    Writes C:\APC_Config\Logs\cnc-readwrite_<ts>.txt with:
+    Writes D:\APC_Config\Logs\cnc-readwrite_<ts>.txt with:
       - the deviceWise triggers (DWCORE.db) whose definition mentions 597 / CNCToSegregateParts, and how they
         move the value between CNCn and CNCn_PATH
       - the top of the deviceWise OPC UA address space (Objects folder, 2 levels): which devices are exposed
@@ -15,7 +15,7 @@
 #>
 param(
     [string]$ManifestPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'APC_ConfigManifest.json'),
-    [string]$OutDir = 'C:\APC_Config\Logs',
+    [string]$OutDir = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs",
     [int]$Cnc = 1
 )
 

@@ -18,7 +18,7 @@
     powershell -ExecutionPolicy Bypass -File .\tools\Export-DwPackagePayload.ps1 -OutDir D:\APC_Config\Packages
 #>
 param(
-    [string]$OutDir      = 'C:\APC_Config\Packages',
+    [string]$OutDir      = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Packages",
     [string[]]$Keys      = @('dwopcua_server_v3', 'dwopcua', 'dwfilewatcher', 'dwcncnetpdm'),
     [string]$GatewayRoot = 'C:\Program Files\deviceWISE\Gateway'
 )

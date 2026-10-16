@@ -3,7 +3,7 @@
 .SYNOPSIS
     Read-only discovery for Step 2 (TimescaleDB). Changes nothing.
 .DESCRIPTION
-    Writes a report to C:\APC_Config\Logs\tsdb-discovery_<ts>.txt with:
+    Writes a report to D:\APC_Config\Logs\tsdb-discovery_<ts>.txt with:
       - PostgreSQL service, version, data folder, pg_hba.conf entries (and whether the file has a BOM)
       - as postgres: apcuser role attributes, databases and owners, extensions, public tables
       - whether apcuser can log in to TimescaleDB with the password entered
@@ -15,7 +15,7 @@
 #>
 param(
     [string]$ManifestPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'APC_ConfigManifest.json'),
-    [string]$OutDir = 'C:\APC_Config\Logs'
+    [string]$OutDir = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs"
 )
 
 $ErrorActionPreference = 'Continue'

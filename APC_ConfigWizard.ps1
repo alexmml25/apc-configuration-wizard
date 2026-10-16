@@ -358,28 +358,28 @@ $xamlText = @'
                 <StackPanel>
                   <TextBlock Text="Initial System Configuration" FontSize="14" FontWeight="SemiBold" Foreground="#1C2136"/>
                   <TextBlock Text="Establishment of APC system configuration following installation." TextWrapping="Wrap" FontSize="12" Foreground="#475569" Margin="0,4"/>
-                  <TextBlock Text="Full configuration &#x00B7; 12 steps" FontSize="11" FontWeight="SemiBold" Foreground="#4361EE"/>
+                  <TextBlock Text="Full configuration &#x00B7; 12 steps" TextWrapping="Wrap" FontSize="11" FontWeight="SemiBold" Foreground="#4361EE"/>
                 </StackPanel>
               </RadioButton>
               <RadioButton x:Name="RbType_restore" Style="{StaticResource TypeCard}">
                 <StackPanel>
                   <TextBlock Text="Configuration Restore" FontSize="14" FontWeight="SemiBold" Foreground="#1C2136"/>
                   <TextBlock Text="Restoration of APC configuration from an approved backup." TextWrapping="Wrap" FontSize="12" Foreground="#475569" Margin="0,4"/>
-                  <TextBlock Text="Choose a backup of this VM &#x00B7; deviceWise, DOC, data applications, CNCnetPDM" FontSize="11" FontWeight="SemiBold" Foreground="#4361EE"/>
+                  <TextBlock Text="Choose a backup of this VM &#x00B7; deviceWise, DOC, data applications, CNCnetPDM" TextWrapping="Wrap" FontSize="11" FontWeight="SemiBold" Foreground="#4361EE"/>
                 </StackPanel>
               </RadioButton>
               <RadioButton x:Name="RbType_component" Style="{StaticResource TypeCard}">
                 <StackPanel>
                   <TextBlock Text="Component Configuration / Update" FontSize="14" FontWeight="SemiBold" Foreground="#1C2136"/>
                   <TextBlock Text="Configuration or modification of one or more APC components or configuration elements within an existing configured APC system (e.g., deviceWise, DOC, Data Applications, CNCnetPDM, CHMI), excluding initial system configuration, configuration restore, and deployment or import of approved configuration packages." TextWrapping="Wrap" FontSize="12" Foreground="#475569" Margin="0,4"/>
-                  <TextBlock Text="Choose the components &#x00B7; starts from what is on this VM" FontSize="11" FontWeight="SemiBold" Foreground="#4361EE"/>
+                  <TextBlock Text="Choose the components &#x00B7; starts from what is on this VM" TextWrapping="Wrap" FontSize="11" FontWeight="SemiBold" Foreground="#4361EE"/>
                 </StackPanel>
               </RadioButton>
               <RadioButton x:Name="RbType_sysupdate" Style="{StaticResource TypeCard}" IsEnabled="False">
                 <StackPanel>
                   <TextBlock Text="System Update / Import" FontSize="14" FontWeight="SemiBold" Foreground="#1C2136"/>
                   <TextBlock Text="Deployment or import of approved configuration packages, including CHMI or APC interface updates." TextWrapping="Wrap" FontSize="12" Foreground="#475569" Margin="0,4"/>
-                  <TextBlock Text="Not available yet" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8"/>
+                  <TextBlock Text="Not available yet" TextWrapping="Wrap" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8"/>
                 </StackPanel>
               </RadioButton>
             </UniformGrid>
@@ -390,7 +390,7 @@ $xamlText = @'
                 <StackPanel>
                   <TextBlock Text="Verification" FontSize="14" FontWeight="SemiBold" Foreground="#1C2136"/>
                   <TextBlock Text="Check that the APC system is configured and working, without changing anything. Useful for troubleshooting." TextWrapping="Wrap" FontSize="12" Foreground="#475569" Margin="0,4"/>
-                  <TextBlock Text="Read-only &#x00B7; no changes made" FontSize="11" FontWeight="SemiBold" Foreground="#4361EE"/>
+                  <TextBlock Text="Read-only &#x00B7; no changes made" TextWrapping="Wrap" FontSize="11" FontWeight="SemiBold" Foreground="#4361EE"/>
                 </StackPanel>
               </RadioButton>
             </Grid>

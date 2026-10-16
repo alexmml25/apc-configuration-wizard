@@ -4,7 +4,7 @@
     Read-only: where DOC's OPC UA client certificate ("OPC-UA-API", per user) and its trust list live, so Step 9 can
     trust DOC in deviceWise and deviceWise in DOC. Changes nothing.
 .DESCRIPTION
-    Writes C:\APC_Config\Logs\doc-cert_<ts>.txt (and copies DocOpcUa.xml of DOC-1 next to it):
+    Writes D:\APC_Config\Logs\doc-cert_<ts>.txt (and copies DocOpcUa.xml of DOC-1 next to it):
       - the deviceWise OPC UA server stores (trusted / rejected) with subject, thumbprint and date
       - Windows certificate stores of this user and of the machine: any certificate whose subject contains
         OPC-UA-API / DOC, or whose thumbprint is in deviceWise's rejected store
@@ -17,7 +17,7 @@
 #>
 param(
     [string]$ManifestPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'APC_ConfigManifest.json'),
-    [string]$OutDir = 'C:\APC_Config\Logs',
+    [string]$OutDir = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs",
     [string]$Name = 'OPC-UA-API'
 )
 

@@ -5,7 +5,7 @@
     TEST VM ONLY. Runs one of the wizard's deviceWise steps (4 base platform, 5 CHMI, 6 SINC, 8 CNCnetPDM) or Step 7 (CNCnetPDM) or Step 13 (verification; look at its deviceWise / CNCnetPDM lines) on its own.
 .DESCRIPTION
     Loads the wizard's manifest and the step's module and runs it with the CNCs given here, so
-    Step 1 (Site DB) is not needed. Results and the log go to C:\APC_Config\Test-Step0<n>_<ts>\
+    Step 1 (Site DB) is not needed. Results and the log go to D:\APC_Config\Test-Step0<n>_<ts>\
     (Logs, Backups with the safety copy of the gateway databases).
     -PackageDir (the package payload folder from tools\Export-DwPackagePayload.ps1) / -Baseline (the .dbk
     file) override the repository share paths from the manifest.
@@ -40,7 +40,7 @@ $steps = @{
     13 = @{ File = '13-Verification.ps1';    Fn = 'Invoke-Verification';     Name = 'verification (read-only)' }
 }
 $def  = $steps[$Step]
-$run  = Join-Path 'C:\APC_Config' ("Test-Step{0:D2}_{1}" -f $Step, (Get-Date -Format 'yyyyMMdd-HHmmss'))
+$run  = Join-Path "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config" ("Test-Step{0:D2}_{1}" -f $Step, (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Path (Join-Path $run 'Logs') -Force | Out-Null
 $Script:LogFile = Join-Path $run ("Logs\step{0:D2}.log" -f $Step)
 

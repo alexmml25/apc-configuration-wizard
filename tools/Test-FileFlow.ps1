@@ -18,7 +18,7 @@
       2. copy the CSV with Machine Asset # = CNC<n>'s asset and a unique lot APCTEST<time> into the instrument Path
       3. follow it: picked up, routed (NewPath\<asset> or ErrorPath), Data Collector status, archived, rows in the DB
       4. clean up: tags restored, Trigger cleared, archived copy removed, the test lot's rows deleted (not with -KeepData)
-    Report: C:\APC_Config\Logs\fileflow-test_<ts>.txt. 64-bit PowerShell, service account (pgpass from Step 2).
+    Report: D:\APC_Config\Logs\fileflow-test_<ts>.txt. 64-bit PowerShell, service account (pgpass from Step 2).
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File tools\Test-FileFlow.ps1 -CsvPath .\1st_TestFile.csv
 #>
@@ -26,7 +26,7 @@ param(
     [Parameter(Mandatory)] [string]$CsvPath,
     [int]$Cnc = 1,
     [string]$ManifestPath,      # default set below: $PSScriptRoot is empty in param defaults of an advanced script (PS 5.1)
-    [string]$OutDir = 'C:\APC_Config\Logs',
+    [string]$OutDir = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs",
     [int]$TimeoutSeconds = 180,
     [switch]$KeepData
 )

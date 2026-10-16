@@ -9,14 +9,14 @@
       - API docs, help files and config files under the deviceWISE install folders
     Nothing is changed. The only requests sent are GETs and one POST of an empty
     JSON object to /api, which the gateway rejects without acting on it.
-    Output: C:\APC_Config\Logs\dw-discovery-<timestamp>.txt
+    Output: D:\APC_Config\Logs\dw-discovery-<timestamp>.txt
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Discover-DeviceWiseApi.ps1
 #>
 
 $ErrorActionPreference = 'Continue'
 $ts      = Get-Date -Format 'yyyyMMdd-HHmmss'
-$outDir  = 'C:\APC_Config\Logs'
+$outDir  = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs"
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 $outFile = Join-Path $outDir "dw-discovery-$ts.txt"
 

@@ -14,7 +14,7 @@
 #>
 param(
     [string]$JarPath = 'C:\Program Files\deviceWISE\Workbench\wbench\jars\dwjavaapi.jar',
-    [string]$OutDir  = 'C:\APC_Config\Logs'
+    [string]$OutDir  = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs"
 )
 
 $ErrorActionPreference = 'Stop'

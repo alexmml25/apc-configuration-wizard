@@ -9,13 +9,13 @@
       2. every .der file under the OPC UA Connect / Management Portal pki folders (subject, issuer, thumbprint)
       3. the UA Management Portal Start Menu shortcut, its target and the program folder's exe/config files
     Nothing is changed and the portal is not started.
-    Output: C:\APC_Config\Logs\chmi-step1.txt
+    Output: D:\APC_Config\Logs\chmi-step1.txt
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Discover-800xAChmi.ps1
 #>
 param(
     [string]$PkiRoot = 'C:\ProgramData\ABB\Process Portal A',
-    [string]$OutDir  = 'C:\APC_Config\Logs'
+    [string]$OutDir  = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs"
 )
 
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null

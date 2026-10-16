@@ -11,13 +11,13 @@
       3. In those assemblies: types and public methods whose names mention certificates, roots, signing,
          trust or stores
       4. The OPC UA config files next to them (ABB.Opc.Ua.*.Config.xml, ManagementPortal .exe.config)
-    Output: C:\APC_Config\Logs\chmi-certtools.txt
+    Output: D:\APC_Config\Logs\chmi-certtools.txt
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Inspect-800xACertTools.ps1
 #>
 param(
     [string]$BinDir = 'C:\Program Files (x86)\ABB 800xA\Base\bin',
-    [string]$OutDir = 'C:\APC_Config\Logs'
+    [string]$OutDir = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs"
 )
 
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null

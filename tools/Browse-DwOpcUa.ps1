@@ -4,12 +4,12 @@
     Read-only: browses the deviceWISE gateway's OPC UA server and prints the CNC devices' variables.
 .DESCRIPTION
     Uses the OPC Foundation .NET stack (Opc.Ua.Core / Opc.Ua.Client) that 800xA installs in
-    C:\Program Files (x86)\ABB 800xA\Base\bin, copied to C:\APC_Config\OpcUaStack first (800xA's
+    C:\Program Files (x86)\ABB 800xA\Base\bin, copied to D:\APC_Config\OpcUaStack first (800xA's
     files are only read). Connects anonymously with security
     mode None (the gateway allows both), browses Objects for the devices matching -Device and prints
     their child nodes down to -Depth levels with NodeIds; CNCAsset / CNCType are also read.
-    The client certificate store is C:\APC_Config\pki (created if needed). Nothing on the gateway
-    is changed. Output also saved to C:\APC_Config\Logs\dw-opcua-browse-<timestamp>.txt
+    The client certificate store is D:\APC_Config\pki (created if needed). Nothing on the gateway
+    is changed. Output also saved to D:\APC_Config\Logs\dw-opcua-browse-<timestamp>.txt
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Browse-DwOpcUa.ps1
 #>
@@ -21,17 +21,17 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-New-Item -ItemType Directory -Path 'C:\APC_Config\Logs' -Force | Out-Null
-$out = 'C:\APC_Config\Logs\dw-opcua-browse-{0}.txt' -f (Get-Date -Format 'yyyyMMdd-HHmmss')
+New-Item -ItemType Directory -Path "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs" -Force | Out-Null
+$out = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs\dw-opcua-browse-{0}.txt" -f (Get-Date -Format 'yyyyMMdd-HHmmss')
 function Out-Line([string]$t) { Write-Host $t; Add-Content -Path $out -Value $t }
 
 Out-Line "OPC UA browse - $env:COMPUTERNAME - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') - $Endpoint - PowerShell $($PSVersionTable.PSVersion) $(if ([Environment]::Is64BitProcess) { '64-bit' } else { '32-bit' })"
 
-# Same loading as Step 4: the stack is copied to C:\APC_Config\OpcUaStack and loaded from there
+# Same loading as Step 4: the stack is copied to D:\APC_Config\OpcUaStack and loaded from there
 function Write-Log { param($Level, $Message) }
 . (Join-Path (Split-Path -Parent $PSScriptRoot) 'modules\DeviceWise.ps1')
 $Global:DwUaStackSource = $StackDir
-$Global:DwUaStackCopy   = 'C:\APC_Config\OpcUaStack'
+$Global:DwUaStackCopy   = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\OpcUaStack"
 if (Test-Path $Global:DwUaStackCopy) { Remove-Item (Join-Path $Global:DwUaStackCopy '*') -Force -ErrorAction SilentlyContinue }
 New-Item -ItemType Directory -Path $Global:DwUaStackCopy -Force | Out-Null
 [AppDomain]::CurrentDomain.add_AssemblyResolve([ResolveEventHandler]{
@@ -57,7 +57,7 @@ function Wait-Task($r) { if ($r -is [Threading.Tasks.Task]) { $r.GetAwaiter().Ge
 
 #region -- Client configuration (anonymous, security None) ---------------------
 
-$pki = 'C:\APC_Config\pki'
+$pki = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\pki"
 $cfg = New-Object Opc.Ua.ApplicationConfiguration
 $cfg.ApplicationName = 'APC Config Wizard'
 $cfg.ApplicationUri  = "urn:$($env:COMPUTERNAME):APCConfigWizard"

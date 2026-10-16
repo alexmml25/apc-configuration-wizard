@@ -10,14 +10,14 @@
       - reads CNC<n>_PATH 2_597 with a few TagID / TagName combinations
     -Write: on CNC<n>_PATH 2_597 (#597 CNCToSegregateParts) writes 10, reads it back, writes 0, reads it back.
       10 means nothing to the CNC logic (user, 2026-10-15); 0 is the idle value.
-    Report: C:\APC_Config\Logs\cnc-readwrite-test_<ts>.txt. 64-bit PowerShell, service account.
+    Report: D:\APC_Config\Logs\cnc-readwrite-test_<ts>.txt. 64-bit PowerShell, service account.
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File tools\Test-CncReadWrite.ps1
     powershell -NoProfile -ExecutionPolicy Bypass -File tools\Test-CncReadWrite.ps1 -Write
 #>
 param(
     [string]$ManifestPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'APC_ConfigManifest.json'),
-    [string]$OutDir = 'C:\APC_Config\Logs',
+    [string]$OutDir = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs",
     [int]$Cnc = 1,
     [string]$Tag = '2_597',
     [string]$TagId,

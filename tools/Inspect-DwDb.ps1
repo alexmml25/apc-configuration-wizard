@@ -12,7 +12,7 @@
                    unless -Full is given (then the output file holds the whole values).
     Values of columns or names that look like passwords/secrets/keys/vouchers are masked.
     Opens the databases read-only; dwcore can keep running. Nothing is changed.
-    Output also saved to C:\APC_Config\Logs\dw-db-<timestamp>.txt
+    Output also saved to D:\APC_Config\Logs\dw-db-<timestamp>.txt
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Inspect-DwDb.ps1 -Group opcua_server_v3
 .EXAMPLE
@@ -37,8 +37,8 @@ function Write-Log { param($Level, $Message) }
 $paths = @{ Root = $GatewayRoot; Db = Join-Path $GatewayRoot 'db'; Sqlite = Join-Path $GatewayRoot 'dwcore\sqlite3.dll' }
 Initialize-DwSqlite -Paths $paths
 
-New-Item -ItemType Directory -Path 'C:\APC_Config\Logs' -Force | Out-Null
-$out = "C:\APC_Config\Logs\dw-db-{0}.txt" -f (Get-Date -Format 'yyyyMMdd-HHmmss')
+New-Item -ItemType Directory -Path "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs" -Force | Out-Null
+$out = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs\dw-db-{0}.txt" -f (Get-Date -Format 'yyyyMMdd-HHmmss')
 function Out-Line([string]$t) { Write-Host $t; Add-Content -Path $out -Value $t }
 $secret = '(?i)pass|secret|key|voucher|hash|token'
 function Mask([string]$name, [string]$value) { if ($name -match $secret) { '<masked>' } else { $value } }

@@ -8,13 +8,13 @@
     with its packages, and the class names that look like gateway administration
     (sessions, variables, triggers, projects, local DB, packages, users, OPC UA ...).
     Only zip entry names are read, so it is quick. Nothing is changed.
-    Output: C:\APC_Config\Logs\dw-jar-scan.txt
+    Output: D:\APC_Config\Logs\dw-jar-scan.txt
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Find-DwGatewayClient.ps1
 #>
 param(
     [string[]]$Roots = @('C:\Program Files\deviceWISE', 'C:\Program Files (x86)\deviceWISE'),
-    [string]$OutDir  = 'C:\APC_Config\Logs'
+    [string]$OutDir  = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs"
 )
 
 $ErrorActionPreference = 'Stop'

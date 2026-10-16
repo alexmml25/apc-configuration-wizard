@@ -16,13 +16,13 @@
       4. the OPC UA applications the portal would update (UA Connect, UA Server, external servers)
     Nothing is written on a configured system: BackEnd800xA.Init only creates the certificate aspect
     when it does not exist yet (a system where Create Root Certificate was never done).
-    Output: C:\APC_Config\Logs\chmi-rootprobe.txt
+    Output: D:\APC_Config\Logs\chmi-rootprobe.txt
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Probe-800xARootCert.ps1
 #>
 param(
     [string]$BinDir = 'C:\Program Files (x86)\ABB 800xA\Base\bin',
-    [string]$OutDir = 'C:\APC_Config\Logs'
+    [string]$OutDir = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs"
 )
 
 # ABB's certificate assemblies are 32-bit only

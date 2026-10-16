@@ -4,7 +4,7 @@
     Writes CNCn.CNCAsset / CNCType through the gateway's OPC UA server and reads them back -
     the same code Step 4 runs (modules\DeviceWise.ps1), without the rest of Step 4.
 .DESCRIPTION
-    Anonymous, security None, OPC Foundation stack from 800xA (copied to C:\APC_Config\OpcUaStack).
+    Anonymous, security None, OPC Foundation stack from 800xA (copied to D:\APC_Config\OpcUaStack).
     -ReadOnly only reads. The values are lost at the next dwcore restart (known limitation).
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Test-DwCncAsset.ps1 -Cnc "Citizen 01|CITIZEN_L20X_IV,Citizen 03|CITIZEN_L20X_IV,Citizen 08|CITIZEN_L20X_IV"
@@ -35,7 +35,7 @@ for ($i = 0; $i -lt $Cnc.Count; $i++) {
 
 $session = Open-DwUaSession -Manifest $manifest
 try {
-    Write-Host "Connected to $($manifest.DeviceWise.OpcUaClient.Endpoint) (stack copy: C:\APC_Config\OpcUaStack)"
+    Write-Host "Connected to $($manifest.DeviceWise.OpcUaClient.Endpoint) (stack copy: D:\APC_Config\OpcUaStack)"
     if (-not $ReadOnly) {
         $res = Set-DwUaValues -Session $session -Namespace $ns -Values $wanted
         foreach ($k in $res.Keys) { Write-Host ("write {0,-16} = {1,-20} -> {2}" -f $k, $wanted[$k], $res[$k]) }

@@ -4,21 +4,21 @@
     Read-only: zips the 800xA service / calculation files needed to automate the D01558132 section 1.4 service
     reset and the Calculation Status Viewer check, plus the latest services discovery report. Changes nothing.
 .DESCRIPTION
-    Collects into C:\APC_Config\Logs\800xA-service-files_<ts>.zip:
+    Collects into D:\APC_Config\Logs\800xA-service-files_<ts>.zip:
       - from the 800xA bin folder: AfwServiceManager.exe (+ .config), AfwServiceAspects.dll,
         AfwServiceClientHelper.dll, AfwServiceViews.dll
       - the files behind the COM classes ABB.CalcServiceServer, ABB.AfwAdminServiceProvider, ABB.AfwAdminServiceGroup,
         ABB.AfwServiceProviderIdObj (InprocServer32 / LocalServer32), and the .NET assemblies next to the
         calculation server whose names contain "Calc"
       - every file with 'Calc' in its name under C:\Program Files*\ABB* (Inform IT Calculations)
-      - the newest C:\APC_Config\Logs\chmi-services_*.txt
+      - the newest D:\APC_Config\Logs\chmi-services_*.txt
     Copy the zip to the project folder (the ABB files are git-ignored there).
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\tools\Collect-800xAServiceFiles.ps1
 #>
 param(
     [string]$BinDir = 'C:\Program Files (x86)\ABB 800xA\Base\bin',
-    [string]$OutDir = 'C:\APC_Config\Logs'
+    [string]$OutDir = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Logs"
 )
 
 $ts    = Get-Date -Format 'yyyyMMdd_HHmmss'

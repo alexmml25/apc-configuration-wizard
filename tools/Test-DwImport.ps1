@@ -34,7 +34,7 @@ param(
     [string[]]$Only,                     # import just these <exportcontent type="..."> items
     [string[]]$Exclude,                  # import everything except these types
     [string]$GatewayRoot = 'C:\Program Files\deviceWISE\Gateway',
-    [string]$BackupRoot  = 'C:\APC_Config\Backups',
+    [string]$BackupRoot  = "$(if (@([IO.DriveInfo]::GetDrives() | Where-Object { $_.Name -eq 'D:\' -and $_.DriveType -eq 'Fixed' -and $_.IsReady }).Count) { 'D:' } else { 'C:' })\APC_Config\Backups",
     [int]$TimeoutSec     = 300
 )
 
