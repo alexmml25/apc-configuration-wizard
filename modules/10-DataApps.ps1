@@ -230,6 +230,9 @@ function Invoke-DataApps {
                     Set-ChildText $blk 'NewPath'       $newPath
                     Set-ChildText $blk 'ErrorPath'     $errPath
                     Set-ChildText $blk 'EndFileString' 'NA'
+                    # line formats the installed config gets wrong for the real files (DataApps.FileManagerFormat)
+                    $fmt = if ($da.PSObject.Properties['FileManagerFormat']) { $da.FileManagerFormat.PSObject.Properties[$ins.Type] }
+                    if ($fmt) { foreach ($p in $fmt.Value.PSObject.Properties) { Set-ChildText $blk $p.Name ([string]$p.Value) } }
                     $paths.AppendChild($blk) | Out-Null
                 }
 

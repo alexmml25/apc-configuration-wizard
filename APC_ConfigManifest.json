@@ -289,6 +289,10 @@
     "DataCollectorConfig": "C:\\Medtronic\\Data Collector\\DataCollector.exe.config",
     "DataAnalyzerConfig":  "C:\\Medtronic\\Data Analyzer\\DataAnalyzer.exe.config",
     "LocalDataRoot": "C:\\Medtronic\\DataCollector_Data",
+    "FileManagerFormat": {
+      "Note": "Line-format settings the installed File Manager config gets wrong for the real instrument files, per type. CMM: real files have 'Part Name,M424982B211,,,' without quotes; the shipped prefix '\"Part Name\",' made File Manager compare 'Part Name,M424982B211' with RunningPartNumber (user 2026-10-16: real file)",
+      "CMM": { "PartNumberPrefix": "Part Name," }
+    },
     "FileFlowTest": {
       "Enabled":        true,
       "CsvFiles":       [ "templates\\FileFlowTest_CTSCAN1.csv", "templates\\FileFlowTest_CMM1.csv" ],

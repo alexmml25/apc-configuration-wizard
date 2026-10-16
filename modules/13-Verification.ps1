@@ -825,7 +825,21 @@ function Invoke-Verification {
         if ($bad) { throw "EndFileString not NA for: $($bad -join ', ')" }
         $mm = @($fmXml.SelectNodes('/configuration/CNCSettings/*') | Where-Object { (FmChild $_ 'CheckMismatchData') -ne 'true' })
         if ($mm) { throw "CheckMismatchData not true for: $(($mm | ForEach-Object { $_.LocalName }) -join ', ')" }
-        "EndFileString=NA on all entries; CheckMismatchData=true on all CNCs"
+        # line formats corrected for the real files (DataApps.FileManagerFormat, e.g. CMM PartNumberPrefix 'Part Name,')
+        $fmtBad = @(); $fmtOk = @()
+        if ($da.PSObject.Properties['FileManagerFormat']) {
+            foreach ($t in $da.FileManagerFormat.PSObject.Properties | Where-Object { $_.Value -is [System.Management.Automation.PSCustomObject] }) {
+                foreach ($fp in @($fmPaths | Where-Object { (FmChild $_ 'Name') -match "^$($t.Name)\d*$" })) {
+                    foreach ($p in $t.Value.PSObject.Properties) {
+                        $have = $fp.SelectSingleNode($p.Name)
+                        if (-not $have -or $have.InnerText -ne [string]$p.Value) { $fmtBad += "$(FmChild $fp 'Name') $($p.Name)='$(if ($have) { $have.InnerText })' expected '$($p.Value)'" }
+                        else { $fmtOk += "$(FmChild $fp 'Name') $($p.Name)" }
+                    }
+                }
+            }
+        }
+        if ($fmtBad) { throw ($fmtBad -join '; ') }
+        "EndFileString=NA on all entries; CheckMismatchData=true on all CNCs$(if ($fmtOk) { "; $($fmtOk -join ', ') as the real files" })"
     } '' 7 5
 
     # Item 6 - Application startup (process running)
