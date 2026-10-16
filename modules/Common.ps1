@@ -248,6 +248,61 @@ function Get-DOCTimeouts {
     $res
 }
 
+function Get-DataAppsCurrent {
+    <#
+        The instruments as File Manager and Data Collector are configured on this VM now (Component Configuration /
+        Update starts from them). Per type in Manifest.DataApps.Instruments that has File Manager entries
+        (Paths/*/Name = CMM1, BENCH, CONTRACER1..3) and Data Collector blocks (DataTypeSettings/CNC<n>.*):
+          @{ <Type> = @{ Count; CNCs; SourcePath; ErrorPath ('' = the default <NewPath>\DoneError); BroadcastPath ('' = none) } }
+        A type missing in either config is not in the result (= not set up). Unreadable configs give @{}.
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest)
+    $res = @{}
+    $types = @($Manifest.DataApps.Instruments | ForEach-Object { [string]$_.Type } | Sort-Object Length -Descending)
+    $typeOf = { param([string]$n) foreach ($t in $types) { if ($n -match "^$([regex]::Escape($t))\d*$") { return $t } }; '' }
+    $load = { param($p) if ($p -and (Test-Path -LiteralPath $p)) { $x = New-Object System.Xml.XmlDocument; $x.LoadXml([System.IO.File]::ReadAllText($p)); $x } }
+    try { $fm = & $load ([string]$Manifest.DataApps.FileManagerConfig); $dc = & $load ([string]$Manifest.DataApps.DataCollectorConfig) } catch { return $res }
+    if (-not $fm -or -not $dc) { return $res }
+    $text = { param($node, $name) $c = $node.SelectSingleNode($name); if ($c) { $c.InnerText.Trim() } else { '' } }
+    foreach ($e in @($fm.SelectNodes('//Paths/*'))) {
+        $t = & $typeOf (& $text $e 'Name'); if (-not $t) { continue }
+        if (-not $res.ContainsKey($t)) {
+            $err = & $text $e 'ErrorPath'
+            if ($err -and ($err -ieq ([string](& $text $e 'NewPath')).TrimEnd('\') + '\DoneError')) { $err = '' }
+            $res[$t] = @{ Count = 0; CNCs = @(); SourcePath = (& $text $e 'Path'); ErrorPath = $err; BroadcastPath = '' }   # ['Count']: .Count on a hashtable is its key count
+        }
+        $res[$t]['Count'] = [int]$res[$t]['Count'] + 1
+    }
+    foreach ($b in @($dc.SelectNodes('//DataTypeSettings/*'))) {
+        if ($b.LocalName -notmatch '^CNC(\d+)\.') { continue }
+        $n = [int]$Matches[1]
+        $t = & $typeOf (& $text $b 'Name'); if (-not $t -or -not $res.ContainsKey($t)) { continue }
+        if ($n -notin $res[$t]['CNCs']) { $res[$t]['CNCs'] = @($res[$t]['CNCs']) + $n }
+        if ((& $text $b 'BroadcastFile') -ieq 'true' -and -not $res[$t]['BroadcastPath']) { $res[$t]['BroadcastPath'] = & $text $b 'BroadcastFilePaths/Path1' }
+    }
+    foreach ($t in @($res.Keys)) {
+        if (-not @($res[$t]['CNCs']).Count) { $res.Remove($t); continue }
+        $res[$t]['CNCs'] = @($res[$t]['CNCs'] | Sort-Object)
+        if ($t -eq 'BENCH') { $res[$t]['Count'] = 1 }
+    }
+    $res
+}
+
+function Get-CNCnetPDMLicenseCurrent {
+    # CNCnetPDM.ini [GENERAL] License on this VM ('' when not found)
+    param([Parameter(Mandatory)] [object]$Manifest)
+    foreach ($dir in @($Manifest.CNCnetPDM.InstallDir, $Manifest.CNCnetPDM.FallbackDir)) {
+        $ini = if ($dir) { Join-Path $dir 'CNCnetPDM.ini' } else { '' }
+        if (-not $ini -or -not (Test-Path -LiteralPath $ini)) { continue }
+        $inGeneral = $false
+        foreach ($line in [System.IO.File]::ReadAllLines($ini)) {
+            if ($line -match '^\s*\[(.+)\]') { $inGeneral = $Matches[1].Trim() -ieq 'GENERAL'; continue }
+            if ($inGeneral -and $line -match '^\s*License\s*=\s*(.*)$') { return $Matches[1].Trim() }
+        }
+    }
+    ''
+}
+
 function Get-ApcBackupInfo {
     <#
         What a run's backup holds (Configuration Restore). $Path = the run folder (<work folder>\<Type>_<ts>) or its

@@ -39,6 +39,7 @@ $manifest = Get-Manifest
 . (Join-Path $Script:ModulesDir 'Common.ps1')
 . (Join-Path $Script:ModulesDir 'ABB800xA.ps1')
 . (Join-Path $Script:ModulesDir 'Release.ps1')
+. (Join-Path $Script:ModulesDir 'DeviceWise.ps1')   # reads this VM's SINC alert e-mail (Component Configuration / Update)
 $Script:ApcRoot   = Get-ApcRoot $manifest
 # Release from the Installation Manager's workbook (APC Releases.xlsx on the deployment share); manifest value without it
 $Script:Release   = Get-ApcRelease -Manifest $manifest
@@ -675,6 +676,17 @@ $xamlText = @'
             <TextBlock Text="Data applications" Style="{StaticResource PageTitle}"/>
             <TextBlock Style="{StaticResource PageHint}"
                        Text="Each measurement instrument saves a results file. File Manager picks it up and checks it belongs to the part running on the CNC; Data Collector saves it to the APC database."/>
+            <Border x:Name="PanelDaTags" Style="{StaticResource Card}" Padding="14,10" BorderBrush="#C7D2FE" Background="#F8FAFF" Visibility="Collapsed">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="&#x24D8;" FontSize="16" Foreground="#4361EE" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                <TextBlock x:Name="TxtDaTagsNote" Grid.Column="1" TextWrapping="Wrap" Foreground="#334155" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                  <Button x:Name="BtnUndoDa" Style="{StaticResource SecondaryBtn}" Content="Undo my changes" Padding="12,6"/>
+                  <Button x:Name="BtnDaDefaults" Style="{StaticResource SecondaryBtn}" Content="Use site defaults for all" Padding="12,6" Margin="8,0,0,0"/>
+                </StackPanel>
+              </Grid>
+            </Border>
             <Expander Header="Help with this page" FontWeight="SemiBold" Foreground="#1C2136" Margin="0,0,0,16">
               <Border Style="{StaticResource Card}" Margin="0,8,0,0">
                 <Grid TextElement.FontWeight="Normal" TextElement.FontSize="12" TextElement.Foreground="#334155">
@@ -975,7 +987,10 @@ $instFrag = foreach ($inst in $manifest.DataApps.Instruments) {
                       <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="130"/><ColumnDefinition Width="146"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/>
                       </Grid.ColumnDefinitions>
-                      <TextBlock Text="$t" FontWeight="SemiBold" Foreground="#1C2136" VerticalAlignment="Center"/>
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="$t" FontWeight="SemiBold" Foreground="#1C2136"/>
+                        <Border x:Name="BdInstTag_$t" Style="{StaticResource TagChip}" Margin="0,3,0,0" Visibility="Collapsed"><TextBlock x:Name="TxtInstTag_$t" FontSize="11" FontWeight="SemiBold"/></Border>
+                      </StackPanel>
                       <Border x:Name="BdFpp_$t" Grid.Column="1" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" ClipToBounds="True" HorizontalAlignment="Left" VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal">$segs</StackPanel>
                       </Border>
@@ -1259,6 +1274,113 @@ foreach ($inst in $manifest.DataApps.Instruments) {
     foreach ($n in 1,2,3) { $controls["RbFpp_$($inst.Type)_$n"].Add_Checked({ param($rb) Update-FilesPerPartTip ([string]$rb.Tag) }) }
 }
 
+# Component Configuration / Update starts from what File Manager and Data Collector have on this VM
+# (Get-DataAppsCurrent); an instrument not set up there gets the site default. Current / Site default / Changed.
+$Script:DACurrent = @{}
+$Script:DARead    = $false
+$Script:DAFilling = $false   # set while the page is filled from code, so the markers are updated once at the end
+
+function Get-SiteDefaultInst([string]$Type) {
+    $site = Get-SelectedSite
+    $da   = $manifest.DataApps
+    $defs = if ($site -and $da.SiteDefaults.PSObject.Properties[$site]) { $da.SiteDefaults.$site } else { $da.SiteDefaults.Default }
+    $p = $defs.PSObject.Properties[$Type]
+    if (-not $p) { return @{ Count = 1; CNCs = @(); SourcePath = ''; ErrorPath = ''; BroadcastPath = '' } }
+    $d = $p.Value
+    @{ Count = $(if ($Type -eq 'BENCH') { 1 } else { [math]::Min(3, [math]::Max(1, [int]$d.Count)) }); CNCs = @($d.CNCs | ForEach-Object { [int]$_ })
+       SourcePath = (ConvertTo-DrivePath ([string]$d.SourcePath)); ErrorPath = (ConvertTo-DrivePath ([string]$d.ErrorPath)); BroadcastPath = (ConvertTo-DrivePath ([string]$d.BroadcastPath)) }
+}
+function Set-InstValues([string]$Type, [hashtable]$V) {
+    $controls["RbFpp_${Type}_$([math]::Min(3, [math]::Max(1, [int]$V['Count'])))"].IsChecked = $true
+    foreach ($n in 1,2,3) { $controls["ChkInst_${Type}_$n"].IsChecked = [bool]($n -in @($V['CNCs'])) }
+    $controls["TxtInstSrc_$Type"].Text = [string]$V['SourcePath']
+    $controls["TxtInstErr_$Type"].Text = [string]$V['ErrorPath']
+    $controls["TxtInstBc_$Type"].Text  = [string]$V['BroadcastPath']
+    Update-FilesPerPartTip $Type
+}
+function Get-InstValues([string]$Type) {
+    $cnt = Get-DOCCount
+    @{ Count = $(if ($Type -eq 'BENCH') { 1 } else { Get-FilesPerPart $Type }); CNCs = @(1..$cnt | Where-Object { $controls["ChkInst_${Type}_$_"].IsChecked -eq $true })
+       SourcePath = $controls["TxtInstSrc_$Type"].Text.Trim(); ErrorPath = $controls["TxtInstErr_$Type"].Text.Trim(); BroadcastPath = $controls["TxtInstBc_$Type"].Text.Trim() }
+}
+# What the instrument is on this VM now (or the site default when it is not set up there)
+function Get-InstBase([string]$Type) { if ($Script:DACurrent.ContainsKey($Type)) { $Script:DACurrent[$Type] } else { Get-SiteDefaultInst $Type } }
+function Format-Inst([hashtable]$V) {
+    $cnt = Get-DOCCount
+    $cncs = @(@($V['CNCs']) | Where-Object { $_ -le $cnt })
+    if (-not $cncs.Count) { return 'not set up' }
+    $txt = "$([int]$V['Count']) file$(if ([int]$V['Count'] -gt 1) { 's' }) per part $Script:Dot CNC$($cncs -join ',') $Script:Dot $($V['SourcePath'])"
+    if ($V['ErrorPath'])     { $txt += " $Script:Dot error $($V['ErrorPath'])" }
+    if ($V['BroadcastPath']) { $txt += " $Script:Dot MES $($V['BroadcastPath'])" }
+    $txt
+}
+function Test-ShowDaTags { (Get-ConfigType) -eq 'component' -and $Script:DARead }
+function Get-DataAppsChanges {
+    # @(@{ K; From; To }) for Review: instruments that differ from this VM (or from the site default when not set up)
+    $list = @()
+    if (-not (Test-ShowDaTags)) { return $list }
+    foreach ($inst in $manifest.DataApps.Instruments) {
+        $t = [string]$inst.Type
+        $was = if ($Script:DACurrent.ContainsKey($t)) { Format-Inst $Script:DACurrent[$t] } else { 'not set up' }
+        $now = Format-Inst (Get-InstValues $t)
+        if ($was -ne $now) { $list += @{ K = $t; From = $was; To = $now } }
+    }
+    $list
+}
+function Update-DATags {
+    if ($Script:DAFilling) { return }
+    $on = Test-ShowDaTags
+    $controls['PanelDaTags'].Visibility = if ($on) { 'Visible' } else { 'Collapsed' }
+    $changed = 0
+    foreach ($inst in $manifest.DataApps.Instruments) {
+        $t = [string]$inst.Type
+        $kind = ''
+        if ($on) {
+            $same = (Format-Inst (Get-InstValues $t)) -eq (Format-Inst (Get-InstBase $t))
+            $kind = if (-not $same) { 'chg' } elseif ($Script:DACurrent.ContainsKey($t)) { 'cur' } else { 'def' }
+            if (-not $same) { $changed++ }
+        }
+        Set-Tag $controls["BdInstTag_$t"] $controls["TxtInstTag_$t"] $kind
+    }
+    $controls['TxtDaTagsNote'].Text = "Filled from this VM (File Manager and Data Collector configs). An instrument not set up on this VM gets the $(Get-SelectedSite) site default."
+    $controls['BtnUndoDa'].IsEnabled = $on -and $changed -gt 0
+}
+function Set-DataAppsFromVm {
+    $Script:DAFilling = $true
+    try { foreach ($inst in $manifest.DataApps.Instruments) { Set-InstValues ([string]$inst.Type) (Get-InstBase ([string]$inst.Type)) } }
+    finally { $Script:DAFilling = $false }
+    Update-DATags
+}
+$controls['BtnUndoDa'].Add_Click({ Set-DataAppsFromVm })
+$controls['BtnDaDefaults'].Add_Click({
+    $Script:DAFilling = $true
+    try { foreach ($inst in $manifest.DataApps.Instruments) { Set-InstValues ([string]$inst.Type) (Get-SiteDefaultInst ([string]$inst.Type)) } }
+    finally { $Script:DAFilling = $false }
+    Update-DATags
+})
+foreach ($inst in $manifest.DataApps.Instruments) {
+    $t = [string]$inst.Type
+    foreach ($n in 1,2,3) { $controls["RbFpp_${t}_$n"].Add_Checked({ Update-DATags }); $controls["ChkInst_${t}_$n"].Add_Click({ Update-DATags }) }
+    foreach ($b in "TxtInstSrc_$t", "TxtInstErr_$t", "TxtInstBc_$t") { $controls[$b].Add_TextChanged({ Update-DATags }) }
+}
+
+# This VM's SINC alert e-mail (deviceWise SINC/0_DefaultConfiguration EMAIL_TO, ',' -> '; ') and CNCnetPDM licence
+function Read-ComponentValuesFromVm {
+    try {
+        $x = Get-DwXml -Paths (Get-DwPaths -Manifest $Script:ViewManifest) -Table triggers -Name '0_DefaultConfiguration' -Project 'SINC'
+        $v = if ($x) { $x.SelectSingleNode("//VariableInfo[@name='EMAIL_TO']") } else { $null }
+        $mail = if ($v) { (($v.GetAttribute('default') -split '[,;]') | ForEach-Object { $_.Trim() } | Where-Object { $_ }) -join '; ' } else { '' }
+        if ($mail) { $controls['TxtSINCEmail'].Text = $mail }
+    } catch { }
+    try {
+        $lic = Get-CNCnetPDMLicenseCurrent -Manifest $Script:ViewManifest
+        if ($lic -and $lic -ne [string]$manifest.CNCnetPDM.DefaultLicense) {
+            $controls['ChkDefaultLicense'].IsChecked = $false
+            $controls['TxtLicense'].Text = $lic
+        }
+    } catch { }
+}
+
 # ---- Machines & DOC ---------------------------------------------------------------
 
 $Script:CurrentDOC     = @{}      # what this VM has configured now: @{ 1 = 'Citizen 08'; ... } (read after sign-in)
@@ -1269,6 +1391,7 @@ $Script:TagStyles = @{
     cur = @{ Text = 'Current'; Bg = '#EEF2FF'; Fg = '#3451D1'; Tip = 'Configured on this VM now' }
     neu = @{ Text = 'New';     Bg = '#F0FDF4'; Fg = '#166534'; Tip = 'Not configured on this VM yet' }
     chg = @{ Text = 'Changed'; Bg = '#FFFBEB'; Fg = '#B45309'; Tip = 'Your edit; listed on Review' }
+    def = @{ Text = 'Site default'; Bg = '#F1F5F9'; Fg = '#475569'; Tip = 'Not set up on this VM; filled with the site default' }
 }
 
 function Set-Tag {
@@ -1375,6 +1498,7 @@ function Update-DOCRows {
     Update-DOCDetails
     Update-DOCTags
     Update-DataAppsCNCVisibility -CncCount $cnt
+    if (Get-Command Update-DATags -ErrorAction SilentlyContinue) { Update-DATags }
 }
 
 # Puts this VM's DOC assignment into the page (Component / Update and Verification start from it)
@@ -1891,6 +2015,7 @@ function Update-ReviewPage {
             }
         }
     }
+    if ('dataapps' -in $pages) { $changes += @(Get-DataAppsChanges) }
     $controls['PanelChanges'].Visibility = if ($type -eq 'component') { 'Visible' } else { 'Collapsed' }
     $rowsPanel = $controls['PanelChangeRows']
     $rowsPanel.Children.Clear()
@@ -1980,6 +2105,7 @@ function Update-Wizard {
     switch ($key) {
         'type'     { Update-TypePage }
         'machines' { Update-DOCTags }
+        'dataapps' { Update-DATags }
         'chmi'     { Update-CHMIPage }
         'review'   { Update-ReviewPage }
         'verify'   { Update-VerifyPage }
@@ -2245,6 +2371,13 @@ function Complete-MachineFetch {
         $Script:CurrentDOCRead = $true
         try { Read-DOCTimeouts } catch { }
         if ((Get-ConfigType) -ne 'initial') { Set-DOCFromVm }
+    }
+    # Component Configuration / Update: data applications, SINC e-mail and licence as configured on this VM (read once)
+    if ((Get-ConfigType) -eq 'component' -and -not $Script:DARead) {
+        try { $Script:DACurrent = Get-DataAppsCurrent -Manifest $Script:ViewManifest } catch { $Script:DACurrent = @{} }
+        $Script:DARead = $true
+        Set-DataAppsFromVm
+        Read-ComponentValuesFromVm
     }
     Update-DOCRows
     $Script:PageIndex++
@@ -2644,7 +2777,11 @@ $controls['BtnNext'].Add_Click({
 $controls['CmbSiteCode'].SelectedIndex = 0
 Update-SiteDBFields
 Update-DataAppsDefaults
-$controls['CmbSiteCode'].Add_SelectionChanged({ Update-SiteDBFields; Update-DataAppsDefaults; Update-Wizard })
+$controls['CmbSiteCode'].Add_SelectionChanged({
+    Update-SiteDBFields
+    if (Test-ShowDaTags) { Set-DataAppsFromVm } else { Update-DataAppsDefaults }   # the site default only fills what the VM lacks
+    Update-Wizard
+})
 Update-DOCRows
 if ($Script:Release.Problem) { Write-Host "Release workbook: $($Script:Release.Problem) - using $($Script:Release.ReleaseLabel) from the manifest" -ForegroundColor Yellow }
 Update-Wizard
