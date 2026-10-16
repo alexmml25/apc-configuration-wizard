@@ -1,0 +1,117 @@
+Part Name,M424982B211,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+,,,,,,,,,,
+"Desc,Performed by: EBARBOZA448520",,,,,,,,,,
+"Desc,MSID#: 1000000038383",,,,,,,,,,
+"Desc,Lot Number: TEZTB211",,,,,,,,,,
+"Desc,Sample: 25",,,,,,,,,,
+"Desc,CNCAsset: MCR-CNC-0006",,,,,,,,,,
+"Desc,ProcessName: 1ST_CMM1_MCR",,,,,,,,,,
+"Desc,DataType: CMM1",,,,,,,,,,
+"Desc,ProgRevisionlevel: A",,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+TEMP °C,,M,21,22,5,5,1,0,0,0
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+HUMIDITY %,,M,50,47,25,25,-3,0,0,0
+*********OUTSIDE DIAMETER 8.09 +/- 0.02 BALLOON#12*********,,,,,,,,,,
+************************************************,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_BY_DI,Dimension Location (DATUM_A),D,8.08,8.076,0.02,0.02,-0.004,0,8.059,8.088
+*********FLAT TO FLAT DIST 7.62 +/- 0.03 BALLOON#13********,,,,,,,,,,
+************************************************,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_BY_WI,"Dimension 2d Distance (LIN1,LIN2)",M,7.62,7.62,0.03,0.03,0,0,7.62,7.621
+*********7.62 POSITION DATUM_C BALLOON#14******************,,,,,,,,,,
+************************************************,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,BONUS,DEV,OUTTOL,DEVANG
+D_BY_WI_POS,Dimension Position (DATUM_C),X,0,0.001,,,0.001,,,
+D_BY_WI_POS,Dimension Position (DATUM_C),D1,8.09,8.076,0.03,0.03,-0.014,0,0,0
+D_BY_WI_POS,Dimension Position (DATUM_C),X,0,0.001,,,0.001,,,
+D_BY_WI_POS,Dimension Position (DATUM_C),TP,0,0.003,0.03,,0.003,0,,
+*********SNAP DIAMETER 7.65+/-0.03 BALLOON#15***,,,,,,,,,,
+************************************************,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_HD_TOP_DI,Dimension Location (CIR8),D,7.75,7.541,0.03,0.03,-0.009,0,7.641,7.642
+*********ID 5.150+/-0.05 BALLOON#24*************,,,,,,,,,,
+************************************************,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_IN_DI,Dimension Location (CIR3),D,5.15,5.253,0.05,0.05,0.003,0,5.146,5.163
+*********ID 5.150+/-0.05 POSITION BALLOON#25****,,,,,,,,,,
+************************************************,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,BONUS,DEV,OUTTOL,DEVANG
+D_IN_DI_POS,Dimension Position (CIR3),X,0,0.002,,,0.002,,,
+D_IN_DI_POS,Dimension Position (CIR3),Z,0,0.01,,,0.01,,,
+D_IN_DI_POS,Dimension Position (CIR3),TP,0,0.021,0.05,,0.021,0,,
+*********0.1 NOTCH PROFILE B/C BALLOON#23*******,,,,,,,,,,
+************************************************,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_HD_RA_PROS,Dimension Profile of Surface (SCN1),M,0,0.025,0.05,0.05,0.025,0,-0.018,0.008
+**********FOR REFERENCE ONLY********************,,,,,,,,,,
+************************************************,,,,,,,,,,
+BALLOON#32 TOP,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_HD_RA_TOP,Dimension Location (CIR4),R,2.75,2.742,1,1,-0.008,0,2.737,2.747
+BALLOON#22 TOP,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_HD_RA_TOP_POS_Y1,Dimension Location (CIR4),Y,-1.35,-1.337,1,1,0.013,0,0.437,1.396
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_HD_RA_TOP_POS_Y,Dimension Location (F3),Y,1.41,1.413,1,1,0.003,0,1.413,1.413
+BALLOON#23 X AXIS POSITION TOP,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_HD_RA_TOP_POS_X,Dimension Location (CIR4),X,0,0.005,1,1,0.005,0,-2.057,2.101
+BALLOON#32 BTM,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_HD_RA_BTM,Dimension Location (CIR5),R,2.75,2.736,1,1,-0.014,0,2.731,2.742
+BALLOON#22 BTM,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_HD_RA_BTM_POS_Y1,Dimension Location (CIR5),Y,-1.35,-1.325,1,1,0.025,0,0.433,1.408
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_HD_RA_BTM_POS_Y,Dimension Location (F4),Y,1.41,1.425,1,1,0.015,0,1.425,1.425
+BALLOON#23 X AXIS POSITION BTM,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_HD_RA_BTM_POS_X,Dimension Location (CIR5),X,0,0.007,1,1,0.007,0,-2.07,2.098
+*********0.1 SURF PROFILE Y-Z BALLOON#10 BTM****,,,,,,,,,,
+************************************************,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_HD_PROS_BTM,Dimension Profile of Surface (SCN2),M,0,0.033,0.05,0.05,0.033,0,-0.024,0.009
+*********0.1 SURF PROFILE W-X BALLOON#10 TOP****,,,,,,,,,,
+************************************************,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_HD_PROS_TOP,Dimension Profile of Surface (SCN3),M,0,0.026,0.05,0.05,0.026,0,-0.014,0.012
+BALLOON#8,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_HD_PROS_WI,"Dimension 2d Distance (LIN3,LIN4)",M,4.55,4.511,1,1,-0.039,0,4.511,4.511
+*********OAL 5.5+/-0.05 BALLOON#18*************************,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_OAL,Dimension Location (PLN1),Y,5.5,5.507,0.05,0.05,0.007,0,5.492,5.522
+*********SR 3.88+/-0.03 BALLOON#27**************,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_BY_IN_SR_BK,Dimension Location (SPH1),R,3.88,3.887,0.03,0.03,0.007,0,0,0
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D1,Dimension Location (SPH1),Y,5.4,5.417,1,1,0.017,0,5.417,5.417
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D2,Dimension Location (F1),Y,9.28,9.303,1,1,0.023,0,9.303,9.303
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D4,Dimension Location (F5),Y,9.28,9.297,1,1,0.017,0,9.297,9.297
+*********ID 7.65+/-0.03 BALLOON#30**************,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_IN_DI_BK,Dimension Location (CIR6),D,7.65,7.652,0.03,0.03,0.002,0,7.612,7.68
+*********ID 7.65+/-0.03 POSITIONBALLOON#31******,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,BONUS,DEV,OUTTOL,DEVANG
+D_IN_DI_BK_POS,Dimension Position (CIR6),X,0,-0.011,,,-0.011,,,
+D_IN_DI_BK_POS,Dimension Position (CIR6),Z,0,0.012,,,0.012,,,
+D_IN_DI_BK_POS,Dimension Position (CIR6),TP,0,0.032,0.1,,0.032,0,,
+POSITION X AXIS BALLOON#31,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_IN_DI_BK_POS_X,Dimension Location (CIR6),X,0,-0.011,1,1,-0.011,0,-2.959,2.988
+POSITION Z AXIS BALLOON#31,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+D_IN_DI_BK_POS_Z,Dimension Location (CIR6),Z,0,0.012,1,1,0.012,0,-3.615,3.627
+END_FILE,,,,,,,,,,
+DIMENSION,DESCRIPTION,AXIS,NOMINAL,MEAS, +TOL, -TOL,DEV,OUTTOL,MIN,MAX
+END_FILE,Dimension 2d Distance (PNT40),M,0,0,0,0,0,0,0,0

@@ -73,3 +73,4 @@ DBManager.dll
 CommonLib*.dll
 # raw test file as handed over (the shipped copy is templates\FileFlowTest_*.csv)
 1st_TestFile.csv
+/FileFlowTest_*

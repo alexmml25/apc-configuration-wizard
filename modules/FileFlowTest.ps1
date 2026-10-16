@@ -39,7 +39,9 @@ function Invoke-FileFlowTest {
     # Each instrument (File Manager <Paths>) has its own line format: <X>Keyword marks the line, <X>Prefix and
     # <X>Postfix are removed with a plain replace (no trim) - CTSCAN 'Lot Number ,Test1', CMM '"Desc,Lot Number: Test1",,,,'.
     # The data type is the DataTypePos-th part of the process name (1ST_CTSCAN1_MPR -> CTSCAN1).
-    $src = [System.IO.File]::ReadAllLines((Resolve-Path $CsvPath))
+    # Latin-1 in and out: every byte stays as it was (the CMM file has 'TEMP deg C' in Windows-1252; UTF-8 would change it)
+    $latin1 = [System.Text.Encoding]::GetEncoding(28591)
+    $src = [System.IO.File]::ReadAllLines((Resolve-Path $CsvPath), $latin1)
     function Child($n, [string]$c) { $x = $n.SelectSingleNode($c); if ($x) { $x.InnerText } else { '' } }   # (.Name on an XmlElement is its tag name)
     function Get-Value($node, [string]$What) {
         $kw = Child $node "${What}Keyword"
@@ -120,7 +122,7 @@ function Invoke-FileFlowTest {
     }
     $srcFile = Join-Path (Child $fmPath 'Path') $name
     $tmp = Join-Path $env:TEMP $name
-    [System.IO.File]::WriteAllLines($tmp, [string[]]$fileLines)
+    [System.IO.File]::WriteAllLines($tmp, [string[]]$fileLines, $latin1)
     Move-Item -LiteralPath $tmp -Destination $srcFile -Force      # whole file at once (File Manager may read a half-copied file)
     W ''; W "== 2. File dropped: $srcFile =="
 
