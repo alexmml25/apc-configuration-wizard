@@ -3,4 +3,4 @@
 *.bat text eol=crlf
 
 # 800xA kit: ship byte-for-byte (SHA256SUMS.txt must match on the VM)
-kits/800xA/** -text
+modules/800xA/** -text
