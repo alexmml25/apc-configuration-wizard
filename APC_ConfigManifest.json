@@ -4,6 +4,11 @@
     "ReleaseLabel": "APC System Release 1.5",
     "RepositoryRoot": "\\\\MSPM7AAPPS0342.cfrf.medtronic.com\\Shared\\APC\\Deployment Resources",
     "BackupShare": "\\\\MSPM7AAPPS0342.cfrf.medtronic.com\\Shared\\APC\\Backups",
+    "ReleaseFile": "APC VM Inventory and CHMI Licenses\\APC Releases.xlsx",
+    "_commentRelease": "The release shown on Review comes from ReleaseFile (relative to RepositoryRoot; the Installation Manager's workbook, APC-System row); Version / ReleaseLabel are used when it cannot be read.",
+    "ExpectedConfigTime": "",
+    "_commentConfigTime": "Shown in Before you start (type page); empty = [X] until the full run (plan step 5) gives the time.",
+    "SupportEmail": "alexander.martinez2@medtronic.com",
     "InstallRoot": "D:\\APC_Config",
     "InstallRootHelp": "Work folder of the Configuration Manager (runs, state, logs, Work\\OpcUaStack, Work\\pki). C:\\APC_Config when D: is not a ready fixed disk. {APCROOT} in other manifest paths = this folder."
   },
@@ -281,6 +286,7 @@
     "KnownStartupMessages": [ "PartLookup revision in configuration" ],
     "KnownStartupDialogTitles": [ "PartLookup_DB" ],
     "OpcUaXml":           "Plugins\\OPC UA\\DocOpcUa.xml",
+    "CompactHmiXml":      "Plugins\\CompactHMI\\CompactHMIOperatorInterface.xml",
     "UserCertStore":      "%LOCALAPPDATA%\\Medtronic",
     "BoxWatchSeconds":    20,
     "ConnectWaitSeconds": 120
@@ -322,7 +328,7 @@
         "CONTRACER": { "Count": 3, "CNCs": [1, 2, 3], "SourcePath": "D:\\Contracer_Measurement_Reports\\CSVCLC", "ErrorPath": "D:\\Contracer_Measurement_Reports\\CSVCLCError", "BroadcastPath": "" }
       },
       "MCR": {
-        "_source": "MCR File Manager / Data Collector configs (user, 2026-10-16); apps on D: there - the install drive moves C:\\Medtronic to it",
+        "_source": "MCR File Manager / Data Collector configs (user, 2026-10-16); apps on D: there - the install drive moves the Medtronic paths to it",
         "CMM":       { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "\\\\sjom1bfile01\\DataDFS01\\CR-APC CMM Equipmet\\DataCollector_Data\\CMM", "ErrorPath": "\\\\sjom1bfile01\\DataDFS01\\CR-APC CMM Equipmet\\DataCollector_Data\\CMM\\DoneError", "BroadcastPath": "C:\\Medtronic\\DataCollector_Data\\CMSDK\\Broadcast\\CMM" },
         "CTSCAN":    { "Count": 1, "CNCs": [],        "SourcePath": "", "ErrorPath": "", "BroadcastPath": "" },
         "BENCH":     { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "C:\\Medtronic\\DataCollector_Data\\BENCH", "ErrorPath": "", "BroadcastPath": "C:\\Medtronic\\DataCollector_Data\\CMSDK\\Broadcast\\BENCH" },
@@ -420,7 +426,6 @@
       "initial":   "Initial System Configuration",
       "restore":   "Configuration Restore",
       "component": "Component Configuration",
-      "update":    "Component Configuration",
       "sysupdate": "System Update",
       "verify":    "Other"
     }

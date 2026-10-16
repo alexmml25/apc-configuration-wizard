@@ -12,6 +12,9 @@
           AssetConfiguration: DBId = machine, Name = Primary [machine], Family = asset family
           SourceDataInclusionList: 1ST_/SPC_/VER_<instrument>_<site> : <instrument>
             for the instruments selected for CNC n in Data Applications
+      DOC timeouts changed in the window (State.DOCTimeouts, seconds, one value for every instance):
+          DOC_II.xml MaxTimeToWaitForAllInspectionGroups / MaxTimeToWaitForAllCalculationGroups,
+          Plugins\CompactHMI\CompactHMIOperatorInterface.xml MaxTimeToWaitForOperatorResponse (edited in place)
     The <Name> of every file is set to "DOC-{n} ...". Connection strings are verified, never changed (SOP).
     Originals are backed up with a timestamp suffix.
 #>
@@ -31,6 +34,9 @@ function Invoke-DOCConfig {
     $docCfg   = $Manifest.DOC
     $machines = Get-AssignedCNCs -State $State -Manifest $Manifest
     $ts       = Get-Date -Format 'yyyyMMdd-HHmmss'
+    # DOC timeouts changed on the Machines & DOC page (seconds, same for every instance); none = files left as they are
+    $timeouts = @{}
+    if ($State['DOCTimeouts'] -is [System.Collections.IDictionary]) { foreach ($k in $State['DOCTimeouts'].Keys) { $timeouts[$k] = $State['DOCTimeouts'][$k] } }
 
     if ($machines.Count -eq 0) {
         Add-Result -Phase DOC -Check "DOC assignments" -Status FAIL -Detail "No DOC-assigned machines in State"
@@ -94,6 +100,26 @@ function Invoke-DOCConfig {
             continue
         }
 
+        #region CompactHMIOperatorInterface.xml (operator-response timeout; only when changed on the Machines & DOC page)
+        foreach ($d in @($Script:DOCTimeoutDefs | Where-Object { $_.File -eq 'CompactHmi' -and $timeouts.ContainsKey($_.Key) })) {
+            $f = Get-DOCTimeoutFile -Manifest $Manifest -N $n -File $d.File
+            if (-not (Test-Path -LiteralPath $f)) { Add-Result -Phase DOC -Check "DOC ${n}: $($d.Key)" -Status FAIL -Detail "Not found: $f"; continue }
+            # edited in place: the plugin's XmlSerializer file keeps its BOM, layout and other tags
+            $bytes = [System.IO.File]::ReadAllBytes($f)
+            $bom   = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+            $text  = [System.Text.Encoding]::UTF8.GetString($bytes, $(if ($bom) { 3 } else { 0 }), $bytes.Length - $(if ($bom) { 3 } else { 0 }))
+            $tag   = [regex]::Escape($d.Key)
+            $val   = [string]$timeouts[$d.Key]
+            $m0    = [regex]::Match($text, "<$tag>([^<]*)</$tag>")
+            if ($m0.Success) { $old = $m0.Groups[1].Value; $text = $text.Substring(0, $m0.Index) + "<$($d.Key)>$val</$($d.Key)>" + $text.Substring($m0.Index + $m0.Length) }
+            elseif ($text -match '</Configuration>') { $old = '1800 (default)'; $text = $text -replace '(\r?\n?)</Configuration>', "`r`n  <$($d.Key)>$val</$($d.Key)>`$1</Configuration>" }
+            else { Add-Result -Phase DOC -Check "DOC ${n}: $($d.Key)" -Status FAIL -Detail "No <Configuration> root in $f"; continue }
+            [void](Save-FileBackup -Path $f -Stamp $ts -State $State)
+            [System.IO.File]::WriteAllText($f, $text, (New-Object System.Text.UTF8Encoding $bom))
+            Add-Result -Phase DOC -Check "DOC ${n}: CompactHMIOperatorInterface.xml $($d.Key)" -Status PASS -Detail "$val s (was $old)"
+        }
+        #endregion
+
         #region DocDb.xml
         $xml = Backup-AndLoad $paths.DocDb
         if ($xml) {
@@ -111,6 +137,12 @@ function Invoke-DOCConfig {
             Set-InstanceName $xml $n
             $csvPath = Get-DOCCsvOutputPath -Manifest $Manifest -N $n
             Set-Text $xml.DocumentElement 'CSVFileOutputPath' $csvPath
+            foreach ($d in @($Script:DOCTimeoutDefs | Where-Object { $_.File -eq 'DocII' -and $timeouts.ContainsKey($_.Key) })) {
+                $node = $xml.SelectSingleNode("//$($d.Key)")
+                if (-not $node) { Add-Result -Phase DOC -Check "DOC ${n}: DOC_II.xml $($d.Key)" -Status WARN -Detail "Not in DOC_II.xml - not changed"; continue }
+                $old = $node.InnerText; $node.InnerText = [string]$timeouts[$d.Key]
+                Add-Result -Phase DOC -Check "DOC ${n}: DOC_II.xml $($d.Key)" -Status PASS -Detail "$($timeouts[$d.Key]) s (was $old)"
+            }
             Save-Xml $xml $paths.DocII
             Add-Result -Phase DOC -Check "DOC ${n}: DOC_II.xml CSVFileOutputPath" -Status PASS -Detail $csvPath
             $sincDir = Split-Path $csvPath -Parent

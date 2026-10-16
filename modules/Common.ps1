@@ -184,6 +184,70 @@ function Get-DOCInclusionList {
     return ,$list
 }
 
+function Get-CurrentDOCAssignment {
+    <#
+        What this VM has configured now: DOC-n's machine = DBId of the AssetConfiguration in its
+        IqsDocSpcDataCollector.xml (Step 9 writes it). Counted from DOC-1 up while the name is one of $MachineNames
+        (the Site DB machines), so a fresh install's template value does not count. Returns @{ 1 = 'Citizen 08'; ... }.
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest, [string[]]$MachineNames = @())
+    $cur = @{}
+    for ($n = 1; $n -le [int]$Manifest.DOC.MaxInstances; $n++) {
+        $iqs = (Get-DOCFilePaths -Manifest $Manifest -N $n).Iqs
+        if (-not (Test-Path -LiteralPath $iqs)) { break }
+        $name = ''
+        try {
+            $x = New-Object System.Xml.XmlDocument
+            $x.LoadXml([System.IO.File]::ReadAllText($iqs))
+            $node = $x.SelectSingleNode('/Configuration/Assets/AssetConfiguration/DBId')
+            if ($node) { $name = $node.InnerText.Trim() }
+        } catch { }
+        if (-not $name -or ($MachineNames.Count -gt 0 -and $name -notin $MachineNames)) { break }
+        $cur[$n] = $name
+    }
+    $cur
+}
+
+# DOC timeouts on the Machines & DOC page (seconds; one value for every DOC instance). Step 9 writes a changed value.
+$Script:DOCTimeoutDefs = @(
+    @{ Key = 'MaxTimeToWaitForAllInspectionGroups'; File = 'DocII';      Label = 'Wait for all measurement results of a part' }
+    @{ Key = 'MaxTimeToWaitForAllCalculationGroups'; File = 'DocII';     Label = 'Wait for all offset calculations' }
+    @{ Key = 'MaxTimeToWaitForOperatorResponse';    File = 'CompactHmi'; Label = 'Wait for the operator to respond' }
+)
+
+function Get-DOCTimeoutFile {
+    # DOC_II.xml or Plugins\CompactHMI\CompactHMIOperatorInterface.xml of DOC instance $N
+    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [int]$N, [Parameter(Mandatory)] [string]$File)
+    $paths = Get-DOCFilePaths -Manifest $Manifest -N $N
+    if ($File -eq 'DocII') { return $paths.DocII }
+    $rel = if ($Manifest.DOC.PSObject.Properties['CompactHmiXml']) { [string]$Manifest.DOC.CompactHmiXml } else { 'Plugins\CompactHMI\CompactHMIOperatorInterface.xml' }
+    Join-Path $paths.BaseDir $rel
+}
+
+function Get-DOCTimeouts {
+    <#
+        Current DOC timeouts read from the first DOC instance that has the file: @{ <Key> = '2400'; ... }.
+        A missing element in CompactHMIOperatorInterface.xml means the plugin default (1800 s); '' = not readable.
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest)
+    $res = @{}
+    foreach ($d in $Script:DOCTimeoutDefs) {
+        $res[$d.Key] = ''
+        for ($n = 1; $n -le [int]$Manifest.DOC.MaxInstances; $n++) {
+            $f = Get-DOCTimeoutFile -Manifest $Manifest -N $n -File $d.File
+            if (-not (Test-Path -LiteralPath $f)) { continue }
+            try {
+                $x = New-Object System.Xml.XmlDocument
+                $x.LoadXml([System.IO.File]::ReadAllText($f))
+                $node = $x.SelectSingleNode("//$($d.Key)")   # DOC_II.xml nests them
+                $res[$d.Key] = if ($node) { $node.InnerText.Trim() } elseif ($d.File -eq 'CompactHmi') { '1800' } else { '' }
+            } catch { }
+            break
+        }
+    }
+    $res
+}
+
 function New-SandboxManifest {
     <#
         Test mode: copies the installed config files the wizard edits into $Root and returns a copy of

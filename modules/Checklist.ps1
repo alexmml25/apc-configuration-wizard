@@ -159,7 +159,8 @@ function Invoke-FillChecklist {
         }
         # Reason for Configuration: the box whose label matches the run's type
         $labels = if ($cfg) { $cfg.ReasonLabels } else { $null }
-        $type = [string]$State['ConfigType']
+        # Verification picks its reason on the last page (State.ReasonType = a type id); otherwise the run's type
+        $type = if ($State['ReasonType']) { [string]$State['ReasonType'] } else { [string]$State['ConfigType'] }
         $label = if ($labels -and $type -and $labels.PSObject.Properties[$type]) { [string]$labels.$type } else { '' }
         if ($label -and $rows.Count -gt 5) {
             $cell = $rows[5].SelectNodes('w:tc', $ns)[1]

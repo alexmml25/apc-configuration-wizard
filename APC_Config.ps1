@@ -319,12 +319,13 @@ function Main {
     $state['RunRoot']             = $Script:RunRoot                 # Logs / Backups / Reports of this run
     $state['ConfigType']          = 'initial'
     $state['ConfigTypeName']      = 'Initial System Configuration'
+    $state['AppVersion']          = '1.0.0.0'                       # APC Configuration Manager
     $ad = Get-OperatorAdInfo $state['OperatorName']                  # Performed By and the 'draft ready' e-mail
     $state['EmployeeNumber'] = $ad.EmployeeNumber; $state['OperatorEmail'] = $ad.Mail; $state['OperatorFirstName'] = $ad.GivenName
     Save-ConfigState -State $state
 
     $phases = @(
-        @{ Number =  1; File = '01-SiteDBFetch.ps1';      Fn = 'Invoke-SiteDBFetch'      },
+        @{ Number =  1; File = '01-Prerequisites.ps1';    Fn = 'Invoke-Prerequisites'    },   # queries the Site DB (no sign-in here)
         @{ Number =  2; File = '02-TimescaleDB.ps1';      Fn = 'Invoke-TimescaleDBSetup' },
         @{ Number =  3; File = '03-SINCFolders.ps1';      Fn = 'Invoke-SINCFolders'      },
         @{ Number =  4; File = '04-DeviceWiseBase.ps1';   Fn = 'Invoke-DeviceWiseBase'   },

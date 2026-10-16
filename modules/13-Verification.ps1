@@ -1242,7 +1242,7 @@ function Invoke-Verification {
 </head><body>
 <div class='header'>
   <h1>APC Configuration Verification Report (draft)</h1>
-  <p>VM: $($env:COMPUTERNAME) | Site: $siteCode | Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')$(if ($State['ChangeID']) { " | Change ID: $([System.Web.HttpUtility]::HtmlEncode([string]$State['ChangeID']))" })</p>
+  <p>VM: $($env:COMPUTERNAME) | Site: $siteCode | Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')$(if ($State['AppVersion']) { " | APC Configuration Manager $($State['AppVersion'])" })$(if ($State['ReleaseLabel']) { " | $([System.Web.HttpUtility]::HtmlEncode([string]$State['ReleaseLabel']))" })$(if ($State['ChangeID']) { " | Change ID: $([System.Web.HttpUtility]::HtmlEncode([string]$State['ChangeID']))" })</p>
 </div>
 <div class='summary'>
   <div class='card'><div class='num' style='color:$overallColor'>$overallStatus</div><div class='lbl'>Overall</div></div>
@@ -1301,27 +1301,13 @@ function Invoke-Verification {
     $typeName = if ($State['ConfigTypeName']) { $State['ConfigTypeName'] } else { [string]$State['ConfigType'] }
     $comments = @{ 12 = "N/A: System Update / Import is not part of this configuration$(if ($typeName) { " (Reason for Configuration: $typeName)" }); the APC UI update verification applies only to a System Update / Import." }
 
-    $wizardRoot   = Split-Path $PSScriptRoot -Parent
-    $templatePath = Join-Path $wizardRoot ([string]$Manifest.Checklist.Template)
-    $docxOutPath  = Join-Path $reportDir "APC_Config_Checklist_DRAFT_$ts.docx"
-    if (Test-Path $templatePath) {
-        try {
-            $fill = Invoke-FillChecklist -TemplatePath $templatePath -OutputPath $docxOutPath -Manifest $Manifest -State $State -Checks $checks -Fills $fills -Comments $comments
-            $State['VerificationDocPath'] = $docxOutPath
-            Add-Result -Phase Verification -Check 'Draft checklist (D01555624)' -Status PASS -Detail "$docxOutPath (Performed By: $($fill.Performed))"
-            Write-Log PASS "Draft checklist: $docxOutPath"
-            if (-not $State['SandboxRoot']) {
-                $pc = @($checks | Where-Object { $_.Status -eq 'PASS' }).Count; $fc = @($checks | Where-Object { $_.Status -eq 'FAIL' }).Count
-                $wc = @($checks | Where-Object { $_.Status -eq 'WARN' }).Count
-                Send-ConfigNotice -State $State -Manifest $Manifest -Extra @{ Passed = $pc; Warnings = $wc; Failed = $fc; ReportPath = $reportPath; ChecklistPath = $docxOutPath }
-            }
-        } catch {
-            Add-Result -Phase Verification -Check 'Draft checklist (D01555624)' -Status WARN -Detail $_.Exception.Message
-            Write-Log WARN "Could not fill the draft checklist: $_"
-        }
-    } else {
-        Write-Log WARN "Checklist template not found: $templatePath - no draft checklist"
-    }
+    # kept in the state for the draft (Invoke-ChecklistDraft: the window's "Create draft checklist", after the
+    # Change ID / document fields are entered); the command line drafts right away
+    $State['VerificationChecks']   = $checks
+    $State['VerificationFills']    = $fills
+    $State['VerificationComments'] = $comments
+    $State['VerificationCounts']   = @{ Pass = $passCount; Warn = $warnCount; Fail = $failCount; Manual = $blankCount }
+    if (-not $State['SkipDraft']) { Invoke-ChecklistDraft -Manifest $Manifest -State $State }
 
     #endregion
 
@@ -1332,3 +1318,45 @@ function Invoke-Verification {
     }
 }
 
+function Invoke-ChecklistDraft {
+    <#
+        Draft D01555624 (rev C) from the last Invoke-Verification of this state (VerificationChecks / Fills /
+        Comments), with the inputs entered since (ChangeID, DocumentNumber, IVRDocumentId, ITTicket, reason),
+        then the 'draft checklist ready' e-mail. Output: <run>\Reports\APC_Config_Checklist_DRAFT_<ts>.docx.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [object]    $Manifest,
+        [Parameter(Mandatory)] [hashtable] $State,
+        [switch]$NonInteractive
+    )
+    if (-not $State['VerificationChecks']) { throw 'Run the verification first: there are no results to put in the draft.' }
+    $checks   = $State['VerificationChecks']
+    $fills    = if ($State['VerificationFills'])    { $State['VerificationFills'] }    else { @{} }
+    $comments = if ($State['VerificationComments']) { $State['VerificationComments'] } else { @{} }
+    # the IT ticket can be entered after the verification ran
+    if ($State['ITTicket']) { $fills['11|5'] = @(@{ Match = 'IT Ticket'; Values = @([string]$State['ITTicket']); Always = $true }) }
+    $reportDir    = Get-RunDir -State $State -Name Reports -Manifest $Manifest
+    $reportPath   = [string]$State['VerificationReportPath']
+    $wizardRoot   = Split-Path $PSScriptRoot -Parent
+    $templatePath = Join-Path $wizardRoot ([string]$Manifest.Checklist.Template)
+    $docxOutPath  = Join-Path $reportDir "APC_Config_Checklist_DRAFT_$(Get-Date -Format 'yyyyMMdd-HHmmss').docx"
+    if (-not (Test-Path $templatePath)) {
+        Add-Result -Phase Verification -Check 'Draft checklist (D01555624)' -Status FAIL -Detail "Template not found: $templatePath"
+        return
+    }
+    try {
+        $fill = Invoke-FillChecklist -TemplatePath $templatePath -OutputPath $docxOutPath -Manifest $Manifest -State $State -Checks $checks -Fills $fills -Comments $comments
+        $State['VerificationDocPath'] = $docxOutPath
+        Add-Result -Phase Verification -Check 'Draft checklist (D01555624)' -Status PASS -Detail "$docxOutPath (Performed By: $($fill.Performed))"
+        Write-Log PASS "Draft checklist: $docxOutPath"
+        if (-not $State['SandboxRoot']) {
+            $pc = @($checks | Where-Object { $_.Status -eq 'PASS' }).Count; $fc = @($checks | Where-Object { $_.Status -eq 'FAIL' }).Count
+            $wc = @($checks | Where-Object { $_.Status -eq 'WARN' }).Count
+            Send-ConfigNotice -State $State -Manifest $Manifest -Extra @{ Passed = $pc; Warnings = $wc; Failed = $fc; ReportPath = $reportPath; ChecklistPath = $docxOutPath }
+        }
+    } catch {
+        Add-Result -Phase Verification -Check 'Draft checklist (D01555624)' -Status FAIL -Detail $_.Exception.Message
+        Write-Log WARN "Could not fill the draft checklist: $_"
+    }
+}
