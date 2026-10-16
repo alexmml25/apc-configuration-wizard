@@ -320,6 +320,13 @@
         "CTSCAN":    { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "\\\\sjum1bfile05\\CMMprograms\\REPORTS\\CTScan_Inspection\\CSVCLC", "ErrorPath": "\\\\sjum1bfile05\\CMMprograms\\REPORTS\\CTScan_Inspection\\CSVCLCError",             "BroadcastPath": "C:\\Medtronic\\DataCollector_Data\\CTSCAN\\Broadcast" },
         "BENCH":     { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "C:\\Medtronic\\DataCollector_Data\\BENCH",  "ErrorPath": "",                                               "BroadcastPath": "" },
         "CONTRACER": { "Count": 3, "CNCs": [1, 2, 3], "SourcePath": "D:\\Contracer_Measurement_Reports\\CSVCLC", "ErrorPath": "D:\\Contracer_Measurement_Reports\\CSVCLCError", "BroadcastPath": "" }
+      },
+      "MCR": {
+        "_source": "MCR File Manager / Data Collector configs (user, 2026-10-16); apps on D: there - the install drive moves C:\\Medtronic to it",
+        "CMM":       { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "\\\\sjom1bfile01\\DataDFS01\\CR-APC CMM Equipmet\\DataCollector_Data\\CMM", "ErrorPath": "\\\\sjom1bfile01\\DataDFS01\\CR-APC CMM Equipmet\\DataCollector_Data\\CMM\\DoneError", "BroadcastPath": "C:\\Medtronic\\DataCollector_Data\\CMSDK\\Broadcast\\CMM" },
+        "CTSCAN":    { "Count": 1, "CNCs": [],        "SourcePath": "", "ErrorPath": "", "BroadcastPath": "" },
+        "BENCH":     { "Count": 1, "CNCs": [1, 2, 3], "SourcePath": "C:\\Medtronic\\DataCollector_Data\\BENCH", "ErrorPath": "", "BroadcastPath": "C:\\Medtronic\\DataCollector_Data\\CMSDK\\Broadcast\\BENCH" },
+        "CONTRACER": { "Count": 3, "CNCs": [1],       "SourcePath": "C:\\Medtronic\\DataCollector_Data\\CONTRACER", "ErrorPath": "", "BroadcastPath": "C:\\Medtronic\\DataCollector_Data\\CMSDK\\Broadcast\\CONTRACER" }
       }
     }
   },
