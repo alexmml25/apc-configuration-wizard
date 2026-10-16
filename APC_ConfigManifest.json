@@ -289,6 +289,13 @@
     "DataCollectorConfig": "C:\\Medtronic\\Data Collector\\DataCollector.exe.config",
     "DataAnalyzerConfig":  "C:\\Medtronic\\Data Analyzer\\DataAnalyzer.exe.config",
     "LocalDataRoot": "C:\\Medtronic\\DataCollector_Data",
+    "FileFlowTest": {
+      "Enabled":        true,
+      "CsvFiles":       [ "templates\\FileFlowTest_CTSCAN1.csv", "templates\\FileFlowTest_CMM1.csv" ],
+      "Cnc":            1,
+      "TimeoutSeconds": 180,
+      "Note": "Step 13 7.7 / 8.9 / 8.10: test CSV through File Manager and Data Collector; tags and DB rows put back (modules\\FileFlowTest.ps1)"
+    },
     "Instruments": [
       { "Type": "CMM",       "SingleName": "CMM1",       "MaxCount": 3 },
       { "Type": "CTSCAN",    "SingleName": "CTSCAN1",    "MaxCount": 3 },

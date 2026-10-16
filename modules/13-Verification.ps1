@@ -15,6 +15,7 @@
 . (Join-Path $PSScriptRoot 'ABB800xA.ps1')
 . (Join-Path $PSScriptRoot 'DeviceWise.ps1')
 . (Join-Path $PSScriptRoot '02-TimescaleDB.ps1')   # pgAdmin / pgpass helpers for T4 items 7-8
+. (Join-Path $PSScriptRoot 'FileFlowTest.ps1')    # T7 item 7, T8 items 9-10
 
 function Invoke-Verification {
     [CmdletBinding()]
@@ -835,8 +836,38 @@ function Invoke-Verification {
         "Process: $($proc.ProcessName) (PID $($proc.Id))"
     } '' 7 6
 
-    # Item 7 - File routing (manual test)
-    Blank 'FileManager' 'File routing functionality (test file)' 7 7
+    # Item 7 - File routing, and T8 items 9-10: one test file through File Manager and Data Collector
+    # (Invoke-FileFlowTest: CNC tags set and restored, unique test lot, its rows deleted afterwards)
+    # one test per instrument file in DataApps.FileFlowTest.CsvFiles (CTSCAN1, CMM1); a missing file is skipped
+    $fft = $da.FileFlowTest
+    $flow = $null
+    if ($fft -and $fft.Enabled -and -not $State['SandboxRoot']) {
+        $runs = @()
+        foreach ($rel in @($fft.CsvFiles)) {
+            $csv = Join-Path (Split-Path $PSScriptRoot -Parent) ([string]$rel)
+            if (-not (Test-Path -LiteralPath $csv)) { Write-Log INFO "File flow test: $rel not shipped - skipped"; continue }
+            Write-Log INFO "File flow test: $(Split-Path $csv -Leaf) on CNC$($fft.Cnc) (up to $($fft.TimeoutSeconds) s)..."
+            try {
+                $r = Invoke-FileFlowTest -Manifest $Manifest -CsvPath $csv -Cnc ([int]$fft.Cnc) -TimeoutSeconds ([int]$fft.TimeoutSeconds) -Log { param($t) if ($t) { Write-Log INFO "  [fileflow] $t" } }
+            } catch { $r = @{ Error = $_.Exception.Message; Routing = @{}; Detection = @{}; Archiving = @{} } }
+            $runs += @{ Name = [IO.Path]::GetFileNameWithoutExtension($csv) -replace '^FileFlowTest_', ''; R = $r }
+        }
+        if ($runs) {
+            # combine: every instrument must pass each stage; details per instrument
+            $join = { param($key) $bad = @($runs | Where-Object { $_.R.Error -or -not $_.R[$key].Ok })
+                @{ Ok = -not $bad.Count; Detail = (($runs | ForEach-Object { "$($_.Name): $(if ($_.R.Error) { $_.R.Error } else { $_.R[$key].Detail })" }) -join '; ') } }
+            $flow = @{ Error = ''; Routing = (& $join 'Routing'); Detection = (& $join 'Detection'); Archiving = (& $join 'Archiving'); Db = 'x' }
+        }
+    }
+    if ($flow) {
+        Check 'FileManager' 'File routing functionality (test file)' {
+            if ($flow.Error) { throw $flow.Error }
+            if (-not $flow.Routing.Ok) { throw $flow.Routing.Detail }
+            $flow.Routing.Detail
+        } '' 7 7
+    } else {
+        Blank 'FileManager' 'File routing functionality (test file)' 7 7
+    }
 
     #endregion
 
@@ -910,9 +941,22 @@ function Invoke-Verification {
         "Process: $($proc.ProcessName) (PID $($proc.Id))"
     } '' 8 8
 
-    # Items 9-10 - manual
-    Blank 'DataCollector' 'File detection in CheckPath' 8 9
-    Blank 'DataCollector' 'File archiving to ArchivePath' 8 10
+    # Items 9-10 - the file flow test run in T7 item 7
+    if ($flow) {
+        Check 'DataCollector' 'File detection in CheckPath' {
+            if ($flow.Error) { throw $flow.Error }
+            if (-not $flow.Detection.Ok) { throw $flow.Detection.Detail }
+            $flow.Detection.Detail
+        } '' 8 9
+        Check 'DataCollector' 'File archiving to ArchivePath' {
+            if ($flow.Error) { throw $flow.Error }
+            if (-not $flow.Archiving.Ok) { throw $flow.Archiving.Detail }
+            "$($flow.Archiving.Detail)$(if ($flow.Db) { "; stored and removed again (test lot)" })"
+        } '' 8 10
+    } else {
+        Blank 'DataCollector' 'File detection in CheckPath' 8 9
+        Blank 'DataCollector' 'File archiving to ArchivePath' 8 10
+    }
 
     #endregion
 

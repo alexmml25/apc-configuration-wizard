@@ -65,3 +65,11 @@ Afw*.exe
 800xA-typelibs_*.zip
 Interop.Afw*.dll
 chmi-services_*.txt
+
+# Medtronic app binaries copied from a VM for decompiling (File Manager / Data Collector) - never commit
+DataCollector*.exe
+*Parser.dll
+DBManager.dll
+CommonLib*.dll
+# raw test file as handed over (the shipped copy is templates\FileFlowTest_*.csv)
+1st_TestFile.csv
