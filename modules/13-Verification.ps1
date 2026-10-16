@@ -1200,12 +1200,17 @@ function Invoke-Verification {
     $overallStatus = if ($failCount -gt 0) { 'FAIL' } elseif ($warnCount -gt 0) { 'WARN' } else { 'PASS' }
     $overallColor  = switch ($overallStatus) { 'PASS' { '#2ecc71' } 'WARN' { '#f39c12' } 'FAIL' { '#e74c3c' } }
 
+    # where each check lands in the draft checklist (rev C tables 3-12), so a reviewer can find the row
+    $docSection = @{ 3 = 'deviceWise'; 4 = 'TSDB'; 5 = 'DOC'; 6 = 'CNCnetPDM'; 7 = 'File Manager'; 8 = 'Data Collector'
+                     9 = 'Data Analyzer'; 10 = 'CHMI / APC UI'; 11 = 'Network'; 12 = 'APC UI Update' }
     $rows = $checks | ForEach-Object {
+        $docItem = if ($docSection[[int]$_.T] -and $_.I -ge 1) { "$($docSection[[int]$_.T]) $($_.I)" } else { '-' }
         $color = switch ($_.Status) {
             'PASS'  { '#2ecc71' } 'WARN'  { '#f39c12' } 'FAIL'  { '#e74c3c' }
             'BLANK' { '#95a5a6' } 'NA'    { '#bdc3c7' } default { '#95a5a6' }
         }
         "<tr>
+          <td>$([System.Web.HttpUtility]::HtmlEncode($docItem))</td>
           <td>$([System.Web.HttpUtility]::HtmlEncode($_.Cat))</td>
           <td>$([System.Web.HttpUtility]::HtmlEncode($_.Name))</td>
           <td style='color:$color;font-weight:bold'>$($_.Status)</td>
@@ -1247,7 +1252,7 @@ function Invoke-Verification {
   <div class='card'><div class='num' style='color:#95a5a6'>$blankCount</div><div class='lbl'>Manual</div></div>
 </div>
 <table>
-  <thead><tr><th>Category</th><th>Check</th><th>Status</th><th>Detail</th><th>Note</th></tr></thead>
+  <thead><tr><th>D01555624 item</th><th>Category</th><th>Check</th><th>Status</th><th>Detail</th><th>Note</th></tr></thead>
   <tbody>$($rows -join '')</tbody>
 </table>
 <div class='sign'>
