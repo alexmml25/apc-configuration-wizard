@@ -2443,6 +2443,7 @@ function New-RunState {
     $st['CNCnetPDMLicense']      = $controls['TxtLicense'].Text.Trim()
     $st['DOCTimeouts']           = Get-DOCTimeoutChanges
     if ('chmi' -in (Get-WizardPages)) { $st['800xASettings'] = Get-CHMISettingsState }
+    if ($Type -eq 'component') { $st['PickedComponents'] = @(Get-PickedComponents) }   # scope notes in the draft
     foreach ($pair in @(@('APCUserPassword', 'PwdAPCUser'), @('PostgresPassword', 'PwdPostgres'), @('SvcAccountPassword', 'PwdSvcAccount'), @('SiteDBPassword', 'PwdSiteDB'))) {
         $st[$pair[0]] = $controls[$pair[1]].SecurePassword.Copy()
     }

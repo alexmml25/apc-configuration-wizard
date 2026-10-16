@@ -1301,6 +1301,23 @@ function Invoke-Verification {
     if ($State['ITTicket']) { $fills['11|5'] = @(@{ Match = 'IT Ticket'; Values = @([string]$State['ITTicket']); Always = $true }) }
     $typeName = if ($State['ConfigTypeName']) { $State['ConfigTypeName'] } else { [string]$State['ConfigType'] }
     $comments = @{ 12 = "N/A: System Update / Import is not part of this configuration$(if ($typeName) { " (Reason for Configuration: $typeName)" }); the APC UI update verification applies only to a System Update / Import." }
+    # Scope of a Restore / Component Configuration run (user 2026-10-16: verify everything, say what the run changed):
+    # each table's Comments starts with whether its component was restored / configured in this run
+    $scopeType = [string]$State['ConfigType']
+    $changed = switch ($scopeType) { 'restore' { @($State['RestoreComponents']) } 'component' { @($State['PickedComponents']) } default { $null } }
+    if ($null -ne $changed) {
+        # table -> the component keys that change it (restore: dw / doc / cnc; component: the Components page keys)
+        $tableComps = @{ 3 = @('dw', 'sinc'); 4 = @('tsdb'); 5 = @('doc'); 6 = @('cnc'); 7 = @('doc', 'da'); 8 = @('doc', 'da'); 9 = @('doc', 'da'); 10 = @('chmi'); 11 = @() }
+        $from = if ($scopeType -eq 'restore' -and $State['RestoreSource']) { " from the backup $(Split-Path (Split-Path ([string]$State['RestoreSource']) -Parent) -Leaf)" } else { '' }
+        foreach ($t in $tableComps.Keys) {
+            $hit = @($tableComps[$t] | Where-Object { $_ -in $changed }).Count -gt 0
+            $comments[$t] = if ($scopeType -eq 'restore') {
+                if ($hit) { "Restored in this run$from; verified after the restore." } else { 'Not restored in this run - verified as found.' }
+            } else {
+                if ($hit) { 'Configured in this run; verified after the change.' } else { 'Not changed in this run - verified as found.' }
+            }
+        }
+    }
 
     # kept in the state for the draft (Invoke-ChecklistDraft: the window's "Create draft checklist", after the
     # Change ID / document fields are entered); the command line drafts right away
