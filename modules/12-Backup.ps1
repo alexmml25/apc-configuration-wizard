@@ -80,6 +80,21 @@ function Invoke-Backup {
                 if ($bk.Folder -and (Test-Path -LiteralPath $bk.Folder)) {
                     $copied = Join-Path (Join-Path $destRoot '800xA') $bk.Name
                     if (-not (Copy-Tree -Source $bk.Folder -Destination $copied -Label '800xA')) { $copied = '' }
+                    # delete once copied: the older backups of this definition leave the 800xA backup folder
+                    # (about 110 MB each); only after a good copy, never other definitions' backups
+                    if ($copied -and $Manifest.ABB800xA.Backup.DeleteOlderAfterCopy) {
+                        $defName = ($bk.Name -split ';')[0].Trim()
+                        $older = @(Get-ChildItem -LiteralPath (Split-Path $bk.Folder -Parent) -Directory -ErrorAction SilentlyContinue |
+                                   Where-Object { $_.Name -ne $bk.Name -and $_.Name -match "^$([regex]::Escape($defName));\s*\d{4}-\d{2}-\d{2};\s*\d{2}-\d{2}" })
+                        $gone = @(); $kept = @()
+                        foreach ($o in $older) {
+                            try { Remove-Item -LiteralPath $o.FullName -Recurse -Force -ErrorAction Stop; $gone += $o.Name } catch { $kept += "$($o.Name) ($($_.Exception.Message))" }
+                        }
+                        if ($older) {
+                            Add-Result -Phase Backup -Check '800xA older backups removed' -Status $(if ($kept) { 'WARN' } else { 'PASS' }) `
+                                -Detail ("$($gone.Count) removed from $(Split-Path $bk.Folder -Parent) (kept: $($bk.Name))" + $(if ($kept) { "; could not remove: $($kept -join ', ')" }))
+                        }
+                    }
                 } else {
                     Add-Result -Phase Backup -Check "800xA backup copy" -Status FAIL -Detail "800xA backup folder not found: $($bk.Folder)"
                 }

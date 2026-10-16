@@ -347,6 +347,8 @@
     "OpcServer":    "ABB.AfwOpcDaSurrogate.1",
     "Backup": {
       "Enabled":    true,
+      "DeleteOlderAfterCopy": true,
+      "DeleteOlderHelp": "Once the new Full backup is copied into the run folder, Step 12 deletes the older backups of the same definition ('<name>; <date>; <time>') from the 800xA backup folder, keeping only the newest (user 2026-10-16: delete once copied; the run folder copy is the record).",
       "DefPath":    "[Maintenance Structure]Backup Definitions/Full backup",
       "MinFreeMB":  2048,
       "TimeoutMin": 90,
