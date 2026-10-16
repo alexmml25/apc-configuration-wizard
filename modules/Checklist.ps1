@@ -31,7 +31,12 @@ function Invoke-FillChecklist {
         [Parameter(Mandatory)] [string]    $OutputPath,
         [Parameter(Mandatory)] [object]    $Manifest,
         [Parameter(Mandatory)] [hashtable] $State,
-        [Parameter(Mandatory)] $Checks
+        [Parameter(Mandatory)] $Checks,
+        # values for the blanks / blue examples of the Expected Results cells: 'T|R' -> @(@{ Match = text in the
+        # paragraph; Values = @(one per blank, in order) }, ...)
+        [hashtable]$Fills = @{},
+        # extra Comments text per table: T -> text (e.g. the N/A statement of the APC UI update table)
+        [hashtable]$Comments = @{}
     )
     foreach ($asm in 'System.IO.Compression', 'System.IO.Compression.FileSystem') {
         if (-not ([AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq $asm })) {
@@ -47,7 +52,7 @@ function Invoke-FillChecklist {
     if (-not $emp) { $ad = Get-OperatorAdInfo $op; $emp = $ad.EmployeeNumber; if ($ad.Mail -and -not $State['OperatorEmail']) { $State['OperatorEmail'] = $ad.Mail; $State['OperatorFirstName'] = $ad.GivenName } }
     $performed = @(($op -split '\\')[-1]) + @(if ($emp) { $emp }) + @(Get-ChecklistDate)
     $hasFail = @($Checks | Where-Object { $_.Status -eq 'FAIL' }).Count -gt 0
-    $vm  = $env:COMPUTERNAME
+    $vm  = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { [Environment]::MachineName }
     $ver = [string]$Manifest.APC.Version
     $solution = if ($cfg -and $cfg.SolutionName) { [string]$cfg.SolutionName } else { 'Closed-Loop Correction (CLC)' }
 
@@ -101,6 +106,34 @@ function Invoke-FillChecklist {
         if ($t) { $t.InnerText = [string][char]0x2612 }
     }
 
+    # fills the blanks of one paragraph in order: a run of 3+ underscores, or a group of blue / placeholder runs
+    # (one value per group, label runs such as a bold 'Device Nr:' are kept); blue/italic removed from filled runs
+    $isBlue = { param($r) $c = $r.SelectSingleNode('w:rPr/w:color', $ns); $c -and ($c.GetAttribute('val', $W) -in '4F81BD', '0070C0', '4472C4' -or $c.GetAttribute('themeColor', $W) -eq 'accent1') }
+    $fillBlanks = {
+        param($p, [object[]]$Vals)
+        $i = 0; $prevBlue = $false; $keepGroup = $false
+        foreach ($r in @($p.SelectNodes('w:r', $ns))) {
+            $t = $r.SelectSingleNode('w:t', $ns)
+            if (-not $t) { continue }
+            if (& $isBlue $r) {
+                if (-not $prevBlue -and -not $t.InnerText.Trim()) { continue }   # a blue space before the placeholder stays
+                if ($prevBlue) { if ($keepGroup) { continue }; [void]$p.RemoveChild($r); continue }   # rest of the same blue group
+                $prevBlue = $true; $keepGroup = $false
+                if ($i -ge $Vals.Count) { $keepGroup = $true; continue }
+                if ($null -eq $Vals[$i]) { $i++; $keepGroup = $true; continue }                       # $null: leave this one
+                $t.InnerText = [string]$Vals[$i]; $i++
+                $rPr = $r.SelectSingleNode('w:rPr', $ns)
+                foreach ($n in 'w:color', 'w:i', 'w:iCs') { $x = $rPr.SelectSingleNode($n, $ns); if ($x) { [void]$rPr.RemoveChild($x) } }
+                [void]$t.SetAttribute('space', 'http://www.w3.org/XML/1998/namespace', 'preserve')
+            } else {
+                $prevBlue = $false
+                $txt = $t.InnerText
+                while ($i -lt $Vals.Count -and $txt -match '_{3,}') { $txt = ([regex]'_{3,}').Replace($txt, ([string]$Vals[$i]).Replace('$', '$$'), 1); $i++ }
+                if ($txt -ne $t.InnerText) { $t.InnerText = $txt; [void]$t.SetAttribute('space', 'http://www.w3.org/XML/1998/namespace', 'preserve') }
+            }
+        }
+    }
+
     # -- body placeholders ----------------------------------------------------------------------------
     & $replaceInParas '[System Name / VM Name]' $vm
     & $replaceInParas 'APC System V[X.X ]' "APC System V$ver"
@@ -146,7 +179,7 @@ function Invoke-FillChecklist {
     # -- check tables: merge the checks of each row ------------------------------------------------------
     $rowsOf = @{}
     foreach ($c in $Checks) { if ($c.T -ge 3 -and $c.I -ge 1) { $k = "$($c.T)|$($c.I)"; if (-not $rowsOf[$k]) { $rowsOf[$k] = @() }; $rowsOf[$k] += $c } }
-    $fails = @{}
+    $fails = @{}; $rowStatus = @{}
     foreach ($k in $rowsOf.Keys) {
         $t, $i = $k -split '\|' | ForEach-Object { [int]$_ }
         $table = $tables[$t]; if (-not $table) { continue }
@@ -157,6 +190,7 @@ function Invoke-FillChecklist {
                   elseif (@($grp | Where-Object { $_.Status -eq 'BLANK' }).Count) { 'BLANK' }
                   elseif (-not @($grp | Where-Object { $_.Status -ne 'NA' }).Count) { 'NA' }
                   else { 'PASS' }
+        $rowStatus[$k] = $status
         $idx = @{ PASS = 0; FAIL = 1; NA = 2 }[$status]
         if ($null -eq $idx) { continue }
         $paras = $cells[3].SelectNodes('w:p', $ns)
@@ -167,9 +201,37 @@ function Invoke-FillChecklist {
             $fails[$t] += "Item ${i}: " + ((@($grp | Where-Object { $_.Status -eq 'FAIL' }) | ForEach-Object { "$($_.Name) - $($_.Detail)" }) -join '; ')
         }
     }
-    foreach ($t in $fails.Keys) {
+    $commentTables = @($fails.Keys) + @($Comments.Keys) | ForEach-Object { [int]$_ } | Select-Object -Unique
+    foreach ($t in $commentTables) {
+        $lines = @(if ($Comments.ContainsKey($t)) { $Comments[$t] } elseif ($Comments.ContainsKey("$t")) { $Comments["$t"] }) + @($fails[$t])
+        $lines = @($lines | Where-Object { $_ })
+        if (-not $lines) { continue }
         $cm = @($tables[$t].SelectNodes('w:tr', $ns)) | Where-Object { (& $pText $_) -like 'Comments:*' } | Select-Object -Last 1
-        if ($cm) { $cells = $cm.SelectNodes('w:tc', $ns); if ($cells.Count -ge 2) { & $setParaText ($cells[1].SelectSingleNode('w:p', $ns)) @($fails[$t]) } }
+        if ($cm) { $cells = $cm.SelectNodes('w:tc', $ns); if ($cells.Count -ge 2) { & $setParaText ($cells[1].SelectSingleNode('w:p', $ns)) $lines } }
+    }
+
+    # -- blanks and blue examples in the Expected Results cells (Step 13 values) ------------------------------
+    # only where the row passed: a value in a failed row would read as verified
+    foreach ($k in $Fills.Keys) {
+        if ($rowStatus[$k] -ne 'PASS') { continue }
+        $t, $r = $k -split '\|' | ForEach-Object { [int]$_ }
+        if (-not $tables[$t]) { continue }
+        $rows = $tables[$t].SelectNodes('w:tr', $ns); if ($r -ge $rows.Count) { continue }
+        $cells = $rows[$r].SelectNodes('w:tc', $ns); if ($cells.Count -lt 3) { continue }
+        foreach ($f in @($Fills[$k])) {
+            # the paragraph with the text that still has a blank or a blue example ('APC VM IP address documented:'
+            # also contains 'VM IP')
+            $p = @($cells[2].SelectNodes('.//w:p', $ns)) | Where-Object {
+                $pp = $_; (& $pText $pp).Contains([string]$f.Match) -and ((& $pText $pp) -match '_{3,}' -or @($pp.SelectNodes('w:r', $ns) | Where-Object { & $isBlue $_ }).Count)
+            } | Select-Object -First 1
+            if ($p) { & $fillBlanks $p @($f.Values) }
+        }
+    }
+
+    # -- Deviations: N/A when nothing failed; References: N/A (none are produced) -------------------------------
+    foreach ($p in @($xml.SelectNodes('//w:body/w:p', $ns))) {
+        $pt = & $pText $p
+        if (($pt -like '*No Deviations applicable*' -and -not $hasFail) -or $pt -like '*No References applicable*') { & $tick $p }
     }
 
     # -- headers: placeholders + DRAFT watermark -------------------------------------------------------------
@@ -189,11 +251,27 @@ function Invoke-FillChecklist {
           '<v:textpath style="font-family:&quot;Calibri&quot;;font-size:1pt" string="DRAFT"/>' +
           '<w10:wrap anchorx="margin" anchory="margin"/></v:shape></w:pict></w:r>'
     $esc = { param($s) [System.Security.SecurityElement]::Escape([string]$s) }
+    $xs0 = New-Object System.Xml.XmlWriterSettings; $xs0.Encoding = New-Object System.Text.UTF8Encoding($false)
+    $revision = if ($State['DocumentRevision']) { [string]$State['DocumentRevision'] } elseif ($cfg -and $cfg.Revision) { [string]$cfg.Revision } else { '' }
     foreach ($h in @($parts.Keys | Where-Object { $_ -ne 'word/document.xml' })) {
-        $hdr = $parts[$h]
-        $hdr = $hdr.Replace('[System Name]', (& $esc $vm))
-        if ($State['DocumentNumber'])   { $hdr = $hdr.Replace('[Document Number]', (& $esc $State['DocumentNumber'])) }
-        if ($State['DocumentRevision']) { $hdr = $hdr.Replace('[X]', (& $esc $State['DocumentRevision'])) }
+        # placeholders are blue and split over runs ('[System' 'Name]'): filled per paragraph like the table blanks
+        $hx = New-Object System.Xml.XmlDocument; $hx.PreserveWhitespace = $true; $hx.LoadXml($parts[$h])
+        $docSave = $xml; $nsSave = $ns; $xml = $hx
+        $ns = New-Object System.Xml.XmlNamespaceManager($hx.NameTable); $ns.AddNamespace('w', $W)
+        $known = @{ '[System Name]' = $vm; '[Document Number]' = $(if ($State['DocumentNumber']) { [string]$State['DocumentNumber'] }); '[X]' = $revision }
+        foreach ($p in @($hx.SelectNodes('//w:p', $ns))) {
+            $pt = & $pText $p
+            # one value per placeholder, in the order they appear ($null = not known yet, left as it is)
+            $found = @($known.Keys | Where-Object { $pt.Contains($_) } | Sort-Object { $pt.IndexOf($_) })
+            if ($found) {
+                $vals = New-Object System.Collections.Generic.List[object]       # (ForEach-Object would drop the $null entries)
+                foreach ($f in $found) { if ($known[$f]) { $vals.Add($known[$f]) } else { $vals.Add($null) } }
+                & $fillBlanks $p $vals.ToArray()
+            }
+        }
+        $xml = $docSave; $ns = $nsSave
+        $hms = New-Object System.IO.MemoryStream; $hw = [System.Xml.XmlWriter]::Create($hms, $xs0); $hx.Save($hw); $hw.Close()
+        $hdr = [System.Text.Encoding]::UTF8.GetString($hms.ToArray())
         if ($hdr -notmatch 'PowerPlusWaterMarkObject') {
             # the VML namespaces the shape needs
             foreach ($nsDecl in @('xmlns:v="urn:schemas-microsoft-com:vml"', 'xmlns:o="urn:schemas-microsoft-com:office:office"', 'xmlns:w10="urn:schemas-microsoft-com:office:word"')) {

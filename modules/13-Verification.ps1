@@ -1276,12 +1276,35 @@ function Invoke-Verification {
         $checks.Add(@{ Cat = 'APC UI Update'; Name = $updRows[$ui]; Status = 'NA'; Detail = 'System Update / Import is not part of this configuration'; Note = ''; T = 12; I = $ui })
     }
 
+    # values for the blanks and blue examples of the Expected Results (filled where the row passed)
+    $fills = @{}
+    $addFill = { param([int]$T, [int]$R, [string]$Match, [object[]]$Values) $k = "$T|$R"; if (-not $fills[$k]) { $fills[$k] = @() }; $fills[$k] += @{ Match = $Match; Values = $Values } }
+    foreach ($m in $machines) {
+        $n = [int]$m.CNCIndex; if ($n -lt 1 -or $n -gt 3) { continue }
+        $type = if ($m.CNCType) { $m.CNCType } else { $m.AssetFamily }
+        & $addFill 3 (5 + $n) 'CNCAsset' @($m.MachineName)                         # deviceWise 6-8
+        & $addFill 3 (5 + $n) 'CNCType'  @($type)
+        & $addFill 5 9 "DOC $n" @("DOC $n $([char]0x2192) CNC$n ($($m.MachineName))")           # DOC 9 (blue examples)
+        & $addFill 6 (2 + $n) 'Device Nr'    @($m.DeviceNr)                        # CNCnetPDM 3-5
+        & $addFill 6 (2 + $n) 'Machine Name' @($(if ($m.PdmName) { $m.PdmName } else { $m.MachineName }))
+        & $addFill 6 (2 + $n) 'IP Address'   @($m.IPAddress)
+        & $addFill 6 (2 + $n) 'DLL'          @($m.DriverDll)
+        & $addFill 11 3 "CNC$n Name" @($m.MachineName, $m.IPAddress)               # Network 3
+    }
+    & $addFill 5 1 'Configured instances' @("$($machines.Count) ($((@($machines) | ForEach-Object { "DOC-$($_.CNCIndex)" }) -join ', '))")
+    if ($iniPath -and (Test-Path -LiteralPath $iniPath)) { $lic = (ReadIni $iniPath 'GENERAL')['License']; if ($lic) { & $addFill 6 2 'Number' @($lic) } }
+    & $addFill 10 4 'opc.tcp' @($env:COMPUTERNAME, [string]$dw.OpcUaEndpointPort)
+    $vmIp = try { (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | Where-Object { $_.IPAddress -notmatch '^127\.|^169\.254\.' } | Select-Object -First 1).IPAddress } catch { '' }
+    if ($vmIp) { & $addFill 11 2 'VM IP' @($vmIp) }
+    $typeName = if ($State['ConfigTypeName']) { $State['ConfigTypeName'] } else { [string]$State['ConfigType'] }
+    $comments = @{ 12 = "N/A: System Update / Import is not part of this configuration$(if ($typeName) { " (Reason for Configuration: $typeName)" }); the APC UI update verification applies only to a System Update / Import." }
+
     $wizardRoot   = Split-Path $PSScriptRoot -Parent
     $templatePath = Join-Path $wizardRoot ([string]$Manifest.Checklist.Template)
     $docxOutPath  = Join-Path $reportDir "APC_Config_Checklist_DRAFT_$ts.docx"
     if (Test-Path $templatePath) {
         try {
-            $fill = Invoke-FillChecklist -TemplatePath $templatePath -OutputPath $docxOutPath -Manifest $Manifest -State $State -Checks $checks
+            $fill = Invoke-FillChecklist -TemplatePath $templatePath -OutputPath $docxOutPath -Manifest $Manifest -State $State -Checks $checks -Fills $fills -Comments $comments
             $State['VerificationDocPath'] = $docxOutPath
             Add-Result -Phase Verification -Check 'Draft checklist (D01555624)' -Status PASS -Detail "$docxOutPath (Performed By: $($fill.Performed))"
             Write-Log PASS "Draft checklist: $docxOutPath"

@@ -403,6 +403,7 @@
     "Description":  "Draft D01555624 filled by Step 13 (modules\\Checklist.ps1)",
     "Template":     "templates\\D01555624_C_EN.docx",
     "SolutionName": "Closed-Loop Correction (CLC)",
+    "Revision":     "A",
     "ReasonLabels": {
       "_comment":  "Reason for Configuration box per run type (rev C merges Component Configuration / Update into one box)",
       "initial":   "Initial System Configuration",
