@@ -336,11 +336,12 @@ function Invoke-Verification {
         "$($machines.Count) CNC path(s) mapped to $instance"
     } '' 3 17
 
-    # Item 19 - MedtronicSU user exists (DWUSER.db users)
+    # Item 18 - MedtronicSU user exists. Workbench > Administration > Users lists DWCORE.db users (an imported user is
+    # only there; DWUSER.db has an older users table that the import does not fill - fresh SJUM7AAPPS0052, 2026-10-16)
     Check 'deviceWise' "OPC UA user $($dw.OpcUaUser) exists" {
-        $u = Invoke-DwDbQuery -Paths $paths -Database 'DWUSER.db' -Sql 'SELECT name FROM users WHERE name = ?' -Arguments @($dw.OpcUaUser)
-        if (-not $u.Count) { throw "User $($dw.OpcUaUser) not found" }
-        "User $($dw.OpcUaUser) present"
+        $u = Invoke-DwDbQuery -Paths $paths -Database 'DWCORE.db' -Sql 'SELECT name FROM users WHERE name = ?' -Arguments @($dw.OpcUaUser)
+        if (-not $u.Count) { throw "User $($dw.OpcUaUser) not found in Workbench > Administration > Users" }
+        "User $($dw.OpcUaUser) present (Administration > Users)"
     } '' 3 18
 
     # Item 20 - External client certificate trusted (SOP 2.1.2.5). The gateway's OPC UA server keeps client
