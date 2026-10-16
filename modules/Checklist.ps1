@@ -151,7 +151,7 @@ function Invoke-FillChecklist {
         $siteNames = @{ MCR = 'Medtronic Costa Rica'; MPR = 'Medtronic Puerto Rico' }
         $site = if ($siteNames[$State['SiteCode']]) { $siteNames[$State['SiteCode']] } else { [string]$State['SiteCode'] }
         # plain hashtable: an [ordered] one indexes integer keys by position
-        $values = @{ 0 = $vm; 1 = "APC System V$ver"; 2 = $solution; 3 = $site; 4 = [string]$State['IVRDocumentId']; 6 = $(if ($State['ChangeID']) { "Change ID: $($State['ChangeID'])" }) }
+        $values = @{ 0 = $vm; 1 = "APC System V$ver"; 2 = $solution; 3 = $site; 4 = [string]$State['IVRDocumentId']; 6 = [string]$State['ChangeID'] }   # the ID only (user 2026-10-16)
         foreach ($k in @($values.Keys | Sort-Object)) {
             if (-not $values[$k] -or $k -ge $rows.Count) { continue }
             $cells = $rows[$k].SelectNodes('w:tc', $ns)
