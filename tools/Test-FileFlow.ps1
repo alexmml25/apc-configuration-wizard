@@ -25,7 +25,7 @@
 param(
     [Parameter(Mandatory)] [string]$CsvPath,
     [int]$Cnc = 1,
-    [string]$ManifestPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'APC_ConfigManifest.json'),
+    [string]$ManifestPath,      # default set below: $PSScriptRoot is empty in param defaults of an advanced script (PS 5.1)
     [string]$OutDir = 'C:\APC_Config\Logs',
     [int]$TimeoutSeconds = 180,
     [switch]$KeepData
@@ -33,6 +33,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
+if (-not $ManifestPath) { $ManifestPath = Join-Path $root 'APC_ConfigManifest.json' }
 $m    = Get-Content $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
 $ts    = Get-Date -Format 'yyyyMMdd_HHmmss'
