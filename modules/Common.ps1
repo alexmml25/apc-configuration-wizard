@@ -248,6 +248,47 @@ function Get-DOCTimeouts {
     $res
 }
 
+function Get-ApcBackupInfo {
+    <#
+        What a run's backup holds (Configuration Restore). $Path = the run folder (<work folder>\<Type>_<ts>) or its
+        Backups folder. Returns @{ Backups; RunRoot; State (the run's config_state.json, or $null); VM; Release; When;
+        Type; Components = @{ dw; doc; cnc } (what the backup has); DocDirs; CncDir; Problem }.
+        The 800xA (APC UI) backup is not restored by the wizard (user 2026-10-16).
+    #>
+    param([Parameter(Mandatory)] [string]$Path)
+    $info = @{ Backups = ''; RunRoot = ''; State = $null; VM = ''; Release = ''; When = ''; Type = ''
+               Components = [ordered]@{ dw = $false; doc = $false; cnc = $false }; DocDirs = @(); CncDir = ''; Problem = '' }
+    $p = $Path.Trim().TrimEnd('\', '/')
+    if (-not $p -or -not (Test-Path -LiteralPath $p -PathType Container)) { $info.Problem = "Folder not found: $Path"; return $info }
+    $bk = if ((Split-Path $p -Leaf) -ieq 'Backups') { $p } elseif (Test-Path -LiteralPath (Join-Path $p 'Backups')) { Join-Path $p 'Backups' } else { $p }
+    $info.Backups = $bk
+    $info.RunRoot = Split-Path $bk -Parent
+    $stFile = Join-Path $info.RunRoot 'config_state.json'
+    if (Test-Path -LiteralPath $stFile) {
+        try {
+            $st = Get-Content -LiteralPath $stFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            $info.State = $st
+            $get = { param($n) if ($st.PSObject.Properties[$n]) { [string]$st.$n } else { '' } }
+            $info.VM = & $get 'VMHostname'; $info.Release = & $get 'ReleaseLabel'; $info.Type = & $get 'ConfigTypeName'
+            $w = & $get 'StartTime'; if ($w) { try { $info.When = ([datetime]$w).ToString('yyyy-MM-dd HH:mm') } catch { $info.When = $w } }
+        } catch { }
+    }
+    $dwTxt = Join-Path $bk 'deviceWise\RESTORE.txt'
+    if (-not $info.VM -and (Test-Path -LiteralPath $dwTxt)) {
+        $m = [regex]::Match((Get-Content -LiteralPath $dwTxt -Raw), 'backup of ([^,\s]+),')
+        if ($m.Success) { $info.VM = $m.Groups[1].Value }
+    }
+    $info.Components.dw  = Test-Path -LiteralPath (Join-Path $bk 'deviceWise\db\DWCORE.db')
+    $med = Join-Path $bk 'Medtronic'
+    $info.DocDirs = @(Get-ChildItem -LiteralPath $med -Directory -ErrorAction SilentlyContinue |
+                      Where-Object { $_.Name -match '^DOC-\d+$' -or $_.Name -in 'File Manager', 'Data Collector', 'Data Analyzer' } | ForEach-Object { $_.Name })
+    $info.Components.doc = $info.DocDirs.Count -gt 0
+    $info.CncDir = @((Join-Path $med 'CNCNetPDM'), (Join-Path $bk 'CNCnetPDM')) | Where-Object { Test-Path -LiteralPath (Join-Path $_ 'CNCnetPDM.ini') } | Select-Object -First 1
+    $info.Components.cnc = [bool]$info.CncDir
+    if (-not @($info.Components.Values | Where-Object { $_ }).Count) { $info.Problem = "No APC backup found in $bk (expected the deviceWise or Medtronic folders from Step 12)" }
+    $info
+}
+
 function New-SandboxManifest {
     <#
         Test mode: copies the installed config files the wizard edits into $Root and returns a copy of

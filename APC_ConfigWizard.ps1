@@ -59,6 +59,8 @@ $StepDefs = @(
     @{ Index =  9; Name = 'DOC XML Configuration';          File = '09-DOCConfig.ps1';        Fn = 'Invoke-DOCConfig'         },
     @{ Index = 10; Name = 'Data Applications Config';       File = '10-DataApps.ps1';         Fn = 'Invoke-DataApps'    },
     @{ Index = 11; Name = 'CHMI / APC UI OPC UA';           File = '11-CHMI.ps1';             Fn = 'Invoke-CHMI'        },
+    # Configuration Restore only (shown as "Restore"); runs before Step 12, which then backs up the restored state
+    @{ Index = 14; Name = 'Configuration Restore';          File = '14-Restore.ps1';          Fn = 'Invoke-ConfigRestore' },
     @{ Index = 12; Name = 'Application Backup';             File = '12-Backup.ps1';           Fn = 'Invoke-Backup' },
     @{ Index = 13; Name = 'Verification & Report';          File = '13-Verification.ps1';     Fn = 'Invoke-Verification'}
 )
@@ -92,6 +94,7 @@ $Script:PageLabels = [ordered]@{
     type       = 'Configuration type'
     signin     = 'Sign in & passwords'
     scope      = 'Components'
+    restore    = 'Backup to restore'
     machines   = 'Machines & DOC'
     components = 'SINC & CNCnetPDM'
     dataapps   = 'Data applications'
@@ -101,7 +104,7 @@ $Script:PageLabels = [ordered]@{
     verify     = 'Verification & report'
 }
 $Script:PagePanels = @{
-    type = 'PageType'; signin = 'PageSignin'; scope = 'PageScope'; machines = 'PageMachines'; components = 'PageComponents'
+    type = 'PageType'; signin = 'PageSignin'; scope = 'PageScope'; restore = 'PageRestore'; machines = 'PageMachines'; components = 'PageComponents'
     dataapps = 'PageDataApps'; chmi = 'PageCHMI'; review = 'PageReview'; run = 'PageRun'; verify = 'PageVerify'
 }
 
@@ -357,11 +360,11 @@ $xamlText = @'
                   <TextBlock Text="Full configuration &#x00B7; 12 steps" FontSize="11" FontWeight="SemiBold" Foreground="#4361EE"/>
                 </StackPanel>
               </RadioButton>
-              <RadioButton x:Name="RbType_restore" Style="{StaticResource TypeCard}" IsEnabled="False">
+              <RadioButton x:Name="RbType_restore" Style="{StaticResource TypeCard}">
                 <StackPanel>
                   <TextBlock Text="Configuration Restore" FontSize="14" FontWeight="SemiBold" Foreground="#1C2136"/>
                   <TextBlock Text="Restoration of APC configuration from an approved backup." TextWrapping="Wrap" FontSize="12" Foreground="#475569" Margin="0,4"/>
-                  <TextBlock Text="Not available yet" FontSize="11" FontWeight="SemiBold" Foreground="#94A3B8"/>
+                  <TextBlock Text="Choose a backup of this VM &#x00B7; deviceWise, DOC, data applications, CNCnetPDM" FontSize="11" FontWeight="SemiBold" Foreground="#4361EE"/>
                 </StackPanel>
               </RadioButton>
               <RadioButton x:Name="RbType_component" Style="{StaticResource TypeCard}">
@@ -506,6 +509,33 @@ $xamlText = @'
               </StackPanel>
             </Border>
             <TextBlock Style="{StaticResource PageHint}" Text="Step 1 (prerequisites) and Step 12 (backup) always run. Verification runs on the last page."/>
+          </StackPanel>
+
+          <!-- ===== BACKUP TO RESTORE (Configuration Restore) ===== -->
+          <StackPanel x:Name="PageRestore" Visibility="Collapsed">
+            <TextBlock Text="Backup to restore" Style="{StaticResource PageTitle}"/>
+            <TextBlock Style="{StaticResource PageHint}"
+                       Text="Choose the approved backup: a run folder of this VM (or its Backups folder), for example a copy from the site backup location. Only this VM's own backups of this APC release can be restored. What is replaced is saved first in this run's Backups folder."/>
+            <Border Style="{StaticResource Card}">
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBox x:Name="TxtRestoreFolder" Style="{StaticResource Input}" Margin="0" FontFamily="Consolas" FontSize="12"/>
+                <Button x:Name="BtnRestoreBrowse" Grid.Column="1" Style="{StaticResource SecondaryBtn}" Content="Browse..." Margin="8,0,0,0" Padding="14,6"/>
+              </Grid>
+            </Border>
+            <Border x:Name="PanelRestoreInfo" Style="{StaticResource Card}" Padding="16,12" Visibility="Collapsed">
+              <StackPanel>
+                <StackPanel x:Name="PanelRestoreRows"/>
+                <TextBlock Text="Restore" FontWeight="SemiBold" Foreground="#1C2136" Margin="0,8,0,8"/>
+                <CheckBox x:Name="ChkRestore_dw"  Content="deviceWise (projects, devices, users, OPC UA server and certificates)" Margin="0,0,0,6"/>
+                <CheckBox x:Name="ChkRestore_doc" Content="DOC and data applications (DOC-n, File Manager, Data Collector, Data Analyzer folders)" Margin="0,0,0,6"/>
+                <CheckBox x:Name="ChkRestore_cnc" Content="CNCnetPDM (configuration, machine files and drivers)"/>
+                <TextBlock FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap" Margin="0,8,0,0" Text="The APC UI (800xA) backup is not restored here."/>
+              </StackPanel>
+            </Border>
+            <Border x:Name="PanelRestoreProblem" Margin="0,0,0,16" Background="#FEF2F2" BorderBrush="#FECACA" BorderThickness="1" CornerRadius="8" Padding="16,12" Visibility="Collapsed">
+              <TextBlock x:Name="TxtRestoreProblem" TextWrapping="Wrap" Foreground="#991B1B"/>
+            </Border>
           </StackPanel>
 
           <!-- ===== MACHINES & DOC ===== -->
@@ -971,10 +1001,11 @@ $instFrag = foreach ($inst in $manifest.DataApps.Instruments) {
 }
 
 # Configure page step rows (Steps 1-12)
-$stepFrag = foreach ($s in ($StepDefs | Where-Object { $_.Index -le 12 })) {   # Step 13 runs on the last page
+$stepFrag = foreach ($s in ($StepDefs | Where-Object { $_.Index -ne 13 })) {   # Step 13 runs on the last page
     $n    = $s.Index
     $name = [System.Security.SecurityElement]::Escape($s.Name)
-    $line = if ($n -lt 12) { '0,0,0,1' } else { '0' }
+    $num  = if ($n -eq 14) { 'Restore' } else { "Step $n" }
+    $line = if ($n -ne 12) { '0,0,0,1' } else { '0' }
     @"
                 <Border x:Name="RowStep$n" BorderBrush="#F1F5F9" BorderThickness="$line" Padding="0,5">
                   <Grid>
@@ -982,7 +1013,7 @@ $stepFrag = foreach ($s in ($StepDefs | Where-Object { $_.Index -le 12 })) {   #
                       <ColumnDefinition Width="22"/><ColumnDefinition Width="60"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock x:Name="TxtStep${n}Icon" Text="o" FontSize="14" FontWeight="Bold" Foreground="#94A3B8" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="1" Text="Step $n" FontSize="11" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1" Text="$num" FontSize="11" Foreground="#94A3B8" VerticalAlignment="Center"/>
                     <TextBlock Grid.Column="2" Text="$name" FontWeight="SemiBold" Foreground="#1C2136" VerticalAlignment="Center"/>
                     <TextBlock x:Name="TxtStep${n}Status" Grid.Column="3" Text="Pending" FontSize="12" Foreground="#94A3B8" VerticalAlignment="Center"/>
                     <Button x:Name="BtnRerun$n" Grid.Column="4" Content="Re-run" Style="{StaticResource SecondaryBtn}" Tag="$n"
@@ -1524,6 +1555,64 @@ function Get-CHMISettingsState {
     return $set
 }
 
+# ---- Backup to restore (Configuration Restore) -----------------------------------------
+
+$Script:RestoreInfo  = $null
+$Script:RestoreComps = [ordered]@{ dw = 'deviceWise'; doc = 'DOC and data applications'; cnc = 'CNCnetPDM' }
+
+# Reads the chosen folder (Get-ApcBackupInfo): where the backup comes from, what it has; another VM's backup or
+# another release cannot be restored (D01555607 4.2: the backup must correspond to this VM and APC version)
+function Update-RestorePage {
+    $path = $controls['TxtRestoreFolder'].Text.Trim()
+    $Script:RestoreInfo = $null
+    $controls['PanelRestoreInfo'].Visibility = 'Collapsed'
+    $controls['PanelRestoreProblem'].Visibility = 'Collapsed'
+    if (-not $path) { return }
+    $info = Get-ApcBackupInfo -Path $path
+    $problem = $info.Problem
+    if (-not $problem -and -not $info.VM) { $problem = 'The backup does not say which VM it is from (no config_state.json or deviceWise\RESTORE.txt in the run folder).' }
+    if (-not $problem -and $info.VM -ine $env:COMPUTERNAME) { $problem = "This backup is from $($info.VM). Only this VM's own backups ($env:COMPUTERNAME) can be restored." }
+    if (-not $problem -and $info.Release -and $Script:Release.ReleaseLabel -and $info.Release -ne $Script:Release.ReleaseLabel) {
+        $problem = "This backup is from $($info.Release); this VM is on $($Script:Release.ReleaseLabel). Only a backup of the same APC release can be restored."
+    }
+    if ($problem) {
+        $controls['TxtRestoreProblem'].Text = $problem
+        $controls['PanelRestoreProblem'].Visibility = 'Visible'
+        return
+    }
+    $Script:RestoreInfo = $info
+    $rows = $controls['PanelRestoreRows']; $rows.Children.Clear()
+    Add-SummaryRow $rows 'Backup' $info.Backups
+    Add-SummaryRow $rows 'From' ((@($info.VM, $info.When, $info.Type) | Where-Object { $_ }) -join "  $Script:Dot  ")
+    if ($info.Release) { Add-SummaryRow $rows 'Release' $info.Release }
+    if ($info.State -and $info.State.PSObject.Properties['DOCMachineAssignments']) {
+        $i = 0; Add-SummaryRow $rows 'DOC instances' ((@($info.State.DOCMachineAssignments) | ForEach-Object { $i++; "CNC$i $_" }) -join "  $Script:Dot  ")
+    }
+    foreach ($k in $Script:RestoreComps.Keys) {
+        $cb = $controls["ChkRestore_$k"]
+        $cb.IsEnabled = [bool]$info.Components[$k]
+        $cb.IsChecked = [bool]$info.Components[$k]
+        $cb.ToolTip   = if ($info.Components[$k]) { $null } else { 'Not in this backup' }
+    }
+    $controls['PanelRestoreInfo'].Visibility = 'Visible'
+}
+function Get-RestorePicks { @($Script:RestoreComps.Keys | Where-Object { $controls["ChkRestore_$_"].IsEnabled -and $controls["ChkRestore_$_"].IsChecked -eq $true }) }
+function Test-RestorePage {
+    Update-RestorePage
+    if (-not $Script:RestoreInfo) { Show-Warning $(if ($controls['TxtRestoreProblem'].Text -and $controls['PanelRestoreProblem'].Visibility -eq 'Visible') { $controls['TxtRestoreProblem'].Text } else { 'Choose the backup folder to restore.' }); return $false }
+    if (-not @(Get-RestorePicks).Count) { Show-Warning 'Tick at least one component to restore.'; return $false }
+    return $true
+}
+$controls['BtnRestoreBrowse'].Add_Click({
+    Add-Type -AssemblyName System.Windows.Forms
+    $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dlg.Description = 'Choose the run folder (or its Backups folder) of the backup to restore'
+    $start = $controls['TxtRestoreFolder'].Text.Trim()
+    $dlg.SelectedPath = if ($start -and (Test-Path -LiteralPath $start)) { $start } else { $Script:ApcRoot }
+    if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $controls['TxtRestoreFolder'].Text = $dlg.SelectedPath; Update-RestorePage }
+})
+$controls['TxtRestoreFolder'].Add_LostFocus({ Update-RestorePage })
+
 # ---- Helpers ----------------------------------------------------------------
 
 function Test-InstallerCredential {
@@ -1673,6 +1762,7 @@ function Get-PickedComponents {
 function Get-PlanSteps {
     switch (Get-ConfigType) {
         'initial' { return @(1..12) }
+        'restore' { return @(1, 14, 12) }   # Restore runs before the backup of the restored state
         'verify'  { return @() }
         default {
             $steps = @(1, 12)
@@ -1686,6 +1776,7 @@ function Get-WizardPages {
     switch (Get-ConfigType) {
         'initial' { return @('type', 'signin', 'machines', 'components', 'dataapps', 'chmi', 'review', 'run', 'verify') }
         'verify'  { return @('type', 'signin', 'verify') }
+        'restore' { return @('type', 'signin', 'restore', 'review', 'run', 'verify') }
         default {
             $picked = @(Get-PickedComponents)
             $pages  = @('type', 'signin', 'scope')
@@ -1765,6 +1856,11 @@ function Update-ReviewPage {
     Add-SummaryRow $panel 'Site' (Get-SelectedSite)
     Add-SummaryRow $panel 'VM' $env:COMPUTERNAME
     Add-SummaryRow $panel 'Release' ([string]$Script:Release.ReleaseLabel)
+    if ($type -eq 'restore' -and $Script:RestoreInfo) {
+        Add-SummaryRow $panel 'Backup' $Script:RestoreInfo.Backups
+        Add-SummaryRow $panel 'Backup from' ((@($Script:RestoreInfo.VM, $Script:RestoreInfo.When, $Script:RestoreInfo.Type) | Where-Object { $_ }) -join "  $Script:Dot  ")
+        Add-SummaryRow $panel 'Restore' ((Get-RestorePicks | ForEach-Object { $Script:RestoreComps[$_] }) -join ', ')
+    }
     if ($type -eq 'component') {
         $picked = Get-PickedComponents | ForEach-Object { ($Script:Components[$_].Label -split ' \(')[0] }
         Add-SummaryRow $panel 'Components' $(if ($picked) { $picked -join ', ' } else { 'None selected' })
@@ -1816,6 +1912,12 @@ function Update-ReviewPage {
 
     $steps = Get-PlanSteps
     $restarts = @()
+    if ($type -eq 'restore') {
+        $picks = @(Get-RestorePicks)
+        if ('dw' -in $picks)  { $restarts += 'deviceWise (dwcore, dwts)' }
+        if ('cnc' -in $picks) { $restarts += 'CNCnetPDM' }
+        if ('doc' -in $picks) { $restarts += 'the DOC instances and the data applications' }
+    }
     if (@($steps | Where-Object { $_ -in 4, 5, 6, 8 }).Count) { $restarts += 'deviceWise (dwcore)' }
     if (7 -in $steps)  { $restarts += 'CNCnetPDM' }
     if (9 -in $steps)  { $restarts += 'the DOC instances' }
@@ -2022,7 +2124,7 @@ function Stop-RunAtFailure {
     param([int]$Index)
     $mod = $Script:StepDefs | Where-Object { $_.Index -eq $Index }
     $Script:RunState = 'failed'
-    $controls['TxtFailTitle'].Text = "Step $Index $Script:Dot $($mod.Name) failed. The configuration stopped."
+    $controls['TxtFailTitle'].Text = "$(if ($Index -eq 14) { 'Restore' } else { "Step $Index" }) $Script:Dot $($mod.Name) failed. The configuration stopped."
     $controls['PanelFail'].Visibility = 'Visible'
     $controls['TxtRunTitle'].Text = 'Stopped'
     $controls['ExpRunLog'].IsExpanded = $true
@@ -2092,7 +2194,7 @@ function Start-StepRerun {
         Run-NextAutoModule
     }
 }
-foreach ($s in ($Script:StepDefs | Where-Object { $_.Index -le 12 })) { $controls["BtnRerun$($s.Index)"].Add_Click({ Start-StepRerun }) }
+foreach ($s in ($Script:StepDefs | Where-Object { $_.Index -ne 13 })) { $controls["BtnRerun$($s.Index)"].Add_Click({ Start-StepRerun }) }
 $controls['BtnFailRerun'].Add_Click({ Start-StepRerun })
 $controls['BtnOpenLog'].Add_Click({
     $log = if ($Script:AutoState -and $Script:AutoState['RunRoot']) { Join-Path $Script:AutoState['RunRoot'] 'Logs\Wizard.log' } else { '' }
@@ -2344,6 +2446,19 @@ function New-RunState {
     foreach ($pair in @(@('APCUserPassword', 'PwdAPCUser'), @('PostgresPassword', 'PwdPostgres'), @('SvcAccountPassword', 'PwdSvcAccount'), @('SiteDBPassword', 'PwdSiteDB'))) {
         $st[$pair[0]] = $controls[$pair[1]].SecurePassword.Copy()
     }
+    # Configuration Restore: the restored configuration's DOC assignment and page values (the backup's run state)
+    if ($Type -eq 'restore' -and $Script:RestoreInfo) {
+        $st['RestoreSource']     = $Script:RestoreInfo.Backups
+        $st['RestoreComponents'] = @(Get-RestorePicks)
+        $b = $Script:RestoreInfo.State
+        if ($b) {
+            foreach ($k in 'DOCCount', 'SINCEmail', 'CNCnetPDMLicense', 'DataAppsLocalRoot') { if ($b.PSObject.Properties[$k] -and $b.$k) { $st[$k] = $b.$k } }
+            if ($b.PSObject.Properties['DOCMachineAssignments']) { $st['DOCMachineAssignments'] = @($b.DOCMachineAssignments) }
+            if ($b.PSObject.Properties['DataAppsInstruments']) {
+                $st['DataAppsInstruments'] = @($b.DataAppsInstruments | ForEach-Object { $h = @{}; foreach ($pp in $_.PSObject.Properties) { $h[$pp.Name] = $pp.Value }; $h })
+            }
+        }
+    }
     # The Medtronic apps may be on C: or D: (Installation Manager): the run's <X>:\Medtronic paths follow that drive
     $Script:RunManifest = Set-ManifestMedtronicDrive -Manifest $manifest -Drive $inst.Drive
     Set-StateMedtronicDrive -State $st -Drive $inst.Drive
@@ -2378,7 +2493,7 @@ function Start-ConfigurationRun {
     $controls['BtnOpenReport'].IsEnabled  = $false
     Save-State -State $Script:AutoState
 
-    foreach ($s in ($Script:StepDefs | Where-Object { $_.Index -le 12 })) {
+    foreach ($s in ($Script:StepDefs | Where-Object { $_.Index -ne 13 })) {
         $n = $s.Index
         $controls["RowStep$n"].Visibility = if ($n -in $runSteps) { 'Visible' } else { 'Collapsed' }
         Set-StepState -Index $n -State 'Pending'
@@ -2505,6 +2620,7 @@ $controls['BtnNext'].Add_Click({
             if (@(Get-PickedComponents).Count -eq 0) { Show-Warning "Pick at least one component."; return }
         }
         'machines' { if (-not (Test-MachinesPage)) { return } }
+        'restore'  { if (-not (Test-RestorePage)) { return } }
         'components' {
             if (-not $controls['TxtLicense'].Text.Trim()) { Show-Warning "Enter the CNCnetPDM license key or tick 'Use default perpetual license'."; return }
         }
