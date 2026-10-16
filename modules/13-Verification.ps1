@@ -1070,7 +1070,7 @@ function Invoke-Verification {
 
     if ([bool]$Manifest.CHMI.CheckCalculations) {
         Check 'CHMI' '800xA calculations enabled (Calculation Status Viewer)' {
-            $c = Invoke-800xACalculationCheck -Manifest $Manifest -LogDir $reportDir
+            $c = Invoke-800xACalculationCheck -Manifest $Manifest -LogDir (Get-RunDir -State $State -Name Logs)
             if ($c.Code -eq 1) { throw "Disabled or in error - see $($c.Report) (Step 11 enables them again)" }
             if ($c.Code -ne 0) { throw "Could not check (exit $($c.Code)) - see $($c.Report)" }
             (@($c.Lines | Where-Object { $_ -match '^(All |No calculations|  \d+ running )' }) -join '; ')
