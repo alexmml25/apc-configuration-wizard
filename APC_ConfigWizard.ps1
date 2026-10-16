@@ -19,6 +19,10 @@ Add-Type -AssemblyName System.DirectoryServices.AccountManagement
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Held while the window is open: the installer (AppMutex) does not update or uninstall the Configuration Manager
+# under a running window. Released when the window's process ends.
+$Script:AppMutex = New-Object System.Threading.Mutex($false, 'Global\APCConfigurationManager')
+
 $Script:AppName      = 'APC Configuration Manager'
 $Script:AppVersion   = '1.0.0.0'   # shown in the header, written to Wizard.log, the state and the report
 $Script:RootDir      = $PSScriptRoot

@@ -1,79 +1,41 @@
-# Office temp/lock files
-~$*
+# Git holds only what the APC Configuration Manager needs (whitelist), plus the VM probe tools and the installer
+# source. Everything else - tests, notes (docs\), VM exports, decompiled code, binaries copied from VMs, handoffs -
+# stays local and is never committed.
+/*
+!/.gitignore
+!/.gitattributes
+!/Start-Wizard.cmd
+!/APC_ConfigWizard.ps1
+!/APC_Config.ps1
+!/APC_ConfigManifest.json
+!/APC Logo.png
+!/APC Configuration Manager Icon.png
 
-# Runtime state files (written by the wizard on the VM, not source)
+# Modules: everything the Configuration Manager loads (modules\800xA = the 800xA kit, byte for byte)
+!/modules/
+
+# Templates: the D01555624 rev C checklist and the file-flow test files
+!/Templates/
+/Templates/*
+!/Templates/D01555624_C_EN.docx
+!/Templates/FileFlowTest_CTSCAN1.csv
+!/Templates/FileFlowTest_CMM1.csv
+
+# Installer source (Inno Setup 6): APC_Configuration_Manager.iss + the .ico; its build output stays local
+!/installer/
+/installer/Output/
+
+# Read-only probe tools run on the VM (not installed); the deviceWise binary / abandoned-API tools stay local
+!/tools/
+/tools/Find-DwStrings.ps1
+/tools/Inspect-DwGateway.ps1
+/tools/Test-DwHttpApi.ps1
+
+# Never: runtime output, Office lock files, macOS / Windows metadata
+*.log
 *.config_state.json
-C:\APC_Config\
-
-# Windows artifacts
+~$*
+.DS_Store
+._*
 Thumbs.db
 desktop.ini
-
-# macOS
-.DS_Store
-
-# Personal Claude Code settings
-.claude/settings.local.json
-
-# ABB 800xA binaries copied from a VM for inspection - ABB property, never commit
-ABB.xA.*.dll
-ABB.xA.*.exe
-
-# Decompiled ABB code (inspection only) - never commit
-decompiled/
-
-# Local only (not in the repo): project log, VM test checklist, test launcher
-docs/
-Run-Tests.cmd
-
-
-# deviceWise inspection output (contains the gateway product key) - never commit
-dw-*.txt
-
-# deviceWise gateway databases copied for inspection (user DB has password hashes) - never commit
-DW*.db
-DW*.db-journal
-
-# deviceWise installer copied for inspection - Telit property, never commit
-DWEnterprise_Install*
-
-# deviceWise export/backup files (site config) - never commit
-*.dwx
-*.dbk
-
-# deviceWise discovery tools (read binaries / abandoned HTTP API route) - local only
-tools/Find-DwStrings.ps1
-tools/Inspect-DwGateway.ps1
-tools/Test-DwHttpApi.ps1
-
-# OPC UA browse output from the VMs - local only
-dw-opcua-*.txt
-
-# gateway DB inspection output from the VMs - local only
-dw-db-*.txt
-
-# Data Analyzer binaries copied from a VM for inspection (Medtronic app + Traeger library) - never commit
-DataAnalyzer.exe
-CommonLib.dll
-Opc.UaFx.*.dll
-UsageControl.dll
-
-# 800xA service binaries copied from a VM for inspection - ABB property, never commit
-Afw*.dll
-Afw*.exe
-800xA-service-files_*.zip
-800xA-typelibs_*.zip
-Interop.Afw*.dll
-chmi-services_*.txt
-
-# Medtronic app binaries copied from a VM for decompiling (File Manager / Data Collector) - never commit
-DataCollector*.exe
-*Parser.dll
-DBManager.dll
-CommonLib*.dll
-# raw test file as handed over (the shipped copy is templates\FileFlowTest_*.csv)
-1st_TestFile.csv
-/FileFlowTest_*
-
-# local Word previews of a generated draft (developer check)
-_preview/

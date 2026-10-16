@@ -4,3 +4,7 @@
 
 # 800xA kit: ship byte-for-byte (SHA256SUMS.txt must match on the VM)
 modules/800xA/** -text
+
+# Inno Setup script: Windows line endings; the icon is binary
+*.iss text eol=crlf
+*.ico binary
