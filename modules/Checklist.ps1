@@ -212,13 +212,14 @@ function Invoke-FillChecklist {
 
     # -- blanks and blue examples in the Expected Results cells (Step 13 values) ------------------------------
     # only where the row passed: a value in a failed row would read as verified
+    # (Always = an operator input such as the IT ticket: written whatever the row's result)
     foreach ($k in $Fills.Keys) {
-        if ($rowStatus[$k] -ne 'PASS') { continue }
+        if ($rowStatus[$k] -ne 'PASS' -and -not @($Fills[$k] | Where-Object { $_.Always }).Count) { continue }
         $t, $r = $k -split '\|' | ForEach-Object { [int]$_ }
         if (-not $tables[$t]) { continue }
         $rows = $tables[$t].SelectNodes('w:tr', $ns); if ($r -ge $rows.Count) { continue }
         $cells = $rows[$r].SelectNodes('w:tc', $ns); if ($cells.Count -lt 3) { continue }
-        foreach ($f in @($Fills[$k])) {
+        foreach ($f in @($Fills[$k] | Where-Object { $_.Always -or $rowStatus[$k] -eq 'PASS' })) {
             # the paragraph with the text that still has a blank or a blue example ('APC VM IP address documented:'
             # also contains 'VM IP')
             $p = @($cells[2].SelectNodes('.//w:p', $ns)) | Where-Object {

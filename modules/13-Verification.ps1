@@ -1297,7 +1297,7 @@ function Invoke-Verification {
     $vmIp = try { (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | Where-Object { $_.IPAddress -notmatch '^127\.|^169\.254\.' } | Select-Object -First 1).IPAddress } catch { '' }
     if ($vmIp) { & $addFill 11 2 'VM IP' @($vmIp) }
     # inputs that come with the new window (plan section 0, step 4): filled once the state has them
-    if ($State['ITTicket']) { & $addFill 11 5 'IT Ticket' @([string]$State['ITTicket']) }
+    if ($State['ITTicket']) { $fills['11|5'] = @(@{ Match = 'IT Ticket'; Values = @([string]$State['ITTicket']); Always = $true }) }
     $typeName = if ($State['ConfigTypeName']) { $State['ConfigTypeName'] } else { [string]$State['ConfigType'] }
     $comments = @{ 12 = "N/A: System Update / Import is not part of this configuration$(if ($typeName) { " (Reason for Configuration: $typeName)" }); the APC UI update verification applies only to a System Update / Import." }
 
