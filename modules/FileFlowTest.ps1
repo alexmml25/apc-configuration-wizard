@@ -168,7 +168,7 @@ function Invoke-FileFlowTest {
 "@
     W "  DB: $(if ($q.Ok) { $p = $q.Output -split '\|'; "$($p[0]) sample(s), $($p[1]) measurement value(s) for lot $lot" } else { "query failed: $($q.Output)" })"
 
-    $res.Routing   = @{ Ok = [bool]($stage.Routed -or ($stage.Archived -and -not $stage.Error)); Detail = $(if ($stage.Error) { "mismatch: File Manager moved it to $errDir" } elseif ($stage.PickedUp) { "picked up after $($stage.PickedUp) s from $(Child $fmPath 'Path'), routed to $routeDir" } else { "not picked up from $(Child $fmPath 'Path') within $TimeoutSeconds s" }) }
+    $res.Routing   = @{ Ok = [bool]($stage.Routed -or ($stage.Archived -and -not $stage.Error)); Detail = $(if ($stage.Error) { "mismatch: File Manager moved it to $errDir" } elseif ($stage.PickedUp) { "picked up after $($stage.PickedUp) s from $(Child $fmPath 'Path'), routed to $routeDir" } else { "not picked up from $(Child $fmPath 'Path') within $TimeoutSeconds s - is File Manager running, and can the APC service account read and write that folder (share access)?" }) }
     $res.Detection = @{ Ok = [bool](($stage.Started -or $stage.Archived) -and $status -ne 'DONE_ERROR'); Detail = "Data Collector status $(if ($status) { $status } else { '(none)' }) on $($tagBase)Status" }
     $res.Archiving = @{ Ok = [bool]$stage.Archived; Detail = $(if ($archivedFile) { "archived to $archive" } else { "not in $archive" }) }
     $res.Db = $(if ($q.Ok) { $q.Output } else { '' })

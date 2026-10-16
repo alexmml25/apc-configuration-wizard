@@ -6,8 +6,8 @@
     "BackupShare": "\\\\MSPM7AAPPS0342.cfrf.medtronic.com\\Shared\\APC\\Backups",
     "ReleaseFile": "APC VM Inventory and CHMI Licenses\\APC Releases.xlsx",
     "_commentRelease": "The release shown on Review comes from ReleaseFile (relative to RepositoryRoot; the Installation Manager's workbook, APC-System row); Version / ReleaseLabel are used when it cannot be read.",
-    "ExpectedConfigTime": "",
-    "_commentConfigTime": "Shown in Before you start (type page); empty = [X] until the full run (plan step 5) gives the time.",
+    "ExpectedConfigTime": "20 minutes",
+    "_commentConfigTime": "Shown in Before you start (type page); 2026-10-16 full run on the fresh SJUM7AAPPS0052: Steps 1-12 in 12 min 48 s, verification about 5 min.",
     "SupportEmail": "alexander.martinez2@medtronic.com",
     "InstallRoot": "D:\\APC_Config",
     "InstallRootHelp": "Work folder of the Configuration Manager (runs, state, logs, Work\\OpcUaStack, Work\\pki). C:\\APC_Config when D: is not a ready fixed disk. {APCROOT} in other manifest paths = this folder."
