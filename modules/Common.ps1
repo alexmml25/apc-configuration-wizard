@@ -695,6 +695,44 @@ function Close-TitledMessageBoxes {
     return @{ Closed = $closed; Stuck = $stuck }
 }
 
+function Start-AppAsUser {
+    <#
+        Starts a desktop app as the signed-in user WITHOUT administrator rights, as if opened from the desktop.
+        The wizard runs elevated, and an app it starts directly inherits that token: File Manager then cannot see
+        network shares (\\server\share source folders), and it checks its folders only once at start-up - a folder
+        it cannot see is never watched until it restarts (decompiled ConfiguredTimer / CheckFileDirectory, -6006;
+        SJUM7AAPPS0052 2026-10-16: CTSCAN share not picked up after Step 10 / Restore started File Manager).
+        Elevated: a one-off scheduled task for this user (interactive, RunLevel Limited) starts it and is removed.
+        Returns the new process, or $null when it did not appear within $WaitSec.
+    #>
+    param([Parameter(Mandatory)] [string]$Exe, [int]$WaitSec = 20)
+    $dir  = Split-Path $Exe -Parent
+    $name = [IO.Path]::GetFileNameWithoutExtension($Exe)
+    $t0   = Get-Date
+    if (-not (Test-IsElevated)) { return (Start-Process -FilePath $Exe -WorkingDirectory $dir -PassThru) }
+    $task = "APC_StartAsUser_${name}_$PID"
+    try {
+        $act = New-ScheduledTaskAction -Execute $Exe -WorkingDirectory $dir
+        $prn = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
+        $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
+        Register-ScheduledTask -TaskName $task -Action $act -Principal $prn -Settings $set -Force -ErrorAction Stop | Out-Null
+        Start-ScheduledTask -TaskName $task -ErrorAction Stop
+        $deadline = $t0.AddSeconds($WaitSec)
+        do {
+            Start-Sleep -Milliseconds 500
+            $p = Get-Process -Name $name -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Path -and $_.Path -ieq $Exe -and $_.StartTime -ge $t0.AddSeconds(-1) } | Select-Object -First 1
+        } while (-not $p -and (Get-Date) -lt $deadline)
+        return $p
+    } catch {
+        # no task scheduler access: start it directly (elevated; network shares may not be visible to it)
+        Write-Log WARN "Could not start $name as the signed-in user ($($_.Exception.Message)) - started with administrator rights"
+        return (Start-Process -FilePath $Exe -WorkingDirectory $dir -PassThru)
+    } finally {
+        Unregister-ScheduledTask -TaskName $task -Confirm:$false -ErrorAction SilentlyContinue
+    }
+}
+
 function Restart-DOCInstance {
     # Closes DOC instance N if it runs (window close, then kill after 20 s) and starts it from its folder, like the
     # data apps (Restart-DataApp). Only that instance: all DOCs share the process name DynamicOffsetCalculation.
@@ -750,9 +788,10 @@ function Start-MissingApps {
         $name = [IO.Path]::GetFileNameWithoutExtension($exe)
         if (-not (Test-Path -LiteralPath $exe) -or (Get-Process -Name $name -ErrorAction SilentlyContinue)) { continue }
         try {
-            $p = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe -Parent) -PassThru
+            $p = Start-AppAsUser -Exe $exe   # not elevated: File Manager must see its network share folders
             Start-Sleep -Seconds 5
-            $out.Add(@{ Name = $name; Status = $(if ($p.HasExited) { 'FAIL' } else { 'PASS' }); Detail = $(if ($p.HasExited) { "exited right after starting (exit code $($p.ExitCode))" } else { "was not running; started (PID $($p.Id))" }) })
+            $gone = -not $p -or $p.HasExited
+            $out.Add(@{ Name = $name; Status = $(if ($gone) { 'FAIL' } else { 'PASS' }); Detail = $(if ($gone) { 'did not start or exited right after starting' } else { "was not running; started (PID $($p.Id))" }) })
         } catch { $out.Add(@{ Name = $name; Status = 'FAIL'; Detail = "could not be started: $($_.Exception.Message)" }) }
     }
 

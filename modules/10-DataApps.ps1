@@ -478,16 +478,18 @@ function New-DataAnalyzerCertificate {
 
 function Restart-DataApp {
     # Closes a running data app (window close, then kill after 20 s) and starts it again from its folder,
-    # so it loads the new config. Started from the wizard it runs as the wizard's account (the SVC account).
+    # so it loads the new config. It runs as the signed-in account (the SVC account), not elevated.
     param([string]$Exe)
     $name = [IO.Path]::GetFileNameWithoutExtension($Exe)
     $was  = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
     try {
         foreach ($p in $was) { [void]$p.CloseMainWindow() }
         foreach ($p in $was) { if (-not $p.WaitForExit(20000)) { $p.Kill(); [void]$p.WaitForExit(10000) } }
-        $new = Start-Process -FilePath $Exe -WorkingDirectory (Split-Path $Exe -Parent) -PassThru
+        # as the signed-in user without administrator rights: started elevated, File Manager cannot see its network
+        # share folders and never watches them (Start-AppAsUser)
+        $new = Start-AppAsUser -Exe $Exe
         Start-Sleep -Seconds 3
-        if ($new.HasExited) { return @{ Ok = $false; Detail = "$name exited right after starting (exit code $($new.ExitCode))" } }
+        if (-not $new -or $new.HasExited) { return @{ Ok = $false; Detail = "$name did not start or exited right after starting" } }
         return @{ Ok = $true; Detail = "$(if ($was) { 'Restarted' } else { 'Started' }) $name (PID $($new.Id))" }
     } catch {
         return @{ Ok = $false; Detail = "$name could not be restarted: $_" }
