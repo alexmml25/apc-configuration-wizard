@@ -638,6 +638,28 @@ function Start-MissingApps {
     return ,$out
 }
 
+function Get-OperatorAdInfo {
+    # AD employee number, mail and first name of DOMAIN\account (DirectorySearcher: no RSAT needed); empty when not found.
+    # Performed By on the draft checklist and the 'draft ready' e-mail (as the APC Installation Manager reads them at sign-in)
+    param([string]$Account)
+    $info = @{ EmployeeNumber = ''; Mail = ''; GivenName = '' }
+    $sam = ([string]$Account -split '\\')[-1].Trim()
+    if (-not $sam -or $sam -notmatch '^[A-Za-z0-9._-]+$') { return $info }
+    try {
+        $s = New-Object System.DirectoryServices.DirectorySearcher
+        $s.Filter = "(&(objectCategory=person)(objectClass=user)(sAMAccountName=$sam))"
+        $s.ClientTimeout = [TimeSpan]::FromSeconds(15)
+        foreach ($p in 'employeeNumber', 'mail', 'givenName') { [void]$s.PropertiesToLoad.Add($p) }
+        $f = $s.FindOne()
+        if ($f) {
+            if ($f.Properties['employeenumber'].Count) { $info.EmployeeNumber = [string]$f.Properties['employeenumber'][0] }
+            if ($f.Properties['mail'].Count)           { $info.Mail           = [string]$f.Properties['mail'][0] }
+            if ($f.Properties['givenname'].Count)      { $info.GivenName      = [string]$f.Properties['givenname'][0] }
+        }
+    } catch { }
+    return $info
+}
+
 function Test-IsElevated {
     # True when running as administrator (the wizard always does). Administrator sessions may not see
     # network shares that the normal session can.

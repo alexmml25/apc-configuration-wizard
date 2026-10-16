@@ -74,3 +74,6 @@ CommonLib*.dll
 # raw test file as handed over (the shipped copy is templates\FileFlowTest_*.csv)
 1st_TestFile.csv
 /FileFlowTest_*
+
+# local Word previews of a generated draft (developer check)
+_preview/

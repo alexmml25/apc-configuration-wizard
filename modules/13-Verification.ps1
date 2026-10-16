@@ -16,6 +16,8 @@
 . (Join-Path $PSScriptRoot 'DeviceWise.ps1')
 . (Join-Path $PSScriptRoot '02-TimescaleDB.ps1')   # pgAdmin / pgpass helpers for T4 items 7-8
 . (Join-Path $PSScriptRoot 'FileFlowTest.ps1')    # T7 item 7, T8 items 9-10
+. (Join-Path $PSScriptRoot 'Checklist.ps1')       # draft D01555624 (rev C)
+. (Join-Path $PSScriptRoot 'Notify.ps1')          # 'draft checklist ready' e-mail
 
 function Invoke-Verification {
     [CmdletBinding()]
@@ -282,7 +284,7 @@ function Invoke-Verification {
         }
         if (@($bad).Count) { throw (@($bad) | Select-Object -First 3) -join '; ' }
         "Alarm $($set.ALARM_TAG) / $($set.ALARM_PATH), wait $($set.WAIT_TIME) ms, retry $($set.RETRY_COUNT)"
-    } '' 3 15
+    } '' 3 14    # rev C: one CNC_Settings row (asset mapping + alarm settings)
 
     # Item 16 - SINC staging folders
     $sincRoot = $dw.SINCStaging
@@ -304,11 +306,11 @@ function Invoke-Verification {
     }
     if ($sincOk) {
         $checks.Add(@{ Cat='deviceWise'; Name='SINC staging folder structure'; Status='PASS';
-            Detail="$($machines.Count * 3) folders present"; Note=''; T=3; I=16 })
+            Detail="$($machines.Count * 3) folders present"; Note=''; T=3; I=15 })
         Add-Result -Phase Verification -Check 'deviceWise: SINC staging folders' -Status PASS
     } else {
         $checks.Add(@{ Cat='deviceWise'; Name='SINC staging folder structure'; Status='FAIL';
-            Detail="Missing: $($sincMiss -join ', ')"; Note=''; T=3; I=16 })
+            Detail="Missing: $($sincMiss -join ', ')"; Note=''; T=3; I=15 })
         Add-Result -Phase Verification -Check 'deviceWise: SINC staging folders' -Status FAIL -Detail ($sincMiss -join ', ')
     }
 
@@ -317,7 +319,7 @@ function Invoke-Verification {
     Check 'deviceWise' 'CNCnetPDM Connected in deviceWise' {
         if (-not $mtc.Connected) { throw "dwcore has no connection to CNCnetPDM (port $($mtc.Port)) - CNCnetPDM running? Step 8 run?" }
         "Connected (CNCnetPDM MTC Adapter port $($mtc.Port))"
-    } '' 3 17
+    } '' 3 16
 
     # Item 18 - CNCnetPDM to deviceWise path mapping (CNCn_PATH: instance + '<DeviceNr> - <name>')
     Check 'deviceWise' 'CNCnetPDM to deviceWise path mapping' {
@@ -332,14 +334,14 @@ function Invoke-Verification {
         }
         if (@($bad).Count) { throw @($bad) -join '; ' }
         "$($machines.Count) CNC path(s) mapped to $instance"
-    } '' 3 18
+    } '' 3 17
 
     # Item 19 - MedtronicSU user exists (DWUSER.db users)
     Check 'deviceWise' "OPC UA user $($dw.OpcUaUser) exists" {
         $u = Invoke-DwDbQuery -Paths $paths -Database 'DWUSER.db' -Sql 'SELECT name FROM users WHERE name = ?' -Arguments @($dw.OpcUaUser)
         if (-not $u.Count) { throw "User $($dw.OpcUaUser) not found" }
         "User $($dw.OpcUaUser) present"
-    } '' 3 19
+    } '' 3 18
 
     # Item 20 - External client certificate trusted (SOP 2.1.2.5). The gateway's OPC UA server keeps client
     # certificates as files: staging\uaserver\pkiserver\trusted\certs and ...\rejected (pending a Trust).
@@ -349,15 +351,15 @@ function Invoke-Verification {
     if ($rejected.Count) {
         $d = "Waiting for Trust (Workbench > OPC UA Server > Certificates): $(($rejected | ForEach-Object { $_.BaseName }) -join ', ')"
         Add-Result -Phase Verification -Check 'deviceWise: External client certificate trusted' -Status FAIL -Detail $d
-        $checks.Add(@{ Cat='deviceWise'; Name='External client certificate trusted'; Status='FAIL'; Detail=$d; Note=''; T=3; I=20 })
+        $checks.Add(@{ Cat='deviceWise'; Name='External client certificate trusted'; Status='FAIL'; Detail=$d; Note=''; T=3; I=19 })
     } elseif ($trusted.Count) {
         $d = "Trusted: $(($trusted | ForEach-Object { $_.BaseName }) -join ', ')"
         Add-Result -Phase Verification -Check 'deviceWise: External client certificate trusted' -Status PASS -Detail $d
-        $checks.Add(@{ Cat='deviceWise'; Name='External client certificate trusted'; Status='PASS'; Detail=$d; Note=''; T=3; I=20 })
+        $checks.Add(@{ Cat='deviceWise'; Name='External client certificate trusted'; Status='PASS'; Detail=$d; Note=''; T=3; I=19 })
     } else {
         $d = 'No external client (DOC) has connected to the OPC UA server yet - check again after DOC has run'
         Add-Result -Phase Verification -Check 'deviceWise: External client certificate trusted' -Status WARN -Detail $d
-        $checks.Add(@{ Cat='deviceWise'; Name='External client certificate trusted'; Status='BLANK'; Detail=$d; Note='Complete manually'; T=3; I=20 })
+        $checks.Add(@{ Cat='deviceWise'; Name='External client certificate trusted'; Status='BLANK'; Detail=$d; Note='Complete manually'; T=3; I=19 })
     }
 
     # Item 21 - CNCx and CNCx_PATH devices Started (DWCORE.db devices.state 1), plus SINC's OPC UA client
@@ -367,7 +369,7 @@ function Invoke-Verification {
         $bad = @($want | Where-Object { -not $devStates.ContainsKey($_) -or $devStates[$_] -ne 1 })
         if ($bad.Count) { throw "Not Started: $($bad -join ', ')" }
         "Started: $($want -join ', ')"
-    } '' 3 21
+    } '' 3 20
 
     #endregion
 
@@ -1261,26 +1263,34 @@ function Invoke-Verification {
 
     #endregion
 
-    #region Fill D01555624 Word document --------------------------------------
+    #region Draft checklist D01555624 (rev C) ------------------------------------
 
-    $wizardRoot    = Split-Path $PSScriptRoot -Parent
-    $templatePath  = Join-Path $wizardRoot 'templates\D01555624_A_EN.docx'
-    $docxOutPath   = Join-Path $reportDir "D01555624_Filled_$ts.docx"
-    $performer     = "$env:USERNAME / $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+    # T12 APC UI Software Update / Import: N/A until the System Update / Import type exists (user 2026-10-16)
+    $updRows = @{ 1 = 'AFW update package available'; 2 = 'AFW update package imported'; 3 = 'APC UI opens after the update'; 4 = 'APC UI System version' }
+    foreach ($ui in $updRows.Keys | Sort-Object) {
+        $checks.Add(@{ Cat = 'APC UI Update'; Name = $updRows[$ui]; Status = 'NA'; Detail = 'System Update / Import is not part of this configuration'; Note = ''; T = 12; I = $ui })
+    }
 
+    $wizardRoot   = Split-Path $PSScriptRoot -Parent
+    $templatePath = Join-Path $wizardRoot ([string]$Manifest.Checklist.Template)
+    $docxOutPath  = Join-Path $reportDir "APC_Config_Checklist_DRAFT_$ts.docx"
     if (Test-Path $templatePath) {
         try {
-            Invoke-FillD01555624 -TemplatePath $templatePath -OutputPath $docxOutPath `
-                -Manifest $Manifest -State $State -Checks $checks -Performer $performer
+            $fill = Invoke-FillChecklist -TemplatePath $templatePath -OutputPath $docxOutPath -Manifest $Manifest -State $State -Checks $checks
             $State['VerificationDocPath'] = $docxOutPath
-            Add-Result -Phase Verification -Check 'D01555624 Filled Document' -Status PASS -Detail $docxOutPath
-            Write-Log PASS "Filled verification document: $docxOutPath"
+            Add-Result -Phase Verification -Check 'Draft checklist (D01555624)' -Status PASS -Detail "$docxOutPath (Performed By: $($fill.Performed))"
+            Write-Log PASS "Draft checklist: $docxOutPath"
+            if (-not $State['SandboxRoot']) {
+                $pc = @($checks | Where-Object { $_.Status -eq 'PASS' }).Count; $fc = @($checks | Where-Object { $_.Status -eq 'FAIL' }).Count
+                $wc = @($checks | Where-Object { $_.Status -eq 'WARN' }).Count
+                Send-ConfigNotice -State $State -Manifest $Manifest -Extra @{ Passed = $pc; Warnings = $wc; Failed = $fc; ReportPath = $reportPath; ChecklistPath = $docxOutPath }
+            }
         } catch {
-            Add-Result -Phase Verification -Check 'D01555624 Filled Document' -Status WARN -Detail $_.Exception.Message
-            Write-Log WARN "Could not fill D01555624: $_"
+            Add-Result -Phase Verification -Check 'Draft checklist (D01555624)' -Status WARN -Detail $_.Exception.Message
+            Write-Log WARN "Could not fill the draft checklist: $_"
         }
     } else {
-        Write-Log WARN "Template D01555624_A_EN.docx not found at $templatePath  -  skipping document fill"
+        Write-Log WARN "Checklist template not found: $templatePath - no draft checklist"
     }
 
     #endregion
@@ -1292,234 +1302,3 @@ function Invoke-Verification {
     }
 }
 
-# =============================================================================
-# D01555624 Word Document Fill
-# =============================================================================
-
-function Invoke-FillD01555624 {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)] [string]    $TemplatePath,
-        [Parameter(Mandatory)] [string]    $OutputPath,
-        [Parameter(Mandatory)] [object]    $Manifest,
-        [Parameter(Mandatory)] [hashtable] $State,
-        [Parameter(Mandatory)] [System.Collections.Generic.List[hashtable]] $Checks,
-        [Parameter(Mandatory)] [string]    $Performer
-    )
-
-    # Load by full name: Add-Type -AssemblyName failed in the wizard's step runspace with
-    # "Invalid pointer (E_POINTER)" (VM run 2026-10-15)
-    foreach ($asm in 'System.IO.Compression', 'System.IO.Compression.FileSystem') {
-        if (-not ([AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq $asm })) {
-            [void][Reflection.Assembly]::Load("$asm, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089")
-        }
-    }
-
-    # Read template zip and produce new output zip, modifying only word/document.xml
-    $docXmlEntry = 'word/document.xml'
-    $modifiedXml = $null
-
-    $zipIn = [System.IO.Compression.ZipFile]::OpenRead($TemplatePath)
-    try {
-        $entry = $zipIn.Entries | Where-Object { $_.FullName -eq $docXmlEntry } | Select-Object -First 1
-        if (-not $entry) { throw "word/document.xml not found in template" }
-        $sr  = [System.IO.StreamReader]::new($entry.Open(), [System.Text.Encoding]::UTF8)
-        $rawXml = $sr.ReadToEnd()
-        $sr.Close()
-    } finally { $zipIn.Dispose() }
-
-    [xml]$xml = $rawXml
-    $ns = [System.Xml.XmlNamespaceManager]::new($xml.NameTable)
-    $ns.AddNamespace('w',   'http://schemas.openxmlformats.org/wordprocessingml/2006/main')
-    $ns.AddNamespace('w14', 'http://schemas.microsoft.com/office/word/2010/wordml')
-
-    $tables = $xml.SelectNodes('//w:tbl', $ns)
-
-    # -------------------------------------------------------------------------
-    # Fill System Identification table (Table index 2)
-    # -------------------------------------------------------------------------
-    $sysIdTable = $tables[2]
-    if ($sysIdTable) {
-        $sysRows = $sysIdTable.SelectNodes('w:tr', $ns)
-        $siteNames = @{ MCR='Medtronic Costa Rica'; MPR='Medtronic Puerto Rico' }
-        $siteFull  = $siteNames[$State['SiteCode']]
-        if (-not $siteFull) { $siteFull = $State['SiteCode'] }
-
-        $sysValues = @(
-            $env:COMPUTERNAME,                                    # Row 0: VM Name
-            "APC System V$($Manifest.APC.Version)",               # Row 1: Version
-            'Closed-Loop Correction (CLC)',                       # Row 2: Solution
-            $siteFull,                                            # Row 3: Site
-            'D01555624',                                          # Row 4: Doc ID
-            $null,                                                # Row 5: Reason (checkboxes, below)
-            $null                                                 # Row 6: Change ID (below)
-        )
-
-        for ($ri = 0; $ri -lt $sysValues.Count; $ri++) {
-            if ($null -eq $sysValues[$ri]) { continue }
-            if ($ri -ge $sysRows.Count) { break }
-            $row   = $sysRows[$ri]
-            $cells = $row.SelectNodes('w:tc', $ns)
-            if ($cells.Count -lt 2) { continue }
-            Set-DocCellText -Cell $cells[1] -Text $sysValues[$ri] -Ns $ns
-        }
-
-        # Row 5: tick the Reason for Configuration box (one paragraph per option; 5 = Other)
-        $reason = if ($State.ContainsKey('ConfigReason') -and $null -ne $State['ConfigReason']) { [int]$State['ConfigReason'] } else { -1 }
-        if ($reason -ge 0 -and $sysRows.Count -gt 5) {
-            $cells = $sysRows[5].SelectNodes('w:tc', $ns)
-            $paras = if ($cells.Count -ge 2) { $cells[1].SelectNodes('w:p', $ns) } else { @() }
-            if ($reason -lt $paras.Count) {
-                Set-DocCheckbox -Para $paras[$reason] -Ns $ns
-                $other = if ($State.ContainsKey('ConfigReasonOther')) { [string]$State['ConfigReasonOther'] } else { '' }
-                if ($reason -eq 5 -and $other) {
-                    $label = $paras[$reason].SelectSingleNode('w:r/w:t[contains(., "Other")]', $ns)
-                    if ($label) { $label.InnerText = " Other: $other" }
-                }
-            }
-        }
-
-        # Row 6: Change ID
-        $changeId = if ($State.ContainsKey('ChangeID')) { [string]$State['ChangeID'] } else { '' }
-        if ($changeId -and $sysRows.Count -gt 6) {
-            $cells = $sysRows[6].SelectNodes('w:tc', $ns)
-            if ($cells.Count -ge 2) { Set-DocCellText -Cell $cells[1] -Text "Change ID: $changeId" -Ns $ns }
-        }
-    }
-
-    # -------------------------------------------------------------------------
-    # Fill check tables (Tables 3-11)
-    # -------------------------------------------------------------------------
-    foreach ($c in $Checks) {
-        if ($c.T -lt 3 -or $c.T -gt 11 -or $c.I -lt 1) { continue }
-        if ($c.T -ge $tables.Count) { continue }
-
-        $table = $tables[$c.T]
-        $rows  = $table.SelectNodes('w:tr', $ns)
-        if ($c.I -ge $rows.Count) { continue }
-
-        $row   = $rows[$c.I]
-        $cells = $row.SelectNodes('w:tc', $ns)
-        if ($cells.Count -lt 5) { continue }
-
-        $resultsCell     = $cells[3]
-        $performedByCell = $cells[4]
-
-        # Determine which checkbox paragraph to tick: 0=Pass, 1=Fail, 2=N/A
-        $paraIdx = switch ($c.Status) {
-            'PASS' { 0 } 'FAIL' { 1 } 'NA' { 2 } default { -1 }
-        }
-
-        if ($paraIdx -ge 0) {
-            $paras = $resultsCell.SelectNodes('w:p', $ns)
-            if ($paraIdx -lt $paras.Count) { Set-DocCheckbox -Para $paras[$paraIdx] -Ns $ns }
-        }
-
-        # Write Performed By text (only for automated results, not blanks)
-        if ($c.Status -notin 'BLANK','NA') {
-            $pbText = $Performer
-            if ($c.Detail) { $pbText += "`n$($c.Detail)" }
-            Set-DocCellText -Cell $performedByCell -Text $pbText -Ns $ns
-        }
-    }
-
-    # -------------------------------------------------------------------------
-    # Serialize modified XML
-    # -------------------------------------------------------------------------
-    $sbXml = [System.Text.StringBuilder]::new()
-    $xwSettings = [System.Xml.XmlWriterSettings]::new()
-    $xwSettings.Indent              = $false
-    $xwSettings.Encoding            = [System.Text.UTF8Encoding]::new($false)
-    $xwSettings.OmitXmlDeclaration  = $false
-    $xwSettings.ConformanceLevel    = [System.Xml.ConformanceLevel]::Document
-    $sw = [System.IO.StringWriter]::new($sbXml)
-    $xw = [System.Xml.XmlWriter]::Create($sw, $xwSettings)
-    $xml.Save($xw)
-    $xw.Close()
-    $modifiedXml = $sbXml.ToString()
-
-    # -------------------------------------------------------------------------
-    # Write output docx: copy all zip entries, replace word/document.xml
-    # -------------------------------------------------------------------------
-    $outStream = [System.IO.File]::Open($OutputPath, [System.IO.FileMode]::Create)
-    $zipOut    = [System.IO.Compression.ZipArchive]::new($outStream,
-                    [System.IO.Compression.ZipArchiveMode]::Create)
-    $zipIn2    = [System.IO.Compression.ZipFile]::OpenRead($TemplatePath)
-    try {
-        foreach ($srcEntry in $zipIn2.Entries) {
-            $dstEntry  = $zipOut.CreateEntry($srcEntry.FullName,
-                            [System.IO.Compression.CompressionLevel]::Optimal)
-            $srcStream = $srcEntry.Open()
-            $dstStream = $dstEntry.Open()
-
-            if ($srcEntry.FullName -eq $docXmlEntry) {
-                $xmlBytes = [System.Text.Encoding]::UTF8.GetBytes($modifiedXml)
-                $dstStream.Write($xmlBytes, 0, $xmlBytes.Length)
-            } else {
-                $srcStream.CopyTo($dstStream)
-            }
-
-            $dstStream.Close()
-            $srcStream.Close()
-        }
-    } finally {
-        $zipIn2.Dispose()
-        $zipOut.Dispose()
-        $outStream.Dispose()
-    }
-}
-
-# -------------------------------------------------------------------------
-# Helper: tick the checkbox content control at the start of a paragraph
-# -------------------------------------------------------------------------
-function Set-DocCheckbox {
-    param(
-        [System.Xml.XmlNode]            $Para,
-        [System.Xml.XmlNamespaceManager]$Ns
-    )
-    $checkedNode = $Para.SelectSingleNode('w:sdt/w:sdtPr/w14:checkbox/w14:checked', $Ns)
-    if ($checkedNode) {
-        $checkedNode.SetAttribute('val', 'http://schemas.microsoft.com/office/word/2010/wordml', '1')
-    }
-    # Swap the empty box for a ticked one inside sdtContent
-    $tNode = $Para.SelectSingleNode('w:sdt/w:sdtContent/w:r/w:t', $Ns)
-    if ($tNode) { $tNode.InnerText = [char]0x2612 }
-}
-
-# -------------------------------------------------------------------------
-# Helper: replace text content of a Word table cell, remove blue/italic
-# -------------------------------------------------------------------------
-function Set-DocCellText {
-    param(
-        [System.Xml.XmlNode]            $Cell,
-        [string]                        $Text,
-        [System.Xml.XmlNamespaceManager]$Ns
-    )
-    # Find first paragraph then first run with a w:t
-    $para = $Cell.SelectSingleNode('w:p', $Ns)
-    if (-not $para) { return }
-    $run  = $para.SelectSingleNode('w:r[w:t]', $Ns)
-    if (-not $run) { return }
-    $tNode = $run.SelectSingleNode('w:t', $Ns)
-    if (-not $tNode) { return }
-
-    $tNode.InnerText = $Text
-    if ($Text -match '^\s|\s$') {
-        $tNode.SetAttribute('xml:space', 'http://www.w3.org/XML/1998/namespace', 'preserve')
-    }
-
-    # Remove placeholder blue/italic formatting
-    $rPr = $run.SelectSingleNode('w:rPr', $Ns)
-    if ($rPr) {
-        foreach ($attr in @('w:color', 'w:i', 'w:iCs')) {
-            $n = $rPr.SelectSingleNode($attr, $Ns)
-            if ($n) { $rPr.RemoveChild($n) | Out-Null }
-        }
-    }
-
-    # Remove any additional runs (clean up leftover placeholder runs)
-    $allRuns = @($para.SelectNodes('w:r', $Ns))
-    foreach ($r in $allRuns) {
-        if ($r -ne $run) { $para.RemoveChild($r) | Out-Null }
-    }
-}

@@ -399,6 +399,44 @@
     "EngineeringWorkplace":  "C:\\Program Files (x86)\\ABB 800xA\\Base\\bin\\WorkplaceNG.exe"
   },
 
+  "Checklist": {
+    "Description":  "Draft D01555624 filled by Step 13 (modules\\Checklist.ps1)",
+    "Template":     "templates\\D01555624_C_EN.docx",
+    "SolutionName": "Closed-Loop Correction (CLC)",
+    "ReasonLabels": {
+      "_comment":  "Reason for Configuration box per run type (rev C merges Component Configuration / Update into one box)",
+      "initial":   "Initial System Configuration",
+      "restore":   "Configuration Restore",
+      "component": "Component Configuration",
+      "update":    "Component Configuration",
+      "sysupdate": "System Update",
+      "verify":    "Other"
+    }
+  },
+
+  "Notifications": {
+    "_comment": "E-mail to the signed-in operator (AD mail and first name, read at run start) when the draft checklist is ready (modules\\Notify.ps1, as the APC Installation Manager). Empty SmtpServer or From = not sent; the run continues. Placeholders {VM} {Site} {Time} {Operator} {WindowsAccount} {RunFolder} {ConfigType} {Passed} {Warnings} {Failed} {ReportPath} {ChecklistPath}.",
+    "SmtpServer": "mail.medtronic.com",
+    "Port": 25,
+    "From": "no_reply@medtronic.com",
+    "Cc": "",
+    "UseSsl": false,
+    "Templates": {
+      "ConfigComplete": {
+        "Subject": "[APC Configuration] Configuration Complete - Draft Checklist Ready | {VM}",
+        "Intro": "The APC Configuration Manager has completed the configuration and the configuration verification. The draft D01555624 Configuration Verification Checklist is ready for your review.",
+        "Stage": "Configuration Verification and Report",
+        "Status": "Draft Checklist Ready for Review",
+        "Actions": [
+          "Open the draft checklist in the run directory (<code>Reports</code> folder).",
+          "Review the automated verification results and address any reported failures.",
+          "Complete the rows left for manual verification."
+        ],
+        "Closing": "<b>Important:</b> The generated checklist is an automatically populated draft and does not constitute formal configuration verification or approval. The Configuration Verification Checklist (D01555624) must be completed, reviewed, and approved before proceeding to APC System Execution."
+      }
+    }
+  },
+
   "Services": {
     "PostgreSQL": "postgresql-x64-17",
     "DeviceWise": "dwcore",

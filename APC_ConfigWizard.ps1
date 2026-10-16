@@ -1871,6 +1871,12 @@ function Start-ConfigurationRun {
     $Script:AutoState['ConfigReason']          = $Script:ConfigTypes[$type].ReasonIndex
     $Script:AutoState['ConfigReasonOther']     = if ($type -eq 'verify') { $Script:VerifyReasonOther } else { '' }
     $Script:AutoState['ChangeID']              = $controls['TxtChangeID'].Text.Trim()
+    $Script:AutoState['ConfigTypeName']        = $Script:ConfigTypes[$type].Name
+    # Performed By (employee number) and the 'draft ready' e-mail: the operator's AD record, read once at the start
+    $ad = Get-OperatorAdInfo $Script:AutoState['OperatorName']
+    $Script:AutoState['EmployeeNumber']    = $ad.EmployeeNumber
+    $Script:AutoState['OperatorEmail']     = $ad.Mail
+    $Script:AutoState['OperatorFirstName'] = $ad.GivenName
     $Script:AutoState['CNCMachines']           = @($Global:FetchedMachines)
     $Script:AutoState['DOCMachineAssignments'] = $docMachineAssignments
     $Script:AutoState['DataAppsInstruments']   = @(Get-DataAppsSelection -CncCount $docCount)
@@ -2069,7 +2075,7 @@ $controls['BtnOpenReport'].Add_Click({
     $doc = if ($Script:AutoState) { $Script:AutoState['VerificationDocPath'] } else { $null }
     if (-not $doc -or -not (Test-Path $doc)) {
         $reports = if ($Script:AutoState -and $Script:AutoState['RunRoot']) { Join-Path $Script:AutoState['RunRoot'] 'Reports' } else { 'C:\APC_Config\Reports' }
-        $doc = Get-ChildItem $reports -Filter 'D01555624_Filled_*.docx' -ErrorAction SilentlyContinue |
+        $doc = Get-ChildItem $reports -Filter 'APC_Config_Checklist_DRAFT_*.docx' -ErrorAction SilentlyContinue |
                Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
     }
     if ($doc) { Start-Process $doc }
