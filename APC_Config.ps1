@@ -8,13 +8,15 @@
     VM components. Runs all 13 configuration phases sequentially. Supports -SkipTo
     for recovery after partial runs. Does not store passwords in plain text.
 .PARAMETER StateFile
-    Path to the configuration state file. Default: C:\APC_Config\.config_state.json
+    Path to the configuration state file. Default: <work folder>\.config_state.json (work folder = manifest
+    APC.InstallRoot, D:\APC_Config, or C:\APC_Config without a D: disk). Each run also gets its own folder
+    <work folder>\InitialConfiguration_<yyyyMMdd-HHmmss>\{Logs,Backups,Reports} with a copy of the state, as in the wizard.
 .PARAMETER SkipTo
     Start at a specific phase number (1-13) for testing or recovery.
 #>
 [CmdletBinding()]
 param(
-    [string]$StateFile = 'C:\APC_Config\.config_state.json',
+    [string]$StateFile = '',
     [ValidateRange(1,13)]
     [int]$SkipTo = 0
 )
@@ -26,8 +28,11 @@ $Script:RootDir      = $PSScriptRoot
 $Script:ModulesDir   = Join-Path $Script:RootDir 'modules'
 $Script:ManifestPath = Join-Path $Script:RootDir 'APC_ConfigManifest.json'
 . (Join-Path $Script:ModulesDir 'Common.ps1')    # Find-MedtronicInstall / Set-ManifestMedtronicDrive before the first step
-$Script:StateFile    = $StateFile
-$Script:LogDir       = 'C:\APC_Config\Logs'
+# work folder and this run's own folder (same layout as the wizard's runs)
+$Script:ApcRoot      = Get-ApcRoot (Get-Content $Script:ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+$Script:RunRoot      = Join-Path $Script:ApcRoot ("InitialConfiguration_{0}" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+$Script:StateFile    = if ($StateFile) { $StateFile } else { Join-Path $Script:ApcRoot '.config_state.json' }
+$Script:LogDir       = Join-Path $Script:RunRoot 'Logs'
 $Script:LogFile      = $null
 
 $Global:ConfigResults = [System.Collections.Generic.List[hashtable]]::new()
@@ -109,7 +114,9 @@ function Save-ConfigState {
             $serializable[$key] = $State[$key]
         }
     }
-    $serializable | ConvertTo-Json -Depth 10 | Set-Content $Script:StateFile -Encoding UTF8
+    $json = $serializable | ConvertTo-Json -Depth 10
+    $json | Set-Content $Script:StateFile -Encoding UTF8
+    if ($State['RunRoot']) { $json | Set-Content (Join-Path $State['RunRoot'] 'config_state.json') -Encoding UTF8 }
 }
 
 #endregion
@@ -309,6 +316,11 @@ function Main {
     $state['PostgresPassword']    = $creds.PostgresPassword
     $state['SvcAccountPassword']  = $creds.SvcAccountPassword
     $state['MedtronicDrive']      = $inst.Drive
+    $state['RunRoot']             = $Script:RunRoot                 # Logs / Backups / Reports of this run
+    $state['ConfigType']          = 'initial'
+    $state['ConfigTypeName']      = 'Initial System Configuration'
+    $ad = Get-OperatorAdInfo $state['OperatorName']                  # Performed By and the 'draft ready' e-mail
+    $state['EmployeeNumber'] = $ad.EmployeeNumber; $state['OperatorEmail'] = $ad.Mail; $state['OperatorFirstName'] = $ad.GivenName
     Save-ConfigState -State $state
 
     $phases = @(
@@ -362,7 +374,7 @@ function Main {
         }
     }
 
-    Write-Log INFO "Session complete. Log: $Script:LogFile"
+    Write-Log INFO "Session complete. Run folder: $Script:RunRoot  Log: $Script:LogFile"
     Write-Host "`nConfiguration session complete. See log: $Script:LogFile" -ForegroundColor Cyan
 }
 
