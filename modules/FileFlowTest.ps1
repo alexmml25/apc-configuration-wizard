@@ -105,6 +105,11 @@ function Invoke-FileFlowTest {
     $saved = [ordered]@{}
     W ''; W '== 1. CNC tags File Manager compares =='
     foreach ($k in $tags.Keys) { $saved[$k] = Read-Tag $k; W "  $k : '$($saved[$k])' -> '$($tags[$k])' : $(Write-Tag $k $tags[$k])" }
+    # Data Collector's result tags as they were: the CHMI (800xA Corrections 'DC <TYPE> Calculation') answers the
+    # raised Trigger by comparing the result with its own order (Order0 Batch/Part, Sample GP) and writes
+    # ErrorCode -1 / 'Data Mistmatch' when they differ - always for a test lot - so they are put back afterwards
+    $dcSaved = [ordered]@{}
+    foreach ($t in 'ErrorCode', 'Message') { $dcSaved["$($tagBase)$t"] = Read-Tag "$($tagBase)$t" }
     $trig = Read-Tag "$($tagBase)Trigger"
     if ($trig -eq $true) { W "  $($tagBase)Trigger was True (unconsumed result) -> False : $(Write-Tag "$($tagBase)Trigger" $false)" }
 
@@ -149,6 +154,9 @@ function Invoke-FileFlowTest {
         Start-Sleep -Seconds 1
     } while ($el -lt $TimeoutSeconds)
     foreach ($t in 'ErrorCode', 'Message', 'Trigger', 'PartNumber', 'BatchNumber', 'CNCAsset', 'ProcessName', 'DataType') { W "  $($tagBase)$t = '$(Read-Tag "$($tagBase)$t")'" }
+    if ([string](Read-Tag "$($tagBase)Message") -eq 'Data Mistmatch') {
+        W "  (ErrorCode -1 / 'Data Mistmatch' is the CHMI's own order check of the result - expected for a test lot that is no 800xA order; put back below)"
+    }
 
     # -- DB rows of the test lot --------------------------------------------------------------------------------
     $pg = $m.PostgreSQL
@@ -161,7 +169,7 @@ function Invoke-FileFlowTest {
     W "  DB: $(if ($q.Ok) { $p = $q.Output -split '\|'; "$($p[0]) sample(s), $($p[1]) measurement value(s) for lot $lot" } else { "query failed: $($q.Output)" })"
 
     $res.Routing   = @{ Ok = [bool]($stage.Routed -or ($stage.Archived -and -not $stage.Error)); Detail = $(if ($stage.Error) { "mismatch: File Manager moved it to $errDir" } elseif ($stage.PickedUp) { "picked up after $($stage.PickedUp) s from $(Child $fmPath 'Path'), routed to $routeDir" } else { "not picked up from $(Child $fmPath 'Path') within $TimeoutSeconds s" }) }
-    $res.Detection = @{ Ok = [bool]($stage.Started -or $stage.Archived); Detail = "Data Collector status $(if ($status) { $status } else { '(none)' }) on $($tagBase)Status" }
+    $res.Detection = @{ Ok = [bool](($stage.Started -or $stage.Archived) -and $status -ne 'DONE_ERROR'); Detail = "Data Collector status $(if ($status) { $status } else { '(none)' }) on $($tagBase)Status" }
     $res.Archiving = @{ Ok = [bool]$stage.Archived; Detail = $(if ($archivedFile) { "archived to $archive" } else { "not in $archive" }) }
     $res.Db = $(if ($q.Ok) { $q.Output } else { '' })
     W ''; W '== Result =='
@@ -173,6 +181,7 @@ function Invoke-FileFlowTest {
     W ''; W '== 4. Clean up =='
     foreach ($k in $saved.Keys) { W "  $k back to '$($saved[$k])' : $(Write-Tag $k $(if ($null -eq $saved[$k]) { '' } else { $saved[$k] }))" }
     if ((Read-Tag "$($tagBase)Trigger") -eq $true) { W "  $($tagBase)Trigger -> False : $(Write-Tag "$($tagBase)Trigger" $false)" }
+    foreach ($k in $dcSaved.Keys) { if ($null -ne $dcSaved[$k]) { W "  $k back to '$($dcSaved[$k])' : $(Write-Tag $k $dcSaved[$k])" } }
     foreach ($f in @($archivedFile, $srcFile) + @(Get-ChildItem -LiteralPath $errDir, $routeDir -Filter "$base*" -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })) {
         if ($f -and (Test-Path -LiteralPath $f)) { Remove-Item -LiteralPath $f -Force; W "  removed $f" }
     }
