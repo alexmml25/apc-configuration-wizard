@@ -564,6 +564,80 @@ function Restart-DOCInstance {
     }
 }
 
+function Start-MissingApps {
+    <#
+        Before Step 13 checks: starts whatever should be running and is not (user 2026-10-16: "Verification opens
+        anything that needs to be opened"). Never restarts anything that runs.
+          services   PostgreSQL, deviceWise dwcore + dwts, CNCnetPDM (Manifest.Services, dwts as Step 4 needs it)
+          data apps  File Manager, Data Collector, Data Analyzer (the exe next to each Manifest.DataApps.*Config)
+          DOC        each assigned DOC-n (DynamicOffsetCalculation.exe); its PartLookup_DB box is closed until it holds
+                     its deviceWise OPC UA connection (DOC.KnownStartupDialogTitles, DOC.ConnectWaitSeconds), as Step 9
+        Returns a list of @{ Name; Status = PASS|WARN|FAIL; Detail } - only for what had to be started.
+    #>
+    param([Parameter(Mandatory)] [object]$Manifest, [Parameter(Mandatory)] [hashtable]$State)
+    $out = New-Object System.Collections.Generic.List[object]
+
+    # -- services --------------------------------------------------------------------------------------------
+    $svcs = @($Manifest.Services.PostgreSQL, $Manifest.Services.DeviceWise, 'dwts', $Manifest.Services.CNCnetPDM) | Where-Object { $_ }
+    foreach ($n in $svcs) {
+        $svc = Get-Service -Name $n -ErrorAction SilentlyContinue
+        if (-not $svc -or $svc.Status -eq 'Running') { continue }
+        try {
+            Start-Service -Name $n -ErrorAction Stop
+            $svc.WaitForStatus('Running', [TimeSpan]::FromSeconds(60))
+            $note = if ($n -eq $Manifest.Services.DeviceWise) { ' - CNCAsset / CNCType are empty after a dwcore start (known limitation): re-run Step 8 if the CNCAsset checks fail' } else { '' }
+            $out.Add(@{ Name = "service $n"; Status = $(if ($note) { 'WARN' } else { 'PASS' }); Detail = "was $($svc.Status) before; started$note" })
+        } catch { $out.Add(@{ Name = "service $n"; Status = 'FAIL'; Detail = "could not be started: $($_.Exception.Message)" }) }
+    }
+
+    # -- data applications ---------------------------------------------------------------------------------
+    $da = $Manifest.DataApps
+    foreach ($cfg in @($da.FileManagerConfig, $da.DataCollectorConfig, $da.DataAnalyzerConfig)) {
+        $exe  = ([string]$cfg) -replace '\.config$', ''
+        $name = [IO.Path]::GetFileNameWithoutExtension($exe)
+        if (-not (Test-Path -LiteralPath $exe) -or (Get-Process -Name $name -ErrorAction SilentlyContinue)) { continue }
+        try {
+            $p = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe -Parent) -PassThru
+            Start-Sleep -Seconds 5
+            $out.Add(@{ Name = $name; Status = $(if ($p.HasExited) { 'FAIL' } else { 'PASS' }); Detail = $(if ($p.HasExited) { "exited right after starting (exit code $($p.ExitCode))" } else { "was not running; started (PID $($p.Id))" }) })
+        } catch { $out.Add(@{ Name = $name; Status = 'FAIL'; Detail = "could not be started: $($_.Exception.Message)" }) }
+    }
+
+    # -- DOC instances -------------------------------------------------------------------------------------
+    $docCfg = $Manifest.DOC
+    $started = @()
+    $assigned = Get-AssignedCNCs -State $State -Manifest $Manifest     # assignment unrolls its ,$result (@() would nest it)
+    foreach ($m in $assigned) {
+        $n = [int]$m.CNCIndex
+        if (Get-DOCProcess -Manifest $Manifest -Instance $n) { continue }
+        $exe = Join-Path (([string]$docCfg.BasePath).Replace('{N}', "$n")) 'DynamicOffsetCalculation.exe'
+        if (-not (Test-Path -LiteralPath $exe)) { continue }
+        try { [void](Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe -Parent) -PassThru); $started += $n }
+        catch { $out.Add(@{ Name = "DOC-$n"; Status = 'FAIL'; Detail = "could not be started: $($_.Exception.Message)" }) }
+    }
+    if ($started) {
+        $titles  = @($docCfg.KnownStartupDialogTitles | Where-Object { $_ })
+        $opcPort = [int]$Manifest.DeviceWise.OpcUaEndpointPort
+        $wait    = if ($docCfg.PSObject.Properties['ConnectWaitSeconds']) { [int]$docCfg.ConnectWaitSeconds } else { 120 }
+        $closed  = @()
+        $deadline = (Get-Date).AddSeconds($wait)
+        do {
+            if ($titles) { $closed += @((Close-TitledMessageBoxes -Titles $titles).Closed) }
+            $down = @($started | Where-Object {
+                $p = Get-DOCProcess -Manifest $Manifest -Instance $_
+                -not $p -or -not @(Get-ProcessTcpConnections -ProcessId $p.Id | Where-Object { $_.RemotePort -eq $opcPort }).Count })
+            if ($down) { Start-Sleep -Seconds 3 }
+        } while ($down -and (Get-Date) -lt $deadline)
+        if ($titles) { $closed += @((Close-TitledMessageBoxes -Titles $titles).Closed) }
+        foreach ($n in $started) {
+            $ok = $down -notcontains $n
+            $out.Add(@{ Name = "DOC-$n"; Status = $(if ($ok) { 'PASS' } else { 'WARN' })
+                        Detail = "was not running; started$(if ($ok) { ', connected to deviceWise OPC UA' } else { ", no deviceWise connection after $wait s" })$(if ($closed) { "; closed start-up message: $(@($closed | Select-Object -Unique) -join ' | ')" })" })
+        }
+    }
+    return ,$out
+}
+
 function Test-IsElevated {
     # True when running as administrator (the wizard always does). Administrator sessions may not see
     # network shares that the normal session can.

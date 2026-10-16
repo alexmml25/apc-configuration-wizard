@@ -125,6 +125,17 @@ function Invoke-Verification {
         [xml][System.IO.File]::ReadAllText($Path)
     }
 
+    #region Start what is not running (not a D01555624 row) --------------------
+
+    # Verification opens anything that should be running and is not (services, data apps, DOC) - user 2026-10-16
+    if (-not $State['SandboxRoot']) {
+        $startedApps = Start-MissingApps -Manifest $Manifest -State $State
+        if (-not $startedApps.Count) { Write-Log INFO 'Everything that should run is running (services, data apps, DOC).' }
+        foreach ($sa in $startedApps) { Add-Result -Phase Verification -Check "Startup: $($sa.Name)" -Status $sa.Status -Detail $sa.Detail }
+    }
+
+    #endregion
+
     #region T3 - deviceWise ---------------------------------------------------
     # No API: the checks read the gateway's own files and databases (DeviceWise.ps1, read-only), its OPC UA
     # server (CNCAsset / CNCType) and the dwcore TCP connection to CNCnetPDM - the same sources Steps 4-8 use.
